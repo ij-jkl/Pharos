@@ -1,0 +1,72 @@
+"""Typed, immutable results for the profiler.
+
+Pure data holders — no logic, no local imports — so every other profiler/accountant module can
+depend on them without import cycles. ``GpuInfo.available`` and ``BackendInfo.reachable`` are the
+two graceful-degradation flags: a machine with no NVIDIA GPU and/or no reachable backend still
+yields a complete profile instead of crashing.
+
+``ModelInfo``/``CtxInfo`` from the original sketch are folded into ``BackendInfo`` — the model and
+context facts all come from the same backend probe, so one flat record is simpler to pass around.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class GpuInfo:
+    """A snapshot of the primary GPU, or ``available=False`` when none was detected."""
+
+    available: bool
+    name: str | None = None
+    total_mib: int | None = None
+    used_mib: int | None = None
+    free_mib: int | None = None
+    source: str | None = None  # "nvml" | "nvidia-smi"
+    detail: str | None = None  # reason when unavailable
+
+
+@dataclass(frozen=True, slots=True)
+class BackendInfo:
+    """What the backend probe learned about the loaded model and its context window."""
+
+    reachable: bool
+    base_url: str
+    model: str | None = None
+    architecture: str | None = None
+    quantization: str | None = None
+    parameter_size: str | None = None
+    weight_size_bytes: int | None = None
+    size_vram_bytes: int | None = None
+    advertised_max_ctx: int | None = None  # from GGUF metadata via /api/show
+    loaded_ctx: int | None = None  # the ACTUAL loaded window via /api/ps
+    detail: str | None = None  # reason when unreachable
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetReport:
+    """The accountant's output: usable budget, warning lines and VRAM figures."""
+
+    loaded_ctx: int | None
+    response_reserve: int
+    usable_budget: int | None
+    warn_threshold: float
+    alert_threshold: float
+    warn_tokens: int | None
+    alert_tokens: int | None
+    kv_estimate_mib: float | None  # estimated, not measured
+    vram_free_mib: int | None  # measured (None when no GPU)
+    vram_total_mib: int | None
+    vram_headroom_tokens: int | None  # ESTIMATE: additional ctx tokens that fit in free VRAM
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentProfile:
+    """The full picture: GPU + backend + budget, plus the headline context-mismatch flag."""
+
+    gpu: GpuInfo
+    backend: BackendInfo
+    budget: BudgetReport
+    ctx_mismatch: bool
+    ctx_mismatch_ratio: float | None  # loaded / advertised, when both are known
