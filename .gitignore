@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Virtual env
+.venv/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Environment / secrets
+.env
+
+# Local tool config - machine-specific, not part of the project
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# Machine-specific runtime config (copy pharos.toml.example -> pharos.toml locally)
+pharos.toml
+
+# Model weights (e.g. a GGUF pulled for offline tokenizer tests) — never commit these
+*.gguf
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Runtime logs (rotating file written by the TUI/proxy)
+*.log

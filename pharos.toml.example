@@ -1,0 +1,36 @@
+# Pharos configuration — copy this file to `pharos.toml` and edit for your machine.
+# Moving laptop -> desktop should be a change HERE, never in source. `pharos.toml` itself is
+# gitignored so machine-specific values (absolute paths, LAN addresses) never enter the repo.
+
+# Upstream LLM backend (Ollama). A local instance, or the desktop's LAN address.
+backend_url = "http://localhost:11434"
+
+# Active model. Optional: if omitted, Pharos auto-detects the loaded model from /api/ps.
+# model = "qwen3.5-9b-heretic"
+
+# Exact path to the model's GGUF, used for CPU-only (vocab_only) exact token counting.
+# Optional: if omitted, Pharos tries to auto-resolve it from Ollama's blob store. Setting it
+# explicitly is the robust option and avoids depending on Ollama's storage layout.
+# gguf_path = "C:/Users/you/.ollama/models/blobs/sha256-abc123..."
+
+# Tokens reserved for the model's response when computing the usable input budget.
+response_reserve = 1024
+
+# Context-usage thresholds (as a fraction of the usable budget) for TUI warnings.
+warn_threshold = 0.80
+alert_threshold = 0.90
+
+# KV-cache VRAM estimate: MiB per 1K context tokens. This is an ESTIMATE only (it varies with
+# architecture, flash-attention and KV-cache quantization); the TUI labels it as such and
+# always trusts measured free VRAM over this number.
+kv_mib_per_1k = 32
+
+# Where Pharos itself listens. Point your coding agent at this address (not directly at Ollama).
+proxy_host = "127.0.0.1"
+proxy_port = 11435
+
+# The TUI owns the terminal, so request/error detail goes to a rotating log file instead.
+log_file = "pharos.log"
+
+# Reserved for a later tier (the auditor / filesystem watcher). Unused in v0.1.
+# target_folder = "."
