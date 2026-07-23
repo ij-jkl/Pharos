@@ -1,0 +1,34 @@
+Screen {
+    layout: vertical;
+}
+
+#stats {
+    height: 2;
+    padding: 0 1;
+    background: $panel;
+}
+
+#mismatch {
+    display: none;
+    height: auto;
+    padding: 0 1;
+    background: darkred;
+    color: white;
+}
+
+#mismatch.visible {
+    display: block;
+}
+
+#ctx,
+#vram,
+#throughput {
+    height: 1;
+    padding: 0 1;
+}
+
+#log {
+    height: 1fr;
+    border-top: heavy $primary;
+    padding: 0 1;
+}
