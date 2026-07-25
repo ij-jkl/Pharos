@@ -1,0 +1,165 @@
+"""Calibration tests: the store, the recorder's debounce, and both estimators.
+
+The estimator invariants matter more than the plumbing: the overhead estimate must stay a
+floor (minimum, never mean), prefer first-turn-like records so long sessions cannot inflate
+it, and never mix models.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from pharos.calibration import (
+    Observation,
+    ObservationRecorder,
+    estimate_client_overhead,
+    estimate_typical_output,
+    load_observations,
+)
+
+
+def _obs(
+    *,
+    input_tokens: int,
+    user_tokens: int,
+    messages: int = 1,
+    model: str | None = "qwen3.5-9b-heretic:latest",
+    exact: bool = True,
+    output: int | None = 500,
+    ts: float = 1000.0,
+) -> Observation:
+    return Observation(
+        ts=ts,
+        endpoint="openai-chat",
+        model=model,
+        input_tokens=input_tokens,
+        input_exact=exact,
+        user_tokens=user_tokens,
+        messages=messages,
+        output_tokens=output,
+    )
+
+
+# --- store ---------------------------------------------------------------------------------
+
+
+def test_store_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "obs.json"
+    recorder = ObservationRecorder(path)
+    recorder.add(_obs(input_tokens=100, user_tokens=10))
+    recorder._flush_sync()
+    loaded = load_observations(path)
+    assert len(loaded) == 1
+    assert loaded[0].input_tokens == 100
+    assert loaded[0].user_tokens == 10
+
+
+def test_store_is_bounded_and_keeps_newest(tmp_path: Path) -> None:
+    path = tmp_path / "obs.json"
+    recorder = ObservationRecorder(path)
+    for i in range(250):
+        recorder.add(_obs(input_tokens=i, user_tokens=0, ts=float(i)))
+    recorder._flush_sync()
+    loaded = load_observations(path)
+    assert len(loaded) == 200
+    assert loaded[-1].input_tokens == 249  # newest survive, oldest are dropped
+    assert loaded[0].input_tokens == 50
+
+
+def test_store_tolerates_garbage(tmp_path: Path) -> None:
+    path = tmp_path / "obs.json"
+    path.write_text('{"not": "a list"}', encoding="utf-8")
+    assert load_observations(path) == []
+    path.write_text('[{"ts": 1, "endpoint": "x"}, "junk"]', encoding="utf-8")
+    assert load_observations(path) == []  # partial records parse to nothing, not a crash
+    assert load_observations(tmp_path / "absent.json") == []
+
+
+def test_store_contains_counts_only(tmp_path: Path) -> None:
+    """The privacy line: nothing in the file is text from a request."""
+    path = tmp_path / "obs.json"
+    recorder = ObservationRecorder(path)
+    recorder.add(_obs(input_tokens=100, user_tokens=10))
+    recorder._flush_sync()
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    allowed = {
+        "ts", "endpoint", "model", "input_tokens", "input_exact",
+        "user_tokens", "messages", "output_tokens",
+    }
+    assert set(raw[0].keys()) == allowed
+
+
+def test_recorder_debounce_asks_for_flush_at_threshold(tmp_path: Path) -> None:
+    recorder = ObservationRecorder(tmp_path / "obs.json")
+    flags = [recorder.add(_obs(input_tokens=i, user_tokens=0)) for i in range(5)]
+    assert flags == [False, False, False, False, True]  # 5th record trips the batch flush
+    # While a flush is marked in-flight, further adds do not re-trigger it.
+    assert recorder.add(_obs(input_tokens=9, user_tokens=0)) is False
+
+
+# --- overhead estimator ---------------------------------------------------------------------
+
+
+def test_overhead_prefers_fewest_message_records() -> None:
+    """History inflates client_added; only first-turn-like records estimate the fixed part."""
+    observations = [
+        _obs(input_tokens=10_500, user_tokens=500, messages=1),
+        _obs(input_tokens=11_000, user_tokens=800, messages=1),
+        _obs(input_tokens=40_000, user_tokens=300, messages=21),  # deep-session: ignored
+    ]
+    estimate = estimate_client_overhead(observations, "qwen3.5-9b-heretic")
+    assert estimate is not None
+    assert estimate.tokens == 10_000  # min over the messages==1 group only
+    assert "fewest-message = 1" in estimate.provenance
+
+
+def test_overhead_is_minimum_not_mean() -> None:
+    observations = [
+        _obs(input_tokens=10_000, user_tokens=0, messages=1),
+        _obs(input_tokens=30_000, user_tokens=0, messages=1),
+    ]
+    estimate = estimate_client_overhead(observations, "qwen3.5-9b-heretic")
+    assert estimate is not None
+    assert estimate.tokens == 10_000  # a mean (20k) would break the floor promise
+
+
+def test_overhead_prefers_exact_records() -> None:
+    observations = [
+        _obs(input_tokens=5_000, user_tokens=0, messages=1, exact=False),
+        _obs(input_tokens=9_000, user_tokens=0, messages=1, exact=True),
+    ]
+    estimate = estimate_client_overhead(observations, "qwen3.5-9b-heretic")
+    assert estimate is not None
+    assert estimate.tokens == 9_000  # the smaller number loses: it is only an estimate
+    assert "exact" in estimate.provenance
+
+
+def test_overhead_filters_by_model_tag_insensitively() -> None:
+    observations = [
+        _obs(input_tokens=10_000, user_tokens=0, model="other-model:latest"),
+        _obs(input_tokens=7_000, user_tokens=0, model="qwen3.5-9b-heretic:latest"),
+    ]
+    estimate = estimate_client_overhead(observations, "qwen3.5-9b-heretic")
+    assert estimate is not None
+    assert estimate.tokens == 7_000
+    assert estimate_client_overhead(observations, "not-observed") is None
+
+
+def test_overhead_empty_store_is_none() -> None:
+    assert estimate_client_overhead([], "qwen3.5-9b-heretic") is None
+
+
+# --- typical output --------------------------------------------------------------------------
+
+
+def test_typical_output_is_median_of_matching_records() -> None:
+    observations = [
+        _obs(input_tokens=1, user_tokens=0, output=400),
+        _obs(input_tokens=1, user_tokens=0, output=900),
+        _obs(input_tokens=1, user_tokens=0, output=1600),
+        _obs(input_tokens=1, user_tokens=0, output=None),  # unreported: excluded
+        _obs(input_tokens=1, user_tokens=0, output=99_999, model="other:latest"),
+    ]
+    assert estimate_typical_output(observations, "qwen3.5-9b-heretic") == 900
+    assert estimate_typical_output([], "qwen3.5-9b-heretic") is None

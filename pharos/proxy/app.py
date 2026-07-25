@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, Response
 
+from pharos.calibration import ObservationRecorder
 from pharos.config import PharosConfig
 from pharos.events import EventBus
 from pharos.proxy import routes_ollama, routes_openai
@@ -36,13 +38,17 @@ def create_app(
     tokenizer: TokenCounter | None = None,
     resolve_tokenizer: bool = True,
     tokenizer_model: str | None = None,
+    record_observations: bool = True,
 ) -> FastAPI:
     """Build the proxy app. ``tokenizer=None`` + ``resolve_tokenizer=False`` forces the
     heuristic counting path (used by tests); by default the GGUF is resolved from config.
 
     ``tokenizer_model`` names the model whose vocabulary ``tokenizer`` holds. Leave it None to
     accept every count at face value (the default for an injected test double); set it and any
-    request naming a different model has its count marked untrusted rather than exact."""
+    request naming a different model has its count marked untrusted rather than exact.
+
+    ``record_observations`` controls the calibration sink (counts only, never text) that the
+    pre-flight check learns client overhead from; tests disable it to avoid writing files."""
     if tokenizer is None and resolve_tokenizer:
         gguf = resolve_gguf_path(config)
         if gguf is not None:
@@ -51,9 +57,14 @@ def create_app(
             # request naming a different model must not have its count labelled exact.
             tokenizer_model = config.model
 
+    recorder = ObservationRecorder(Path(config.observations_file)) if record_observations else None
     client = httpx.AsyncClient(base_url=config.backend_url, timeout=_UPSTREAM_TIMEOUT)
     state = ProxyState(
-        bus=bus, client=client, tokenizer=tokenizer, tokenizer_model=tokenizer_model
+        bus=bus,
+        client=client,
+        tokenizer=tokenizer,
+        tokenizer_model=tokenizer_model,
+        recorder=recorder,
     )
 
     @asynccontextmanager

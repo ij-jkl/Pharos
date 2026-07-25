@@ -45,15 +45,20 @@ def build_router(state: ProxyState) -> APIRouter:
 
 def _extract_chat(payload: dict[str, Any]) -> InputSpec:
     texts: list[str] = []
+    user_texts: list[str] = []
+    message_count = 0
     has_image = False
     messages = payload.get("messages")
     if isinstance(messages, list):
         for message in messages:
             if not isinstance(message, dict):
                 continue
+            message_count += 1
             text = content_text(message.get("content"))
             if text:
                 texts.append(text)
+                if message.get("role") == "user":
+                    user_texts.append(text)
             # Assistant tool calls are replayed into the prompt as part of the history.
             calls = message.get("tool_calls")
             if isinstance(calls, list) and calls:
@@ -71,6 +76,8 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
         model=payload_model(payload),
         stream=payload_stream(payload, default=True),
         opaque="images" if has_image else None,
+        user_text="\n".join(user_texts),
+        message_count=message_count,
     )
 
 
@@ -99,6 +106,9 @@ def _extract_generate(payload: dict[str, Any]) -> InputSpec:
         stream=payload_stream(payload, default=True),
         extra_tokens=extra,
         opaque="images" if has_image else None,
+        # The prompt is the user-authored portion; system/suffix/context are client-added.
+        user_text=prompt if isinstance(prompt, str) else "",
+        message_count=1,
     )
 
 

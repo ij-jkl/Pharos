@@ -26,6 +26,7 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
+from pharos.calibration import Observation, ObservationRecorder
 from pharos.events import (
     EventBus,
     InputCounted,
@@ -78,6 +79,7 @@ class ProxyState:
         tokenizer: TokenCounter | None,
         cache: TokenCountCache | None = None,
         tokenizer_model: str | None = None,
+        recorder: ObservationRecorder | None = None,
     ) -> None:
         self.bus = bus
         self.client = client
@@ -86,6 +88,8 @@ class ProxyState:
         # tokenizer at startup, so a request for any other model is counted with the wrong
         # vocabulary; that count is labelled untrusted rather than exact. See _count_input.
         self.tokenizer_model = tokenizer_model
+        # Optional calibration sink (counts only, never text); None disables recording.
+        self.recorder = recorder
         self.cache = cache if cache is not None else TokenCountCache()
         self._ids = itertools.count(1)
         self._tasks: set[asyncio.Task[None]] = set()
@@ -104,6 +108,10 @@ class ProxyState:
             task.cancel()
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
+        if self.recorder is not None:
+            # Final flush AFTER task cancellation so buffered observations from cancelled
+            # record tasks are not lost; short sessions still leave calibration data behind.
+            await self.recorder.aclose()
         await self.client.aclose()
 
 
@@ -118,6 +126,10 @@ class InputSpec:
     tokens: int | None = None  # pre-known count (e.g. a token-array prompt); skips tokenizing
     extra_tokens: int = 0  # already-tokenized input alongside the text (e.g. `context`)
     opaque: str | None = None  # names content Pharos cannot tokenize at all (e.g. "images")
+    # For calibration: the user-authored portion alone, and how many messages the request
+    # carried. client overhead = total input - user content (see pharos.calibration).
+    user_text: str = ""
+    message_count: int = 0
 
 
 async def counted_forward(
@@ -207,8 +219,63 @@ async def counted_forward(
                 duration_s=duration,
             )
         )
+        if state.recorder is not None and spec is not None and upstream.status_code < 400:
+            # Calibration: record what this request really cost (counts only, never text).
+            # Rejected requests are excluded — they are not representative traffic.
+            state.spawn(_record_observation(state, endpoint, spec, metrics))
 
     return _relay(upstream, tee=tee, on_close=on_close)
+
+
+async def _record_observation(
+    state: ProxyState, endpoint: str, spec: InputSpec, metrics: StreamMetrics
+) -> None:
+    """Assemble and buffer a calibration record, entirely off the request path.
+
+    ``spec.text`` was already counted for the InputCounted event, so recounting it here is a
+    cache hit; ``spec.user_text`` costs one extra tokenize in a worker thread.
+    """
+    recorder = state.recorder
+    if recorder is None:
+        return
+    try:
+        if metrics.prompt_eval_count is not None:
+            input_tokens, input_exact = metrics.prompt_eval_count, True
+        elif spec.tokens is not None:
+            input_tokens, input_exact = spec.tokens + spec.extra_tokens, False
+        else:
+            input_tokens = await _count_text(state, spec.text) + spec.extra_tokens
+            input_exact = False
+        user_tokens = await _count_text(state, spec.user_text) if spec.user_text else 0
+        observation = Observation(
+            ts=time.time(),
+            endpoint=endpoint,
+            model=spec.model,
+            input_tokens=input_tokens,
+            input_exact=input_exact,
+            user_tokens=user_tokens,
+            messages=spec.message_count,
+            output_tokens=metrics.eval_count,
+        )
+        if recorder.add(observation):
+            await recorder.flush()
+    except Exception as exc:  # noqa: BLE001 — calibration must never affect proxying
+        _logger.warning("observation recording failed (%s)", exc)
+
+
+async def _count_text(state: ProxyState, text: str) -> int:
+    """Count with the loaded tokenizer (through the cache) or the labeled heuristic."""
+    counter = state.tokenizer
+    if counter is None:
+        return _heuristic_count(text)
+    try:
+        return await asyncio.to_thread(
+            functools.partial(state.cache.get_or_count, identity=_tokenizer_identity(counter)),
+            text,
+            counter.count,
+        )
+    except Exception:  # noqa: BLE001
+        return _heuristic_count(text)
 
 
 async def passthrough_forward(state: ProxyState, request: Request) -> Response:

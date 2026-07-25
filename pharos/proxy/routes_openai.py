@@ -43,15 +43,20 @@ def build_router(state: ProxyState) -> APIRouter:
 
 def _extract_chat(payload: dict[str, Any]) -> InputSpec:
     texts: list[str] = []
+    user_texts: list[str] = []
+    message_count = 0
     has_image = False
     messages = payload.get("messages")
     if isinstance(messages, list):
         for message in messages:
             if not isinstance(message, dict):
                 continue
+            message_count += 1
             text = content_text(message.get("content"))
             if text:
                 texts.append(text)
+                if message.get("role") == "user":
+                    user_texts.append(text)
             # Assistant tool calls are replayed into the prompt as part of the history.
             calls = message.get("tool_calls")
             if isinstance(calls, list) and calls:
@@ -70,6 +75,8 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
         model=payload_model(payload),
         stream=payload_stream(payload, default=False),
         opaque="images" if has_image else None,
+        user_text="\n".join(user_texts),
+        message_count=message_count,
     )
 
 
@@ -80,18 +87,23 @@ def _extract_completions(payload: dict[str, Any]) -> InputSpec:
     if isinstance(prompt, list) and prompt and _all_ints(prompt):
         # A pre-tokenized prompt IS its own count: len(array) is exact by definition —
         # no tokenizer involved and no template shift to estimate around.
-        return InputSpec(text="", exact=True, model=model, stream=stream, tokens=len(prompt))
+        return InputSpec(
+            text="", exact=True, model=model, stream=stream, tokens=len(prompt), message_count=1
+        )
     if isinstance(prompt, str):
         text = prompt
     elif isinstance(prompt, list):
         text = "\n".join(item for item in prompt if isinstance(item, str))
     else:
         text = ""
+    user_text = text
     # An infill suffix is prompt content like any other.
     suffix = payload.get("suffix")
     if isinstance(suffix, str) and suffix:
         text = f"{text}\n{suffix}"
-    return InputSpec(text=text, exact=False, model=model, stream=stream)
+    return InputSpec(
+        text=text, exact=False, model=model, stream=stream, user_text=user_text, message_count=1
+    )
 
 
 def _all_ints(items: list[Any]) -> bool:
