@@ -19,6 +19,7 @@ class Accountant:
         self._warn = config.warn_threshold
         self._alert = config.alert_threshold
         self._kv_mib_per_1k = config.kv_mib_per_1k
+        self._vram_margin_mib = config.vram_safety_margin_mib
 
     def report(self, *, loaded_ctx: int | None, gpu: GpuInfo) -> BudgetReport:
         """Compute the budget for a given loaded context window and GPU snapshot."""
@@ -32,6 +33,7 @@ class Accountant:
             alert_tokens = int(usable * self._alert)
             kv_estimate = self._kv_mib_per_1k * loaded_ctx / 1000
         headroom_tokens: int | None = None
+        achievable_ctx: int | None = None
         free_mib = gpu.free_mib if gpu.available else None
         if free_mib is not None and loaded_ctx is not None:
             # ESTIMATE (same kv_mib_per_1k the KV figure uses): tokens that still fit before
@@ -42,7 +44,15 @@ class Accountant:
             # overstates wildly — measured at ~20x on a 12GB card with a 9B Q8_0 (335,718
             # tokens claimed, 16,625 actually reachable once resident). None is the honest
             # answer; the renderers say why.
-            headroom_tokens = int(free_mib / self._kv_mib_per_1k * 1000)
+            #
+            # The safety margin is held back first: driver allocations and fragmentation claim
+            # VRAM without warning, so a headroom figure that spends the last free byte is an
+            # OOM invitation. Advice derived from this number must survive being followed.
+            usable_free_mib = max(free_mib - self._vram_margin_mib, 0)
+            headroom_tokens = int(usable_free_mib / self._kv_mib_per_1k * 1000)
+            # How far num_ctx can ACTUALLY be raised on this hardware, as opposed to the
+            # advertised maximum the mismatch banner would otherwise point at.
+            achievable_ctx = loaded_ctx + headroom_tokens
         return BudgetReport(
             loaded_ctx=loaded_ctx,
             response_reserve=self._reserve,
@@ -55,4 +65,6 @@ class Accountant:
             vram_free_mib=gpu.free_mib if gpu.available else None,
             vram_total_mib=gpu.total_mib if gpu.available else None,
             vram_headroom_tokens=headroom_tokens,
+            vram_safety_margin_mib=self._vram_margin_mib,
+            achievable_ctx_estimate=achievable_ctx,
         )

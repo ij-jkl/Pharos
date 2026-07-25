@@ -49,11 +49,42 @@ def test_vram_fields_present_only_when_gpu_available() -> None:
     assert off.vram_headroom_tokens is None
 
 
-def test_vram_headroom_tokens_estimate() -> None:
+def test_vram_headroom_holds_back_the_safety_margin() -> None:
     gpu = GpuInfo(available=True, total_mib=12288, used_mib=4288, free_mib=8000)
     report = Accountant(PharosConfig(kv_mib_per_1k=32)).report(loaded_ctx=4096, gpu=gpu)
-    # 8000 MiB free / 32 MiB-per-1K-tokens * 1000 = 250k more ctx tokens (estimate).
+    # (8000 - 512 margin) MiB / 32 MiB-per-1K * 1000 — headroom must never spend the last
+    # free byte: advice derived from it has to survive being followed.
+    assert report.vram_headroom_tokens == 234_000
+    assert report.vram_safety_margin_mib == 512
+
+
+def test_vram_headroom_with_margin_disabled() -> None:
+    gpu = GpuInfo(available=True, total_mib=12288, used_mib=4288, free_mib=8000)
+    cfg = PharosConfig(kv_mib_per_1k=32, vram_safety_margin_mib=0)
+    report = Accountant(cfg).report(loaded_ctx=4096, gpu=gpu)
     assert report.vram_headroom_tokens == 250_000
+
+
+def test_vram_headroom_clamps_when_margin_exceeds_free() -> None:
+    """Nearly full card: the honest headroom is zero, not negative."""
+    gpu = GpuInfo(available=True, total_mib=12288, used_mib=12000, free_mib=288)
+    report = Accountant(PharosConfig(kv_mib_per_1k=32)).report(loaded_ctx=4096, gpu=gpu)
+    assert report.vram_headroom_tokens == 0
+    assert report.achievable_ctx_estimate == 4096  # you are already at the ceiling
+
+
+def test_achievable_ctx_is_loaded_plus_headroom() -> None:
+    gpu = GpuInfo(available=True, total_mib=12288, used_mib=4288, free_mib=8000)
+    report = Accountant(PharosConfig(kv_mib_per_1k=32)).report(loaded_ctx=4096, gpu=gpu)
+    assert report.achievable_ctx_estimate == 4096 + 234_000
+
+
+def test_achievable_ctx_is_none_without_gpu_or_model() -> None:
+    no_gpu = Accountant(PharosConfig()).report(loaded_ctx=4096, gpu=GpuInfo(available=False))
+    assert no_gpu.achievable_ctx_estimate is None
+    gpu = GpuInfo(available=True, total_mib=12288, used_mib=1000, free_mib=11000)
+    unloaded = Accountant(PharosConfig()).report(loaded_ctx=None, gpu=gpu)
+    assert unloaded.achievable_ctx_estimate is None
 
 
 def test_vram_headroom_is_none_without_a_resident_model() -> None:
