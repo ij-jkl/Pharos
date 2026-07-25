@@ -35,16 +35,26 @@ def create_app(
     *,
     tokenizer: TokenCounter | None = None,
     resolve_tokenizer: bool = True,
+    tokenizer_model: str | None = None,
 ) -> FastAPI:
     """Build the proxy app. ``tokenizer=None`` + ``resolve_tokenizer=False`` forces the
-    heuristic counting path (used by tests); by default the GGUF is resolved from config."""
+    heuristic counting path (used by tests); by default the GGUF is resolved from config.
+
+    ``tokenizer_model`` names the model whose vocabulary ``tokenizer`` holds. Leave it None to
+    accept every count at face value (the default for an injected test double); set it and any
+    request naming a different model has its count marked untrusted rather than exact."""
     if tokenizer is None and resolve_tokenizer:
         gguf = resolve_gguf_path(config)
         if gguf is not None:
             tokenizer = GgufTokenizer(gguf)
+            # Remember WHICH model this vocabulary belongs to. v0.1 loads exactly one, so a
+            # request naming a different model must not have its count labelled exact.
+            tokenizer_model = config.model
 
     client = httpx.AsyncClient(base_url=config.backend_url, timeout=_UPSTREAM_TIMEOUT)
-    state = ProxyState(bus=bus, client=client, tokenizer=tokenizer)
+    state = ProxyState(
+        bus=bus, client=client, tokenizer=tokenizer, tokenizer_model=tokenizer_model
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

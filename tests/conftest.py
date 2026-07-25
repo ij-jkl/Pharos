@@ -56,12 +56,14 @@ async def make_proxy(bus: EventBus) -> AsyncIterator[MakeProxy]:
         *,
         tokenizer: TokenCounter | None = None,
         config: PharosConfig | None = None,
+        tokenizer_model: str | None = None,
     ) -> httpx.AsyncClient:
         app = create_app(
             config if config is not None else PharosConfig(),
             bus,
             tokenizer=tokenizer,
             resolve_tokenizer=False,  # tests must never depend on the host's Ollama store
+            tokenizer_model=tokenizer_model,
         )
         client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://pharos.test"

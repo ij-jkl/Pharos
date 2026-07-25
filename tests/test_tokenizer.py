@@ -45,6 +45,35 @@ def test_cache_counts_once_per_content() -> None:
     assert spy.calls == ["hello"]
 
 
+def test_cache_does_not_leak_counts_across_tokenizers() -> None:
+    """A count is only meaningful for the vocabulary that produced it.
+
+    Keying on the text alone would hand one model's count to another the moment more than one
+    tokenizer exists — a wrong number, delivered with a cache hit's confidence.
+    """
+    cache = TokenCountCache()
+    qwen = CountingSpy()
+    llama = CountingSpy()
+
+    assert cache.get_or_count("hello world", qwen, identity="/blobs/qwen") == 11
+    # Same text, different vocabulary: must miss and recount, not reuse the entry above.
+    assert cache.get_or_count("hello world", llama, identity="/blobs/llama") == 11
+    assert qwen.calls == ["hello world"]
+    assert llama.calls == ["hello world"]
+
+    # ...and each identity still caches independently on a repeat.
+    cache.get_or_count("hello world", qwen, identity="/blobs/qwen")
+    assert qwen.calls == ["hello world"]
+
+
+def test_cache_identity_defaults_to_a_shared_namespace() -> None:
+    cache = TokenCountCache()
+    spy = CountingSpy()
+    assert cache.get_or_count("abc", spy) == 3
+    assert cache.get_or_count("abc", spy, identity="") == 3
+    assert spy.calls == ["abc"]
+
+
 def test_cache_distinguishes_content() -> None:
     cache = TokenCountCache()
     spy = CountingSpy()

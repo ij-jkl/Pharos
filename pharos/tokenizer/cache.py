@@ -1,10 +1,14 @@
-"""Bounded LRU cache of token counts, keyed by content hash.
+"""Bounded LRU cache of token counts, keyed by tokenizer identity + content hash.
 
 Keys are SHA-256 digests of the text rather than the text itself, so the cache never pins
 large prompt strings in memory. Unchanged content is never re-tokenized. Dictionary access is
 lock-guarded because counting runs in worker threads; the count callable itself runs outside
 the lock (two threads racing on the same new text both count — benign — rather than
 serializing all tokenization behind the cache).
+
+The key is namespaced by an ``identity`` string naming the vocabulary that produced the count.
+A token count is only meaningful for the tokenizer that produced it, so caching on text alone
+would hand one model's count to another the moment more than one tokenizer is in play.
 """
 
 from __future__ import annotations
@@ -30,9 +34,15 @@ class TokenCountCache:
     def __len__(self) -> int:
         return len(self._counts)
 
-    def get_or_count(self, text: str, count: Callable[[str], int]) -> int:
-        """Return the cached count for ``text``, computing and storing it on a miss."""
-        key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    def get_or_count(
+        self, text: str, count: Callable[[str], int], *, identity: str = ""
+    ) -> int:
+        """Return the cached count for ``text`` under ``identity``, computing it on a miss.
+
+        ``identity`` names the vocabulary doing the counting (in practice the GGUF path), so
+        entries produced by different tokenizers can never satisfy each other's lookups.
+        """
+        key = f"{identity}\x00{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
         with self._lock:
             cached = self._counts.get(key)
             if cached is not None:
