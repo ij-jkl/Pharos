@@ -25,6 +25,9 @@ CLAUDE.local.md
 # Machine-specific runtime config (copy pharos.toml.example -> pharos.toml locally)
 pharos.toml
 
+# Working log of a desktop validation run; DESKTOP_VALIDATION.md is the durable doc
+VALIDATION_FINDINGS.md
+
 # Model weights (e.g. a GGUF pulled for offline tokenizer tests) — never commit these
 *.gguf
 

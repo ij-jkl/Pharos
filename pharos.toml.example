@@ -23,6 +23,17 @@ alert_threshold = 0.90
 # KV-cache VRAM estimate: MiB per 1K context tokens. This is an ESTIMATE only (it varies with
 # architecture, flash-attention and KV-cache quantization); the TUI labels it as such and
 # always trusts measured free VRAM over this number.
+#
+# 32 is a deliberately conservative default, NOT a universal constant — the right value is
+# model-specific. To measure it for your model: load it at two different num_ctx values and
+# take the size_vram delta reported by /api/ps, then divide by the context delta.
+#
+#   curl -s localhost:11434/api/chat -d '{"model":"M","messages":[{"role":"user","content":"hi"}],"options":{"num_ctx":32768},"stream":false}' >/dev/null
+#   curl -s localhost:11434/api/ps            # note size_vram
+#   ... repeat with num_ctx 65536, note size_vram again ...
+#   kv_mib_per_1k = (vram2 - vram1) / 1048576 / ((ctx2 - ctx1) / 1000)
+#
+# Measured examples: qwen3.5-9b-heretic (9B, Q8_0) ≈ 26.
 kv_mib_per_1k = 32
 
 # Where Pharos itself listens. Point your coding agent at this address (not directly at Ollama).
