@@ -127,9 +127,16 @@ class MismatchBanner(Static):
             return
         ratio = profile.ctx_mismatch_ratio
         pct = f" ({ratio:.1%} of capacity)" if ratio is not None else ""
+        achievable = profile.budget.achievable_ctx_estimate
+        if achievable is not None and achievable < backend.advertised_max_ctx:
+            # The advertised window does not fit in VRAM: point at the reachable ceiling
+            # instead of an impossible number. Same rule as profiler.cli.mismatch_advice.
+            advice = f"raise num_ctx toward ≈{achievable:,} (hardware ceiling, estimate)"
+        else:
+            advice = "raise num_ctx to use the full window"
         text = Text(
             f"⚠ CONTEXT MISMATCH — advertised {backend.advertised_max_ctx:,} · "
-            f"loaded {backend.loaded_ctx:,}{pct} — raise num_ctx to use the full window",
+            f"loaded {backend.loaded_ctx:,}{pct} — {advice}",
             style="bold",
         )
         self.last_text = text.plain

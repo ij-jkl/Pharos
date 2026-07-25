@@ -103,11 +103,86 @@ async def test_mismatch_banner_is_persistently_visible(
         assert "CONTEXT MISMATCH" in banner.last_text
         assert "262,144" in banner.last_text
         assert "32,768" in banner.last_text
-        # VRAM gauge is actionable: measured free VRAM plus the estimated token headroom.
+        # Achievable (32,768 + 234,000) exceeds the advertised max here, so the banner may
+        # honestly point at the full window rather than a hardware ceiling.
+        assert "full window" in banner.last_text
+        # VRAM gauge is actionable: measured free VRAM plus the estimated token headroom
+        # (which holds back the 512 MiB safety margin: (8000-512)/32*1000).
         vram = app.query_one(VramGauge).last_text
         assert "8,000" in vram
-        assert "250,000" in vram
+        assert "234,000" in vram
         assert "estimate" in vram
+
+
+def vram_constrained_profile() -> EnvironmentProfile:
+    """This desktop for real: ~10 GB of weights resident, the advertised max unreachable."""
+    gpu = GpuInfo(
+        available=True,
+        name="NVIDIA GeForce RTX 3060",
+        total_mib=12288,
+        used_mib=11000,
+        free_mib=1288,
+        source="nvml",
+    )
+    backend = BackendInfo(
+        reachable=True,
+        base_url="http://localhost:11434",
+        model="qwen3.5-9b-heretic:latest",
+        advertised_max_ctx=262144,
+        loaded_ctx=32768,
+    )
+    budget = Accountant(CONFIG).report(loaded_ctx=32768, gpu=gpu)
+    return EnvironmentProfile(
+        gpu=gpu,
+        backend=backend,
+        budget=budget,
+        ctx_mismatch=True,
+        ctx_mismatch_ratio=32768 / 262144,
+    )
+
+
+async def test_banner_points_at_hardware_ceiling_when_advertised_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Telling the user to raise num_ctx to a window VRAM cannot hold is worse than silence."""
+    _patch_profile(monkeypatch, vram_constrained_profile())
+    app = PharosApp(config=CONFIG, bus=EventBus())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        banner = app.query_one(MismatchBanner).last_text
+        # achievable = 32,768 + (1288-512)/32*1000 = 57,018 — well short of 262,144.
+        assert "57,018" in banner
+        assert "ceiling" in banner
+        assert "full window" not in banner
+
+
+async def test_rejected_request_never_wears_the_green_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 4xx is a completed rejection: in a tool about making failures visible, it gets its
+    own glyph, not the success one."""
+    _patch_profile(monkeypatch, mismatched_profile())
+    bus = EventBus()
+    app = PharosApp(config=CONFIG, bus=bus)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        bus.publish(
+            RequestCompleted(
+                request_id=3,
+                status_code=400,
+                prompt_eval_count=None,
+                eval_count=None,
+                eval_duration_ns=None,
+                tokens_per_second=None,
+                duration_s=0.1,
+            )
+        )
+        await pilot.pause()
+        log_text = "\n".join(app.query_one(EventLog).plain)
+        assert "✕ 400" in log_text
+        assert "✓" not in log_text
+        assert "✕ 400" in app.query_one(ThroughputLine).last_text
 
 
 async def test_estimate_then_reconciled_exact_in_gauge_and_log(

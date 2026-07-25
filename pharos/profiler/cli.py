@@ -121,7 +121,10 @@ def _add_budget_rows(grid: Table, budget: BudgetReport, *, gpu_available: bool) 
     if gpu_available:
         line = f"{_mib(budget.vram_free_mib)} free [dim](measured)[/]"
         if budget.vram_headroom_tokens is not None:
-            line += f" · ≈{_tok(budget.vram_headroom_tokens)} more ctx tokens [dim](estimate)[/]"
+            line += (
+                f" · ≈{_tok(budget.vram_headroom_tokens)} more ctx tokens "
+                f"[dim](estimate · {budget.vram_safety_margin_mib} MiB margin held back)[/]"
+            )
         else:
             line += " · [dim]headroom N/A — no model resident to measure against[/]"
         grid.add_row("VRAM headroom", line)
@@ -135,7 +138,26 @@ def _mismatch_banner(profile: EnvironmentProfile) -> Panel:
     body = Text.from_markup(
         f"The model advertises a max context of [bold]{advertised:,}[/] tokens, but only "
         f"[bold]{loaded:,}[/] are actually loaded ([bold]{ratio:.1%}[/] of capacity).\n"
-        f"You are running with far less context than the model supports — raise Ollama's "
-        f"[bold]num_ctx[/] to use more."
+        + mismatch_advice(advertised, profile.budget.achievable_ctx_estimate, rich_markup=True)
     )
     return Panel(body, title="[bold red]⚠  CONTEXT MISMATCH[/]", border_style="red", expand=False)
+
+
+def mismatch_advice(advertised: int, achievable: int | None, *, rich_markup: bool) -> str:
+    """The banner's action line, honest about hardware limits.
+
+    Advising "raise num_ctx to the advertised max" when VRAM cannot hold it is a confidently
+    wrong actionable number — following it would OOM or spill to system RAM. When the
+    accountant's (margin-adjusted) ceiling is below the advertised window, point at THAT.
+    Shared by the CLI and TUI banners so the advice can never diverge between them.
+    """
+    b = ("[bold]", "[/]") if rich_markup else ("", "")
+    if achievable is not None and achievable < advertised:
+        return (
+            f"Raise Ollama's {b[0]}num_ctx{b[1]} toward ≈{achievable:,} — the hardware ceiling "
+            f"on this machine (estimate); the advertised {advertised:,} does not fit in VRAM."
+        )
+    return (
+        f"You are running with far less context than the model supports — raise Ollama's "
+        f"{b[0]}num_ctx{b[1]} to use more."
+    )
