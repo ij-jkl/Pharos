@@ -29,6 +29,13 @@ class ContextUsage:
     source: str  # "gguf" | "request" | "heuristic" | "reconciled"
 
 
+# Sources of the form "gguf:<reason>" are counts Pharos cannot vouch for; the suffix says why.
+_UNTRUSTED_REASONS = {
+    "gguf:other-model": "other model's tokenizer",
+    "gguf:images": "images not counted",
+}
+
+
 def token_label(tokens: int, *, exact: bool, source: str) -> Text:
     """Render a count with its provenance — the one place the estimate/exact marking lives."""
     if exact:
@@ -36,6 +43,13 @@ def token_label(tokens: int, *, exact: bool, source: str) -> Text:
         return Text.assemble((f"{tokens:,}", "bold green"), (f" ({suffix})", "green"))
     if source == "heuristic":
         return Text.assemble((f"~{tokens:,}", "bold yellow"), (" (heuristic chars/4)", "yellow"))
+    if source.startswith("gguf:"):
+        # A count Pharos cannot stand behind. Red, not yellow: these are not good estimates,
+        # they are numbers of unknown validity, and the reason is named rather than implied.
+        reason = _UNTRUSTED_REASONS.get(source, source.partition(":")[2])
+        return Text.assemble(
+            (f"~{tokens:,}", "bold red"), (f" (untrusted · {reason})", "red")
+        )
     return Text.assemble((f"~{tokens:,}", "bold yellow"), (f" (estimate · {source})", "yellow"))
 
 
@@ -175,6 +189,9 @@ class VramGauge(Static):
             if headroom is not None:
                 text.append(f" · ≈{headroom:,} more ctx tokens fit", style="yellow")
                 text.append(" (estimate)", style="dim yellow")
+            elif budget is not None:
+                # Free VRAM alone cannot answer this until the weights are actually resident.
+                text.append(" · headroom N/A — no model resident", style="dim")
         self.last_text = text.plain
         self.update(text)
 
