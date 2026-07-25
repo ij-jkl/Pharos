@@ -33,9 +33,15 @@ class Accountant:
             kv_estimate = self._kv_mib_per_1k * loaded_ctx / 1000
         headroom_tokens: int | None = None
         free_mib = gpu.free_mib if gpu.available else None
-        if free_mib is not None:
+        if free_mib is not None and loaded_ctx is not None:
             # ESTIMATE (same kv_mib_per_1k the KV figure uses): tokens that still fit before
             # the KV cache would exhaust measured free VRAM. Never presented as measured.
+            #
+            # Requires a resident model. With nothing loaded, free VRAM still has to absorb
+            # the weights before a single context token exists, so the same arithmetic
+            # overstates wildly — measured at ~20x on a 12GB card with a 9B Q8_0 (335,718
+            # tokens claimed, 16,625 actually reachable once resident). None is the honest
+            # answer; the renderers say why.
             headroom_tokens = int(free_mib / self._kv_mib_per_1k * 1000)
         return BudgetReport(
             loaded_ctx=loaded_ctx,

@@ -122,6 +122,8 @@ def _add_budget_rows(grid: Table, budget: BudgetReport, *, gpu_available: bool) 
         line = f"{_mib(budget.vram_free_mib)} free [dim](measured)[/]"
         if budget.vram_headroom_tokens is not None:
             line += f" · ≈{_tok(budget.vram_headroom_tokens)} more ctx tokens [dim](estimate)[/]"
+        else:
+            line += " · [dim]headroom N/A — no model resident to measure against[/]"
         grid.add_row("VRAM headroom", line)
 
 

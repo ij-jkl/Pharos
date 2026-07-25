@@ -56,8 +56,18 @@ def test_vram_headroom_tokens_estimate() -> None:
     assert report.vram_headroom_tokens == 250_000
 
 
-def test_vram_headroom_needs_no_loaded_ctx() -> None:
+def test_vram_headroom_is_none_without_a_resident_model() -> None:
+    """Free VRAM cannot answer "how much more context fits" until the weights are loaded.
+
+    With nothing resident, that free VRAM still has to absorb the model itself before a single
+    context token exists, so the arithmetic overstates wildly — ~20x on the real hardware
+    (335,718 tokens claimed vs 16,625 reachable once loaded). None is the honest answer, and
+    it sits beside an equally honest "usable budget N/A".
+    """
     gpu = GpuInfo(available=True, total_mib=12288, used_mib=288, free_mib=6400)
     report = Accountant(PharosConfig(kv_mib_per_1k=32)).report(loaded_ctx=None, gpu=gpu)
     assert report.usable_budget is None
-    assert report.vram_headroom_tokens == 200_000
+    assert report.vram_headroom_tokens is None
+    # The measured facts are still reported — only the derived projection is withheld.
+    assert report.vram_free_mib == 6400
+    assert report.vram_total_mib == 12288
