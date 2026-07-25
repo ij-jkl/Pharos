@@ -5,9 +5,21 @@ advertised max context (GGUF metadata) and the ACTUAL loaded context window. Deg
 BackendInfo(reachable=False, ...) when the backend cannot be reached (e.g. the dev laptop with
 no Ollama running) rather than raising.
 
-Field extraction is deliberately defensive: exact JSON key names vary across Ollama versions and
-get confirmed on the desktop. The /api/ps loaded-context value is looked up under several
-candidate keys, and the advertised max is found by architecture prefix or any *.context_length.
+Field names — CONFIRMED against Ollama 0.31.1 (RTX 3060, qwen3.5-9b-heretic, 2026-07-24):
+
+* /api/ps  -> the loaded window is a TOP-LEVEL ``context_length`` on the model entry
+  (e.g. 32768). Its ``details`` object carries no context key at all.
+* /api/show -> the advertised max is ``model_info["<arch>.context_length"]``, where
+  ``<arch>`` is ``model_info["general.architecture"]`` (e.g. "qwen35" -> 262144).
+
+``context``/``num_ctx`` are kept as unconfirmed fallbacks for other Ollama versions. A
+``details.context_length`` fallback was deliberately REMOVED: the sibling /api/tags payload
+uses that exact key for the ADVERTISED max, so honouring it here would report
+advertised-as-loaded, yield ratio 1.0 and silently suppress the mismatch banner. A fallback
+that can be confidently wrong is worse than no fallback.
+
+Model names are matched tag-insensitively (see ``_normalize_model_name``): Ollama accepts an
+untagged name everywhere but reports ``name:tag`` back from /api/ps.
 """
 
 from __future__ import annotations
@@ -17,9 +29,13 @@ from typing import Any
 import httpx
 
 from pharos.config import PharosConfig
+from pharos.naming import normalize_model_name
 from pharos.profiler.types import BackendInfo
 
 _DEFAULT_TIMEOUT = httpx.Timeout(5.0, connect=3.0)
+# "context_length" is confirmed (Ollama 0.31.1); the rest are version fallbacks. Never add
+# "details.context_length" here — in /api/tags that key holds the advertised max, not the
+# loaded window, and reporting it as loaded would silently suppress the mismatch banner.
 _LOADED_CTX_KEYS = ("context_length", "context", "num_ctx")
 
 
@@ -135,8 +151,10 @@ def _select_model(
 ) -> tuple[str | None, dict[str, Any] | None]:
     entries = [_as_dict(m) for m in models]
     if preferred is not None:
+        wanted = normalize_model_name(preferred)
         for entry in entries:
-            if preferred in (entry.get("model"), entry.get("name")):
+            candidates = (_as_str(entry.get("model")), _as_str(entry.get("name")))
+            if any(c is not None and normalize_model_name(c) == wanted for c in candidates):
                 return preferred, entry
         return preferred, None
     if entries:
@@ -146,14 +164,20 @@ def _select_model(
 
 
 def _extract_loaded_ctx(model: dict[str, Any]) -> int | None:
+    """Loaded window from an /api/ps entry; None when the backend does not report one.
+
+    None is the honest answer here — it degrades to "loaded N/A" rather than inventing a
+    number that would make the advertised-vs-loaded comparison quietly meaningless.
+    """
     for key in _LOADED_CTX_KEYS:
         value = _as_int(model.get(key))
         if value is not None:
             return value
-    return _as_int(_dig(model, "details", "context_length"))
+    return None
 
 
 def _extract_advertised_ctx(model_info: dict[str, Any], arch: str | None) -> int | None:
+    """Advertised max from /api/show ``model_info``, by arch prefix then any suffix match."""
     if arch is not None:
         value = _as_int(model_info.get(f"{arch}.context_length"))
         if value is not None:
