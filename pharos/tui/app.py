@@ -164,10 +164,13 @@ class PharosApp(App[None]):
         if event.tokens_per_second is not None:
             self._tok_s = event.tokens_per_second
 
+        # A 4xx/5xx is a completed *rejection*, not a success: it must never wear the green ✓.
+        ok = event.status_code < 400
+        glyph, style = ("✓ ", "bold green") if ok else ("✕ ", "bold red")
         line = Text.assemble(
             (f"#{event.request_id} ", "bold"),
-            ("✓ ", "bold green"),
-            (f"{event.status_code}", "green"),
+            (glyph, style),
+            (f"{event.status_code}", "green" if ok else "red"),
             (" · in ", "dim"),
         )
         if event.prompt_eval_count is not None:
@@ -179,7 +182,10 @@ class PharosApp(App[None]):
         if event.tokens_per_second is not None:
             line.append(f" · {event.tokens_per_second:.1f} tok/s", "cyan")
         line.append(f" · {event.duration_s:.2f}s", "dim")
-        self._last_summary = Text(f"#{event.request_id} ✓ {event.status_code}", style="green")
+        summary_glyph, summary_style = ("✓", "green") if ok else ("✕", "bold red")
+        self._last_summary = Text(
+            f"#{event.request_id} {summary_glyph} {event.status_code}", style=summary_style
+        )
         self._log_line(line)
         self._render_gauges()
 

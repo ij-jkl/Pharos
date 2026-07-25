@@ -28,6 +28,9 @@ pharos.toml
 # Working log of a desktop validation run; DESKTOP_VALIDATION.md is the durable doc
 VALIDATION_FINDINGS.md
 
+# Per-machine calibration data written by the proxy (token counts only, never text)
+pharos_observations.json
+
 # Model weights (e.g. a GGUF pulled for offline tokenizer tests) — never commit these
 *.gguf
 

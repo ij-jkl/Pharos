@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import sys
 from collections.abc import Iterator
 
 import uvicorn
@@ -87,7 +88,21 @@ async def _run(config: PharosConfig) -> None:
 
 
 def main() -> None:
-    """Console-script entry point for the full Pharos app."""
+    """Console-script entry point: bare `pharos` runs the TUI; `pharos check` pre-flights.
+
+    Subcommand dispatch happens before any TUI import cost is paid, and the bare invocation
+    is untouched — pointing a coding agent at the proxy works exactly as it did in v0.1.
+    """
+    argv = sys.argv[1:]
+    if argv and argv[0] == "check":
+        from pharos.preflight.cli import main as check_main
+
+        raise SystemExit(check_main(argv[1:]))
+    if argv:
+        raise SystemExit(
+            f"pharos: unknown arguments {argv!r} — run `pharos` for the dashboard "
+            f"or `pharos check --help` for the pre-flight analyzer"
+        )
     try:
         config = load_config()
     except ConfigError as exc:

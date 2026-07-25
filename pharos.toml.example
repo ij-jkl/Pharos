@@ -36,6 +36,11 @@ alert_threshold = 0.90
 # Measured examples: qwen3.5-9b-heretic (9B, Q8_0) ≈ 26.
 kv_mib_per_1k = 32
 
+# Free VRAM held back before estimating headroom (and the num_ctx ceiling the mismatch banner
+# suggests). Drivers, fragmentation and display compositing claim VRAM without warning; advice
+# that spends the last free byte is an OOM invitation.
+vram_safety_margin_mib = 512
+
 # Where Pharos itself listens. Point your coding agent at this address (not directly at Ollama).
 proxy_host = "127.0.0.1"
 proxy_port = 11435
@@ -43,5 +48,17 @@ proxy_port = 11435
 # The TUI owns the terminal, so request/error detail goes to a rotating log file instead.
 log_file = "pharos.log"
 
-# Reserved for a later tier (the auditor / filesystem watcher). Unused in v0.1.
+# Root that `pharos check` resolves file references against (the repo you point your coding
+# agent at). Unset: the current directory is used, with a warning.
 # target_folder = "."
+
+# --- pre-flight calibration (v0.2 "Warn") -------------------------------------------------------
+
+# Tokens your coding agent adds on top of a pasted prompt: system prompt, tool catalogue,
+# injected context. Normally learned automatically from traffic observed through the proxy;
+# set this to pin it manually (it then takes precedence over the learned value).
+# client_overhead_tokens = 10000
+
+# Where the proxy records per-request token counts for that calibration. Counts only — no
+# prompt text, file names or any reconstructable content is ever written.
+observations_file = "pharos_observations.json"

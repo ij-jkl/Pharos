@@ -1,6 +1,6 @@
 [project]
 name = "pharos"
-version = "0.1.0"
+version = "0.2.0"
 description = "Transparent, context-aware orchestration proxy and live terminal dashboard for local LLM backends."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

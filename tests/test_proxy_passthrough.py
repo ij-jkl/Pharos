@@ -608,6 +608,103 @@ async def test_matching_model_keeps_exact_label(
     assert (counted.source, counted.exact) == ("gguf", True)
 
 
+# --- calibration recording -----------------------------------------------------------------------
+
+
+async def test_completed_request_records_a_counts_only_observation(
+    respx_mock, bus, tmp_path
+) -> None:
+    """Observe feeds Warn: a successful request leaves one record behind — counts, never text."""
+    import asyncio
+    from pathlib import Path
+
+    from pharos.calibration import load_observations
+    from pharos.config import PharosConfig
+    from pharos.proxy.app import create_app
+    from tests.conftest import FakeTokenizer
+
+    respx_mock.post(f"{BASE}/api/chat").mock(
+        return_value=httpx.Response(
+            200,
+            content=json.dumps(
+                {"model": "m", "done": True, "prompt_eval_count": 40,
+                 "eval_count": 700, "eval_duration": 2_000_000_000}
+            ).encode(),
+            headers={"content-type": "application/json"},
+        )
+    )
+    obs_path = tmp_path / "obs.json"
+    config = PharosConfig(observations_file=str(obs_path))
+    app = create_app(
+        config, bus, tokenizer=FakeTokenizer(), resolve_tokenizer=False,
+        record_observations=True,
+    )
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    try:
+        await client.post(
+            "/api/chat",
+            content=json.dumps({
+                "model": "m",
+                "messages": [
+                    {"role": "system", "content": "one two three four five six"},
+                    {"role": "user", "content": "alpha beta"},
+                ],
+                "stream": False,
+            }).encode(),
+        )
+        await asyncio.sleep(0.1)  # let the spawned record task run
+    finally:
+        await client.aclose()
+        await app.state.pharos.aclose()  # final flush
+
+    records = load_observations(Path(obs_path))
+    assert len(records) == 1
+    record = records[0]
+    assert record.input_tokens == 40  # reconciled ground truth wins over the estimate
+    assert record.input_exact is True
+    assert record.user_tokens == 2  # "alpha beta" alone — the user-authored portion
+    assert record.messages == 2
+    assert record.output_tokens == 700
+    assert record.model == "m"
+    # And the privacy line holds: no request text anywhere in the file.
+    assert "alpha" not in obs_path.read_text(encoding="utf-8")
+
+
+async def test_rejected_request_is_not_recorded(respx_mock, bus, tmp_path) -> None:
+    import asyncio
+    from pathlib import Path
+
+    from pharos.calibration import load_observations
+    from pharos.config import PharosConfig
+    from pharos.proxy.app import create_app
+    from tests.conftest import FakeTokenizer
+
+    respx_mock.post(f"{BASE}/api/chat").mock(
+        return_value=httpx.Response(
+            400, content=b'{"error":"bad"}', headers={"content-type": "application/json"}
+        )
+    )
+    obs_path = tmp_path / "obs.json"
+    app = create_app(
+        PharosConfig(observations_file=str(obs_path)), bus,
+        tokenizer=FakeTokenizer(), resolve_tokenizer=False, record_observations=True,
+    )
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    try:
+        await client.post(
+            "/api/chat",
+            content=json.dumps(
+                {"model": "m", "messages": [{"role": "user", "content": "hi"}], "stream": False}
+            ).encode(),
+        )
+        await asyncio.sleep(0.1)
+    finally:
+        await client.aclose()
+        await app.state.pharos.aclose()
+
+    assert load_observations(Path(obs_path)) == []  # 4xx traffic is not representative
+
+
 # --- prompt-contributing fields beyond message content ------------------------------------------
 #
 # Audited against Ollama 0.31.1: tools, assistant tool_calls history and /api/generate `context`

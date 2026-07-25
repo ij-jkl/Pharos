@@ -29,10 +29,21 @@ class PharosConfig(BaseModel):
     warn_threshold: float = Field(default=0.80, ge=0.0, le=1.0)
     alert_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
     kv_mib_per_1k: float = Field(default=32.0, gt=0.0)
+    # Free VRAM held back before any headroom estimate: driver allocations, fragmentation and
+    # display compositing all claim memory with no warning, and advice that consumes the last
+    # free byte is an OOM invitation, not guidance.
+    vram_safety_margin_mib: int = Field(default=512, ge=0)
     proxy_host: str = "127.0.0.1"
     proxy_port: int = Field(default=11435, ge=1, le=65535)
     log_file: str = Field(default="pharos.log", min_length=1)
     target_folder: str | None = None
+    # Pre-flight: tokens the coding agent adds on top of a pasted prompt (system prompt, tool
+    # catalogue, injected context). When set it overrides the value learned from observed
+    # traffic; when neither exists the pre-flight floor omits overhead and says so.
+    client_overhead_tokens: int | None = Field(default=None, ge=0)
+    # Where the proxy records per-request token counts (counts only, never text) so the
+    # pre-flight check can calibrate against real observed traffic.
+    observations_file: str = Field(default="pharos_observations.json", min_length=1)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

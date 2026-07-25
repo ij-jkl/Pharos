@@ -58,7 +58,11 @@ class BudgetReport:
     kv_estimate_mib: float | None  # estimated, not measured
     vram_free_mib: int | None  # measured (None when no GPU)
     vram_total_mib: int | None
-    vram_headroom_tokens: int | None  # ESTIMATE: additional ctx tokens that fit in free VRAM
+    # ESTIMATE: additional ctx tokens that fit in free VRAM after the safety margin is held back
+    vram_headroom_tokens: int | None
+    vram_safety_margin_mib: int = 0  # MiB deliberately excluded from the headroom estimate
+    # ESTIMATE: loaded_ctx + headroom — how far num_ctx can actually go on this hardware
+    achievable_ctx_estimate: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

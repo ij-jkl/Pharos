@@ -83,6 +83,26 @@ report — GPU, model, advertised vs loaded context, budget — without the TUI:
 uv run pharos-profile
 ```
 
+## Pre-flight a prompt (v0.2 "Warn")
+
+Before pasting a big prompt into your coding agent, ask whether it can possibly fit:
+
+```bash
+uv run pharos check "Refactor `src/auth/login.py` and `src/auth/session.py` per docs/plan.md"
+uv run pharos check --file prompt.txt
+```
+
+`pharos check` extracts the files you explicitly named, tokenizes them exactly, adds the
+client overhead learned from traffic previously observed through the proxy (system prompt,
+tool catalogue — the part that made your 50-token prompt a 20K request), and compares the
+total against the live usable budget. The number is a **floor**: exact for what you named,
+silent about whatever the agent decides to read on its own. Ambiguous, missing, binary and
+directory references are listed rather than silently dropped. Exit codes: `0` fits, `1`
+exceeds, `2` no verdict (backend unreachable or no model loaded) — scriptable.
+
+File references are resolved against `target_folder` from `pharos.toml`. The check runs
+entirely locally and sends nothing to the backend.
+
 ## Point your client at it
 
 Use Pharos as your only endpoint; it forwards everything and watches the four inference
@@ -97,18 +117,22 @@ Passthrough is byte-for-byte in both directions: request bodies are forwarded ve
 (Pharos parses only a copy for counting) and responses are re-streamed raw, without
 re-encoding or re-chunking.
 
-## What v0.1 does NOT do
+## What Pharos does NOT do (yet)
 
 - **No request mutation, ever.** No fields added or removed, no prompt rewriting, no
-  `stream_options` injection.
+  `stream_options` injection. The proxy remains a pure observer; `pharos check` is advisory
+  and runs entirely outside the request path.
+- **No prediction of which files an agent will read** — `pharos check` only counts files you
+  name explicitly, which is why its verdict is a floor and says so.
 - **No history compaction** and no automatic trimming when you approach the budget — it
   warns; it does not intervene.
 - **No prompt decomposition / task splitting.**
 - **No change auditing / filesystem watching.**
 
-Those belong to later tiers, where Pharos stops being a pure observer. v0.1's contract is
-simple: what your agent sends is what the backend receives, and what you see on the
-dashboard is honestly labeled.
+Those belong to later tiers. The contract is simple: what your agent sends is what the
+backend receives, and every number you see is honestly labeled — exact, estimate, heuristic
+or floor. The one file Pharos writes from observed traffic (`pharos_observations.json`)
+contains token counts only, never text.
 
 ## Development
 
