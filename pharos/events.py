@@ -40,7 +40,11 @@ class InputCounted:
     request_id: int
     tokens: int
     exact: bool
-    source: str  # "gguf" (real tokenizer) | "request" (client token array) | "heuristic"
+    # "gguf" (the request model's own vocabulary) | "gguf:<reason>" (a count Pharos cannot
+    # vouch for — "gguf:other-model" when the loaded vocabulary belongs to a DIFFERENT model,
+    # "gguf:images" when the request carries images that no text count can price; never exact,
+    # rendered as untrusted) | "request" (client token array) | "heuristic"
+    source: str
 
 
 @dataclass(frozen=True, slots=True)

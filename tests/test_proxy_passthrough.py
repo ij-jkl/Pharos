@@ -553,3 +553,214 @@ async def test_on_close_fires_even_when_upstream_close_raises() -> None:
     await resp.background()  # aclose raises inside -> swallowed; the event still fires
 
     assert fired == [True]
+
+
+# --- counting with the wrong model's vocabulary -------------------------------------------------
+#
+# v0.1 loads ONE tokenizer, from config.model. A request naming a different model gets counted
+# with it anyway; confirmed on real hardware to be wrong (llama3.2 counted 5 by Qwen's vocab vs
+# Ollama's 6). The count must therefore never be presented as exact.
+
+_GEN_DONE = json.dumps(
+    {"model": "m", "done": True, "prompt_eval_count": 3, "eval_count": 4,
+     "eval_duration": 2_000_000_000}
+).encode()
+
+
+async def test_other_model_count_is_downgraded_to_untrusted(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    """raw=true would normally be exact — but not when the vocabulary belongs to another model."""
+    respx_mock.post(f"{BASE}/api/generate").mock(
+        return_value=httpx.Response(
+            200, content=_GEN_DONE, headers={"content-type": "application/json"}
+        )
+    )
+    client = make_proxy(tokenizer=fake_tokenizer, tokenizer_model="qwen3.5-9b-heretic")
+    await client.post(
+        "/api/generate",
+        content=b'{"model":"llama3.2:1b","prompt":"a b c","raw":true,"stream":false}',
+    )
+
+    counted = (await drain(events, InputCounted))[InputCounted]
+    assert counted.source == "gguf:other-model"
+    assert counted.exact is False  # raw=true alone must NOT buy exactness here
+    assert counted.tokens == 3  # still reported — labelled honestly, not withheld
+
+
+async def test_matching_model_keeps_exact_label(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    """The configured model still counts as exact, and an absent tag must not break the match."""
+    respx_mock.post(f"{BASE}/api/generate").mock(
+        return_value=httpx.Response(
+            200, content=_GEN_DONE, headers={"content-type": "application/json"}
+        )
+    )
+    # config says untagged, request says ":latest" — the same model, so exactness survives.
+    client = make_proxy(tokenizer=fake_tokenizer, tokenizer_model="qwen3.5-9b-heretic")
+    await client.post(
+        "/api/generate",
+        content=b'{"model":"qwen3.5-9b-heretic:latest","prompt":"a b c","raw":true,"stream":false}',
+    )
+
+    counted = (await drain(events, InputCounted))[InputCounted]
+    assert (counted.source, counted.exact) == ("gguf", True)
+
+
+# --- prompt-contributing fields beyond message content ------------------------------------------
+#
+# Audited against Ollama 0.31.1: tools, assistant tool_calls history and /api/generate `context`
+# all reach the prompt and were counted as zero. `format`, `response_format`, `tool_choice` and
+# `think` were measured NOT to reach it, so they stay uncounted on purpose.
+
+_TOOL = {"type": "function", "function": {
+    "name": "get_weather", "description": "Get the current weather for a city",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}}
+
+
+async def _counted_for(respx_mock, make_proxy, events, tokenizer, path, payload):
+    respx_mock.post(f"{BASE}{path}").mock(
+        return_value=httpx.Response(
+            200, content=_GEN_DONE, headers={"content-type": "application/json"}
+        )
+    )
+    client = make_proxy(tokenizer=tokenizer)
+    await client.post(path, content=json.dumps(payload).encode())
+    return (await drain(events, InputCounted))[InputCounted]
+
+
+@pytest.mark.parametrize("path", ["/api/chat", "/v1/chat/completions"])
+async def test_tool_definitions_are_counted(
+    respx_mock, make_proxy, events, fake_tokenizer, path
+) -> None:
+    """Previously zero: a coding agent ships its whole tool catalogue on every request."""
+    msg = {"role": "user", "content": "alpha beta"}
+    without = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, path,
+        {"model": "m", "messages": [msg], "stream": False},
+    )
+    with_tools = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, path,
+        {"model": "m", "messages": [msg], "tools": [_TOOL], "stream": False},
+    )
+    assert without.tokens == 2
+    assert with_tools.tokens > without.tokens
+    # The serialized schema is what gets counted, so the growth tracks the tool's size.
+    serialized = json.dumps([_TOOL], ensure_ascii=False)
+    assert with_tools.tokens == without.tokens + len(serialized.split())
+    assert with_tools.exact is False  # still an estimate, never promoted
+
+
+@pytest.mark.parametrize("path", ["/api/chat", "/v1/chat/completions"])
+async def test_assistant_tool_calls_history_is_counted(
+    respx_mock, make_proxy, events, fake_tokenizer, path
+) -> None:
+    calls = [{"function": {"name": "get_weather", "arguments": {"city": "Lisbon"}}}]
+    counted = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, path,
+        {"model": "m", "stream": False, "messages": [
+            {"role": "user", "content": "alpha"},
+            {"role": "assistant", "content": "", "tool_calls": calls},
+            {"role": "tool", "content": "sunny"}]},
+    )
+    # "alpha" + "sunny" alone would be 2; the serialized tool_calls add the rest.
+    assert counted.tokens > 2
+
+
+async def test_generate_context_array_adds_its_length(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    """`context` is an already-tokenized prefix: it contributes length, not text."""
+    counted = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, "/api/generate",
+        {"model": "m", "prompt": "a b c", "context": list(range(50)),
+         "raw": True, "stream": False},
+    )
+    assert counted.tokens == 3 + 50
+    # Length is close but not exact (measured +49 for 50 entries), so raw=true loses exactness.
+    assert counted.exact is False
+
+
+async def test_generate_suffix_is_counted(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    counted = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, "/api/generate",
+        {"model": "m", "prompt": "a b", "suffix": "c d e", "stream": False},
+    )
+    assert counted.tokens == 5
+
+
+async def test_completions_suffix_is_counted(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    counted = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, "/v1/completions",
+        {"model": "m", "prompt": "a b", "suffix": "c d e", "stream": False},
+    )
+    assert counted.tokens == 5
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/api/chat", {"model": "m", "stream": False, "messages": [
+            {"role": "user", "content": "look", "images": ["BASE64DATA"]}]}),
+        ("/v1/chat/completions", {"model": "m", "stream": False, "messages": [
+            {"role": "user", "content": [
+                {"type": "text", "text": "look"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}]}),
+    ],
+)
+async def test_images_downgrade_the_label(
+    respx_mock, make_proxy, events, fake_tokenizer, path, payload
+) -> None:
+    """Vision tokens are priced by a different mechanism; no text count can stand in."""
+    counted = await _counted_for(respx_mock, make_proxy, events, fake_tokenizer, path, payload)
+    assert counted.source == "gguf:images"
+    assert counted.exact is False
+
+
+@pytest.mark.parametrize("field", ["format", "response_format", "tool_choice", "think"])
+async def test_decoding_only_fields_are_not_counted(
+    respx_mock, make_proxy, events, fake_tokenizer, field
+) -> None:
+    """Measured on Ollama 0.31.1 not to reach the prompt — counting them would inflate."""
+    base = {"model": "m", "stream": False, "messages": [{"role": "user", "content": "alpha beta"}]}
+    counted = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, "/api/chat",
+        {**base, field: {"type": "object", "properties": {"x": {"type": "string"}}}},
+    )
+    assert counted.tokens == 2
+
+
+async def test_ollama_chat_reads_list_shaped_content(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    """The native route used to read only plain strings, silently counting parts as zero."""
+    counted = await _counted_for(
+        respx_mock, make_proxy, events, fake_tokenizer, "/api/chat",
+        {"model": "m", "stream": False, "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "alpha beta gamma"}]}]},
+    )
+    assert counted.tokens == 3
+
+
+async def test_unknown_tokenizer_model_is_taken_at_face_value(
+    respx_mock, make_proxy, events, fake_tokenizer
+) -> None:
+    """With no declared tokenizer model there is nothing to contradict the count."""
+    respx_mock.post(f"{BASE}/api/generate").mock(
+        return_value=httpx.Response(
+            200, content=_GEN_DONE, headers={"content-type": "application/json"}
+        )
+    )
+    client = make_proxy(tokenizer=fake_tokenizer)  # tokenizer_model left None
+    await client.post(
+        "/api/generate",
+        content=b'{"model":"anything-at-all","prompt":"a b c","raw":true,"stream":false}',
+    )
+
+    counted = (await drain(events, InputCounted))[InputCounted]
+    assert (counted.source, counted.exact) == ("gguf", True)

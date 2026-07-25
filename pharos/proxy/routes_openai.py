@@ -16,7 +16,10 @@ from fastapi import APIRouter, Request, Response
 from pharos.proxy.forward import (
     InputSpec,
     ProxyState,
+    content_text,
     counted_forward,
+    json_text,
+    message_has_image,
     payload_model,
     payload_stream,
 )
@@ -40,18 +43,33 @@ def build_router(state: ProxyState) -> APIRouter:
 
 def _extract_chat(payload: dict[str, Any]) -> InputSpec:
     texts: list[str] = []
+    has_image = False
     messages = payload.get("messages")
     if isinstance(messages, list):
         for message in messages:
-            if isinstance(message, dict):
-                text = _content_text(message.get("content"))
-                if text:
-                    texts.append(text)
+            if not isinstance(message, dict):
+                continue
+            text = content_text(message.get("content"))
+            if text:
+                texts.append(text)
+            # Assistant tool calls are replayed into the prompt as part of the history.
+            calls = message.get("tool_calls")
+            if isinstance(calls, list) and calls:
+                texts.append(json_text(calls))
+            if message_has_image(message):
+                has_image = True
+    # Tool definitions dominate a coding agent's input; previously counted as zero.
+    # ``functions`` is the deprecated spelling and lands in the prompt the same way.
+    for key in ("tools", "functions"):
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            texts.append(json_text(value))
     return InputSpec(
         text="\n".join(texts),
         exact=False,
         model=payload_model(payload),
         stream=payload_stream(payload, default=False),
+        opaque="images" if has_image else None,
     )
 
 
@@ -69,23 +87,12 @@ def _extract_completions(payload: dict[str, Any]) -> InputSpec:
         text = "\n".join(item for item in prompt if isinstance(item, str))
     else:
         text = ""
+    # An infill suffix is prompt content like any other.
+    suffix = payload.get("suffix")
+    if isinstance(suffix, str) and suffix:
+        text = f"{text}\n{suffix}"
     return InputSpec(text=text, exact=False, model=model, stream=stream)
 
 
 def _all_ints(items: list[Any]) -> bool:
     return all(isinstance(item, int) and not isinstance(item, bool) for item in items)
-
-
-def _content_text(content: object) -> str:
-    """Chat message content: a plain string, or a list of typed parts with ``text`` fields."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for part in content:
-            if isinstance(part, dict):
-                text = part.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        return "".join(parts)
-    return ""

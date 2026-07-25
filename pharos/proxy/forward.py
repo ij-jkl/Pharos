@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import itertools
 import json
 import logging
@@ -33,6 +34,7 @@ from pharos.events import (
     RequestFailed,
     RequestStarted,
 )
+from pharos.naming import same_model
 from pharos.tokenizer.cache import TokenCountCache
 from pharos.tokenizer.gguf import TokenCounter
 
@@ -75,10 +77,15 @@ class ProxyState:
         client: httpx.AsyncClient,
         tokenizer: TokenCounter | None,
         cache: TokenCountCache | None = None,
+        tokenizer_model: str | None = None,
     ) -> None:
         self.bus = bus
         self.client = client
         self.tokenizer = tokenizer
+        # The model whose vocabulary ``tokenizer`` actually holds. v0.1 resolves exactly one
+        # tokenizer at startup, so a request for any other model is counted with the wrong
+        # vocabulary; that count is labelled untrusted rather than exact. See _count_input.
+        self.tokenizer_model = tokenizer_model
         self.cache = cache if cache is not None else TokenCountCache()
         self._ids = itertools.count(1)
         self._tasks: set[asyncio.Task[None]] = set()
@@ -109,6 +116,8 @@ class InputSpec:
     model: str | None
     stream: bool
     tokens: int | None = None  # pre-known count (e.g. a token-array prompt); skips tokenizing
+    extra_tokens: int = 0  # already-tokenized input alongside the text (e.g. `context`)
+    opaque: str | None = None  # names content Pharos cannot tokenize at all (e.g. "images")
 
 
 async def counted_forward(
@@ -419,12 +428,42 @@ def _metrics_from_regex(text: str) -> StreamMetrics:
 
 
 async def _count_input(state: ProxyState, request_id: int, spec: InputSpec) -> None:
-    """Count input tokens out of band and publish the labeled result."""
+    """Count input tokens out of band and publish the labeled result.
+
+    THE COUNTING CONTRACT — what the input estimate does and does not include.
+
+    Counted: every part of the request body that the backend renders into the prompt and that
+    Pharos can tokenize. Message content (plain strings and typed text parts), the system
+    prompt, tool DEFINITIONS and assistant tool_calls history (serialized to compact JSON, an
+    approximation of the template's own rendering), a /v1/completions suffix, and any
+    already-tokenized ``context`` array (added by length).
+
+    NOT counted, deliberately:
+
+    * The chat template's own scaffolding — role markers, and the fixed prelude a model emits
+      when tools are present (~200 tokens on qwen3.5-9b-heretic, ~10 for a bare chat). It is
+      applied server-side, so Pharos never sees the string, and its size is a property of the
+      model rather than the request. Hardcoding a fitted constant would be confidently wrong
+      on the next model; reconciliation against ``prompt_eval_count`` closes it instead.
+    * A ``template`` override on /api/generate, for the same reason.
+    * Images. Vision models price them by a separate mechanism entirely, so no text-based
+      count applies. Their presence downgrades the label rather than guessing a number.
+
+    Fields verified NOT to reach the prompt on Ollama 0.31.1, and correctly ignored:
+    ``format`` (string or JSON schema), ``response_format``, ``tool_choice``, ``think`` —
+    these constrain decoding rather than being injected as text.
+
+    The result is always an estimate unless the backend tokenizes exactly what Pharos saw
+    (``raw=true``), and reconciliation later replaces it with ground truth where reported.
+    """
     if spec.tokens is not None:
         # Pre-counted input (a token-array prompt): the request itself carried the count.
         state.bus.publish(
             InputCounted(
-                request_id=request_id, tokens=spec.tokens, exact=spec.exact, source="request"
+                request_id=request_id,
+                tokens=spec.tokens + spec.extra_tokens,
+                exact=spec.exact,
+                source="request",
             )
         )
         return
@@ -433,19 +472,53 @@ async def _count_input(state: ProxyState, request_id: int, spec: InputSpec) -> N
     exact = False
     counter = state.tokenizer
     if counter is not None:
+        # v0.1 holds ONE vocabulary, resolved from config.model. Counting a request aimed at a
+        # different model with it produces a plausible but wrong number, so the result is
+        # labelled "gguf:other-model" and never exact — an admitted unknown beats a confident
+        # error. Per-request tokenizer resolution is a v0.2 item.
+        trusted = _tokenizer_matches(state, spec)
+        identity = _tokenizer_identity(counter)
         try:
-            tokens = await asyncio.to_thread(state.cache.get_or_count, spec.text, counter.count)
-            source = "gguf"
-            exact = spec.exact
+            tokens = await asyncio.to_thread(
+                functools.partial(state.cache.get_or_count, identity=identity),
+                spec.text,
+                counter.count,
+            )
+            source = "gguf" if trusted else "gguf:other-model"
+            exact = spec.exact and trusted
         except Exception as exc:
             # Counting must never break a request — degrade to the heuristic, but loudly.
             _logger.warning("#%d input counting failed (%s); using heuristic", request_id, exc)
             tokens = None
     if tokens is None:
         tokens = _heuristic_count(spec.text)
+    tokens += spec.extra_tokens
+    if spec.opaque is not None:
+        # Content Pharos cannot tokenize at all (images). Whatever the text count says, the
+        # total is unknowable — say so rather than publish a number that looks authoritative.
+        source = f"gguf:{spec.opaque}" if source == "gguf" else source
+        exact = False
     state.bus.publish(
         InputCounted(request_id=request_id, tokens=tokens, exact=exact, source=source)
     )
+
+
+def _tokenizer_matches(state: ProxyState, spec: InputSpec) -> bool:
+    """Whether the loaded vocabulary is actually the one this request's model uses.
+
+    When the tokenizer's model is unknown (a test double, or no model configured) the count is
+    taken at face value — there is nothing to contradict it. A request that names a *different*
+    model is the case worth flagging.
+    """
+    if state.tokenizer_model is None or spec.model is None:
+        return True
+    return same_model(spec.model, state.tokenizer_model)
+
+
+def _tokenizer_identity(counter: TokenCounter) -> str:
+    """Namespace for cached counts: the GGUF path when there is one, else the class name."""
+    path = getattr(counter, "path", None)
+    return str(path) if path is not None else type(counter).__name__
 
 
 def _heuristic_count(text: str) -> int:
@@ -474,6 +547,64 @@ def payload_model(payload: dict[str, Any]) -> str | None:
 def payload_stream(payload: dict[str, Any], *, default: bool) -> bool:
     stream = payload.get("stream")
     return stream if isinstance(stream, bool) else default
+
+
+_IMAGE_PART_TYPES = frozenset({"image", "image_url", "input_image"})
+
+
+def content_text(content: object) -> str:
+    """Message content as text: a plain string, or a list of typed parts with ``text`` fields."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            part["text"]
+            for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        ]
+        return "".join(parts)
+    return ""
+
+
+def content_has_image(content: object) -> bool:
+    """Whether a content value carries an image part (OpenAI-style multimodal array)."""
+    if not isinstance(content, list):
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") in _IMAGE_PART_TYPES:
+            return True
+        if any(key in part for key in _IMAGE_PART_TYPES):
+            return True
+    return False
+
+
+def message_has_image(message: dict[str, Any]) -> bool:
+    """Ollama puts images in a sibling ``images`` array; OpenAI nests them in content parts."""
+    images = message.get("images")
+    if isinstance(images, list) and images:
+        return True
+    return content_has_image(message.get("content"))
+
+
+def json_text(value: object) -> str:
+    """Compact JSON for a structure the backend renders into the prompt (tools, tool_calls).
+
+    An approximation on purpose: the chat template re-renders these into its own wire format,
+    so the serialized size tracks the real cost closely but never matches it exactly. Measured
+    on qwen3.5-9b-heretic: ~89 tokens of JSON per tool against ~88 tokens of actual prompt
+    growth. Good enough for a labeled estimate, and vastly better than counting zero.
+
+    Default separators on purpose — NOT ``separators=(",", ":")``. Compacting strips whitespace
+    that the rendered form actually contains, which measurably undercounts (66 tokens per tool
+    against the real 88, versus 89 with default spacing). This is a serialization choice, not a
+    fudge factor: no constant is fitted to any observation.
+    """
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return ""
 
 
 def _as_int(value: object) -> int | None:
