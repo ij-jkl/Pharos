@@ -40,3 +40,29 @@ jobs:
 
       - name: Test
         run: uv run pytest -q
+
+      # `shell: powershell` is Windows PowerShell 5.1 on GitHub runners, which is the point:
+      # 5.1 reads a script with no byte-order mark as the ANSI code page, so one em dash in a
+      # comment turns every string after it into a parse error. PowerShell 7 decodes the same
+      # file as UTF-8 and shows nothing, so testing on a modern host cannot catch it.
+      - name: start.ps1 stays ASCII and parses under Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $bad = Select-String -Path start.ps1 -Pattern '[^\x00-\x7F]'
+          if ($bad) {
+            $bad | ForEach-Object { Write-Host "non-ASCII on line $($_.LineNumber): $($_.Line)" }
+            throw "start.ps1 must stay pure ASCII - see the .NOTES block in the script"
+          }
+          $errs = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path start.ps1).Path, [ref]$null, [ref]$errs)
+          if ($errs -and $errs.Count -gt 0) {
+            $errs | ForEach-Object { Write-Host $_.Message }
+            throw "start.ps1 failed to parse under $($PSVersionTable.PSVersion)"
+          }
+          Write-Host "start.ps1 ok under $($PSVersionTable.PSVersion)"
+
+      - name: start.sh parses
+        if: runner.os == 'Linux'
+        run: bash -n start.sh

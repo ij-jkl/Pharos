@@ -25,6 +25,13 @@
 
 .EXAMPLE
     .\start.ps1 -Reinstall
+
+.NOTES
+    KEEP THIS FILE PURE ASCII. Windows PowerShell 5.1 is still the default `powershell.exe` on
+    Windows 11, and it reads a script without a byte-order mark as the ANSI code page, not as
+    UTF-8. A single em dash inside a comment is therefore enough to turn every string after it
+    into a parse error the reader cannot connect to anything they did. PowerShell 7 defaults to
+    UTF-8 and shows none of this, so it will not be caught by testing on a modern host.
 #>
 
 [CmdletBinding()]
@@ -36,6 +43,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# The report is UTF-8 (the floor and ceiling lines lead with an actual >= sign), but a Windows
+# PowerShell 5.1 console still reports ibm850 and would decode those bytes as mojibake. Best
+# effort: a host that refuses is left alone rather than failing the run over typography.
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 $RepoUrl = 'https://github.com/ij-jkl/Pharos.git'
 $OllamaUrl = 'http://localhost:11434'
@@ -99,7 +111,7 @@ elseif (Test-Path (Join-Path $Path 'pyproject.toml')) {
     Set-Location $root
 }
 else {
-    $root = $null   # nothing yet — the clone step below creates it
+    $root = $null   # nothing yet - the clone step below creates it
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -125,12 +137,12 @@ $ready = $haveUv -and $haveEnv -and $haveConfig -and -not $Reinstall
 
 if ($ready) {
     Write-Host ''
-    Write-Host '  Pharos — ready' -ForegroundColor White
+    Write-Host '  Pharos - ready' -ForegroundColor White
     Write-Host '  Already set up; skipping installation.' -ForegroundColor DarkGray
 }
 else {
     Write-Host ''
-    Write-Host '  Pharos — first-time setup' -ForegroundColor White
+    Write-Host '  Pharos - first-time setup' -ForegroundColor White
     Write-Host '  See your context budget before your agent silently overflows it.' -ForegroundColor DarkGray
 
     # --- git -------------------------------------------------------------------------------
@@ -159,7 +171,7 @@ else {
     Write-Step 'Checking for uv (the Python toolchain manager Pharos uses)'
 
     if ($haveUv) {
-        Write-Ok ('uv found — ' + (uv --version))
+        Write-Ok ('uv found - ' + (uv --version))
     }
     else {
         Write-Info 'not found; installing from astral.sh'
@@ -179,12 +191,12 @@ else {
             Stop-WithHelp 'uv installed but is not on PATH in this session.' `
                           'Close this terminal, open a new one, and re-run.'
         }
-        Write-Ok ('uv installed — ' + (uv --version))
+        Write-Ok ('uv installed - ' + (uv --version))
     }
 
     # --- dependencies ----------------------------------------------------------------------
 
-    Write-Step 'Installing dependencies (this fetches Python 3.12 the first time — give it a minute)'
+    Write-Step 'Installing dependencies (this fetches Python 3.12 the first time - give it a minute)'
 
     uv sync
     if ($LASTEXITCODE -ne 0) {
@@ -198,7 +210,7 @@ else {
     Write-Step 'Setting up pharos.toml'
 
     if (Test-Path 'pharos.toml') {
-        Write-Ok 'pharos.toml already exists — left untouched'
+        Write-Ok 'pharos.toml already exists - left untouched'
     }
     else {
         Copy-Item 'pharos.toml.example' 'pharos.toml'
@@ -239,14 +251,14 @@ if (-not $ready) {
                 Write-Info "load one with:  ollama run $($tags.models[0].name) `"hi`""
             }
             else {
-                Write-Info 'no models pulled yet — try:  ollama pull qwen3:8b'
+                Write-Info 'no models pulled yet - try:  ollama pull qwen3:8b'
             }
         }
         catch { Write-Info 'could not list pulled models' }
     }
     else {
         Write-Note "no backend at $OllamaUrl"
-        Write-Info 'Pharos runs fine without one — the pre-flight just cannot give a real'
+        Write-Info 'Pharos runs fine without one - the pre-flight just cannot give a real'
         Write-Info 'verdict, because the budget it compares against is the window your backend'
         Write-Info 'actually loaded. Install Ollama from https://ollama.com to get verdicts.'
     }
@@ -274,7 +286,7 @@ if ($SetupOnly) {
 # The exit code is handed back through a script-scoped variable, and the call sites must NOT
 # assign this function's result. Anything a function writes becomes its return value in
 # PowerShell, so `$code = Invoke-Check ...` would capture the whole report into $code and print
-# nothing — and capturing it would also hand Rich a pipe instead of the console, costing the
+# nothing - and capturing it would also hand Rich a pipe instead of the console, costing the
 # colour and the full terminal width.
 $script:LastCheckCode = 0
 
@@ -291,16 +303,16 @@ function Invoke-Check {
     Write-Host ''
 
     if (-not $loadedModel) {
-        Write-Info "(no model resident — planned against a stand-in $FallbackTarget-token window)"
+        Write-Info "(no model resident - planned against a stand-in $FallbackTarget-token window)"
     }
 }
 
 Write-Host ''
 if ($loadedModel) {
-    Write-Host "  Model: $loadedModel — verdicts are against your real loaded window." -ForegroundColor DarkGray
+    Write-Host "  Model: $loadedModel - verdicts are against your real loaded window." -ForegroundColor DarkGray
 }
 else {
-    Write-Host "  No model resident — using a stand-in $FallbackTarget-token window." -ForegroundColor DarkGray
+    Write-Host "  No model resident - using a stand-in $FallbackTarget-token window." -ForegroundColor DarkGray
     Write-Host '  Load one (ollama run <model> "hi") and re-run for real verdicts.' -ForegroundColor DarkGray
 }
 
@@ -340,7 +352,7 @@ while ($true) {
     if ($line -in @('q', 'quit', 'exit')) { break }
 
     if ($line -in @('d', 'dash', 'dashboard')) {
-        Write-Info 'starting the dashboard and proxy — press q in the dashboard to come back'
+        Write-Info 'starting the dashboard and proxy - press q in the dashboard to come back'
         uv run pharos
         continue
     }
@@ -357,5 +369,5 @@ while ($true) {
 }
 
 Write-Host ''
-Write-Host '  Bye. Run .\start.ps1 any time — it will skip straight back to here.' -ForegroundColor Green
+Write-Host '  Bye. Run .\start.ps1 any time - it will skip straight back to here.' -ForegroundColor Green
 Write-Host ''
