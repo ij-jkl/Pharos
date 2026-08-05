@@ -1,0 +1,10 @@
+# Normalise text to LF in the repository, native in the working copy.
+* text=auto
+
+# Shell scripts must keep LF on checkout everywhere. A start.sh that arrives with CRLF fails on
+# Linux with `bad interpreter: /usr/bin/env bash^M`, which reads as a broken project rather than
+# as a line-ending problem. Developed on Windows, so this is not hypothetical.
+*.sh text eol=lf
+
+# PowerShell is content either way; CRLF is what a Windows editor expects to find.
+*.ps1 text eol=crlf
