@@ -8,6 +8,7 @@ reachable backend (this laptop's current double-degraded state).
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from rich.console import Console
 from rich.panel import Panel
@@ -15,12 +16,14 @@ from rich.table import Table
 from rich.text import Text
 
 from pharos.config import ConfigError, load_config
+from pharos.console import force_utf8
 from pharos.profiler.profiler import build_profile
 from pharos.profiler.types import BudgetReport, EnvironmentProfile
 
 
 def main() -> None:
     """Console-script entry point for `pharos-profile`."""
+    force_utf8(sys.stdout, sys.stderr)
     console = Console()
     try:
         config = load_config()

@@ -15,6 +15,7 @@ from collections.abc import Iterator
 import uvicorn
 
 from pharos.config import ConfigError, PharosConfig, load_config
+from pharos.console import force_utf8
 from pharos.events import EventBus
 from pharos.log import configure_logging
 from pharos.proxy.app import create_app
@@ -93,6 +94,10 @@ def main() -> None:
     Subcommand dispatch happens before any TUI import cost is paid, and the bare invocation
     is untouched — pointing a coding agent at the proxy works exactly as it did in v0.1.
     """
+    # The unknown-argument message below carries an em dash, so even the error path needs a
+    # stream that can encode it.
+    force_utf8(sys.stdout, sys.stderr)
+
     argv = sys.argv[1:]
     if argv and argv[0] == "check":
         from pharos.preflight.cli import main as check_main

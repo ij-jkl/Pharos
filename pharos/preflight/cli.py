@@ -21,6 +21,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pharos.config import ConfigError, load_config
+from pharos.console import force_utf8
 from pharos.preflight.check import CheckReport, CountedFile, Verdict, run_check
 from pharos.preflight.extract import ALL_CANDIDATES, DIRECTORY_FILE_CAP
 from pharos.preflight.split import SplitMode, SplitPlan, build_plan
@@ -32,6 +33,10 @@ _JSON_SCHEMA_VERSION = 1
 
 
 def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
+    # Before argparse: --help and usage errors are rendered too, and the epilog carries an
+    # em dash, so a redirected `--help` would crash before reaching any of the work below.
+    force_utf8(sys.stdout, sys.stderr)
+
     prog = "pharos split" if always_split else "pharos check"
     description = (
         "Cut a prompt that does not fit into ordered sub-prompts that do."
