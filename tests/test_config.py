@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
 
+import pharos
 from pharos.config import ConfigError, load_config
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_defaults_when_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,3 +67,18 @@ def test_out_of_range_threshold_rejected(tmp_path: Path) -> None:
 def test_missing_explicit_path_rejected(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         load_config(tmp_path / "does-not-exist.toml")
+
+
+def test_shipped_example_is_a_valid_config() -> None:
+    """`pharos.toml.example` is copied verbatim to `pharos.toml` on a fresh install, and the
+    model forbids unknown keys — so a key documented in the example but never added to
+    PharosConfig (or renamed out of it) breaks setup for every new user at step one."""
+    cfg = load_config(_REPO_ROOT / "pharos.toml.example")
+    assert cfg.handoff_reserve == 500  # the value the example documents
+
+
+def test_version_matches_pyproject() -> None:
+    """Two hand-edited places hold the version; a release that bumps one and forgets the
+    other ships a package whose metadata disagrees with the module it installs."""
+    declared = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert pharos.__version__ == declared["project"]["version"]
