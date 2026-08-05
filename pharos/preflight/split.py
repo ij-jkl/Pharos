@@ -1,0 +1,672 @@
+"""Turn a prompt that EXCEEDS the budget into an ordered set of sub-prompts that fit.
+
+The split is mechanical and entirely local — no model is asked what the task "means", nothing
+leaves the machine. Two shapes, chosen by what actually blows the budget:
+
+* **scope** — the task text fits in a part, but the files it names do not. Every part repeats
+  the task verbatim and narrows the *scope* to a subset of the files (large files are cut into
+  line ranges). The parts are independent slices of the same instruction.
+* **text** — the pasted text alone is too big (a log, a spec, a transcript). Parts are ordered
+  segments of that text, cut on paragraph then line boundaries, to be pasted in sequence; only
+  the last part asks for the work to be done.
+
+Honesty rules, same as the rest of Pharos:
+
+* Every part carries a *projected* cost measured with the same tokenizer as the verdict —
+  overhead + the rendered part text + the files that part scopes. It is still a FLOOR: it
+  holds only while the agent respects the scope block, and a part that does not fit even
+  alone is reported as such rather than quietly shipped.
+* Nothing is dropped silently. A file too large for even an empty part, a segment that cannot
+  be cut small enough — both surface in the plan.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+
+from pharos.config import PharosConfig
+from pharos.preflight.check import CheckReport, CountedFile, build_counter
+from pharos.preflight.content import BinaryFile, read_countable
+
+# Coarse room for the per-part scaffold, used only for the "can any split work at all?"
+# pre-check. Each mode then MEASURES its own scaffold before packing (see _scaffold_cost):
+# a guessed reserve that undershoots produces parts that miss the target by a few tokens,
+# which is exactly the kind of quietly-wrong number Pharos exists to not produce.
+_SCAFFOLD_RESERVE = 220
+# Slack over the measured scaffold: rendering swaps labels between the in/out-of-scope lists
+# and the part numbers gain digits, so the real body can differ from the probe by a little.
+_SCAFFOLD_SLACK = 24
+
+_MIN_PART_TOKENS = 200  # below this a "part" is scaffold with no room for content
+# A scope part asks the agent for a hand-off of at most 10 lines and tells the user to paste it
+# above the next part — so every part after the first carries input the part itself does not
+# contain. Room for it is held back, and it is counted into those parts' projections: asking
+# for text and then not counting it is precisely the accounting error this tool is against.
+#
+# How much room is `handoff_reserve` in pharos.toml, not a constant here. It started as a round
+# 200; a real agent run then produced a 328-token hand-off from the same "at most 10 lines"
+# instruction, which is how a guessed constant becomes a broken promise. See the config field
+# for the measurements behind the default.
+
+
+class SplitMode(Enum):
+    SCOPE = "scope"  # parts narrow which files are in scope; the task text repeats
+    TEXT = "text"  # parts are ordered segments of the pasted text
+    NONE = "none"  # no plan: unnecessary, or impossible
+
+
+@dataclass(frozen=True, slots=True)
+class PartFile:
+    """One file in a part's scope, whole or as a line range."""
+
+    display: str
+    tokens: int
+    line_start: int | None = None  # 1-based inclusive; None for a whole file
+    line_end: int | None = None
+    total_lines: int | None = None
+    source_dir: str | None = None  # the named directory this file came from, if any
+
+    @property
+    def is_slice(self) -> bool:
+        return self.line_start is not None
+
+    def label(self) -> str:
+        span = (
+            "whole file"
+            if not self.is_slice
+            else f"lines {self.line_start}-{self.line_end} of {self.total_lines}"
+        )
+        origin = f" · from {self.source_dir}" if self.source_dir else ""
+        return f"{self.display} ({span}{origin})"
+
+
+@dataclass(frozen=True, slots=True)
+class Part:
+    index: int  # 1-based
+    total: int
+    body: str  # the sub-prompt, ready to paste
+    files: list[PartFile]
+    projected_tokens: int  # overhead + body + scoped file content, same ruler as the verdict
+    fits: bool
+    over_by: int  # 0 when it fits
+
+
+@dataclass(frozen=True, slots=True)
+class SplitPlan:
+    mode: SplitMode
+    target_per_part: int  # the per-part ceiling the packer aimed at
+    target_label: str  # where that ceiling came from
+    parts: list[Part] = field(default_factory=list)
+    reason: str | None = None  # why there is no plan, when mode is NONE
+    notes: list[str] = field(default_factory=list)  # anything the plan could not honour
+    handoff_reserve: int = 0  # tokens held back per part for the previous part's hand-off
+    already_fits: bool = False  # no plan because none was needed — not a failure
+    indeterminate: bool = False  # no plan because there was no budget to plan against
+
+    @property
+    def ok(self) -> bool:
+        if self.already_fits:
+            return True
+        return bool(self.parts) and all(p.fits for p in self.parts)
+
+
+def build_plan(
+    config: PharosConfig,
+    prompt: str,
+    report: CheckReport,
+    *,
+    target: int | None = None,
+) -> SplitPlan:
+    """Plan a split of ``prompt`` given its pre-flight ``report``.
+
+    ``target`` overrides the per-part ceiling — the escape hatch for planning offline, when
+    no backend was reachable to state a budget.
+    """
+    ceiling, label = _ceiling(report, target)
+    if ceiling is None:
+        return SplitPlan(
+            mode=SplitMode.NONE,
+            target_per_part=0,
+            target_label="unknown",
+            reason=(
+                "no usable budget to split against — the backend is unreachable or no model "
+                "is resident. Load the model, or pass --target N to plan against N tokens."
+            ),
+            indeterminate=True,
+        )
+
+    # A prompt whose FLOOR fits can still need splitting: name a directory and the request is
+    # the floor plus whatever of that directory the agent reads. Split against the ceiling —
+    # the number that has to fit for the work to actually go through.
+    if report.ceiling <= ceiling:
+        detail = (
+            f"the floor ({report.floor:,}) already sits inside the {label} ({ceiling:,})"
+            if not report.directory_tokens
+            else (
+                f"even reading every named directory in full ({report.ceiling:,}) stays inside "
+                f"the {label} ({ceiling:,})"
+            )
+        )
+        return SplitPlan(
+            mode=SplitMode.NONE,
+            target_per_part=ceiling,
+            target_label=label,
+            reason=f"nothing to split: {detail}",
+            already_fits=True,
+        )
+
+    count, _ = build_counter(config, report.model)
+    overhead = report.overhead.tokens if report.overhead is not None else 0
+    fixed = overhead + _SCAFFOLD_RESERVE
+
+    # Room a part has for content once the overhead and the scaffold are paid for.
+    if ceiling - fixed < _MIN_PART_TOKENS:
+        return SplitPlan(
+            mode=SplitMode.NONE,
+            target_per_part=ceiling,
+            target_label=label,
+            reason=(
+                f"the fixed cost alone (client overhead {overhead:,} + part scaffold) leaves "
+                f"under {_MIN_PART_TOKENS} tokens of the {label} ({ceiling:,}) for content — "
+                f"no split can help. Raise num_ctx, or use a client with less overhead."
+            ),
+        )
+
+    if report.prompt_tokens + fixed <= ceiling:
+        return _plan_scope(prompt, report, count, ceiling, label, config.handoff_reserve)
+    return _plan_text(prompt, report, count, ceiling, label)
+
+
+# --------------------------------------------------------------------------- scope mode
+
+
+def _plan_scope(
+    prompt: str,
+    report: CheckReport,
+    count: Callable[[str], int],
+    ceiling: int,
+    label: str,
+    handoff_reserve: int,
+) -> SplitPlan:
+    """Repeat the task in every part; bin-pack the named files across the parts."""
+    overhead = report.overhead.tokens if report.overhead is not None else 0
+    notes: list[str] = []
+
+    # The scaffold carries one line per file, so its cost depends on how the files were cut —
+    # which depends on the room the scaffold leaves. Measure, cut, re-measure; it settles in
+    # one or two rounds, and the loop is bounded either way.
+    labels = [
+        PartFile(display=entry.display, tokens=entry.tokens, source_dir=source).label()
+        for entry, source in _scope_entries(report)
+    ]
+    scaffold = _scope_scaffold(prompt, labels, count)
+    units: list[PartFile] = []
+    per_part_content = 0
+    for _ in range(3):
+        # The hand-off is held back from every part, not just the ones that will carry it: a
+        # part's room must not depend on where the packer happens to place it.
+        per_part_content = ceiling - overhead - scaffold - handoff_reserve
+        if per_part_content < _MIN_PART_TOKENS:
+            return SplitPlan(
+                mode=SplitMode.NONE,
+                target_per_part=ceiling,
+                target_label=label,
+                reason=(
+                    f"the task text plus the part scaffold and the client overhead "
+                    f"({overhead:,}) already fill the {label} ({ceiling:,}) — there is no room "
+                    f"left to put a file in. Shorten the prompt, or raise num_ctx."
+                ),
+            )
+        units, notes = _scope_units(report, per_part_content, count)
+        grown = _scope_scaffold(prompt, [u.label() for u in units], count)
+        if grown <= scaffold:
+            break
+        scaffold = grown
+
+    if not units:
+        # Two very different situations, and telling the user the wrong one wastes their time:
+        # nothing to narrow at all, versus files that exist but could not be cut (a notebook
+        # bigger than a part, an unreadable file). The notes hold the specifics either way.
+        reason = (
+            "the prompt names no countable files, so there is no scope to narrow — the excess "
+            "must come from the client overhead or from files the agent reads on its own, "
+            "neither of which a split can control"
+            if not notes
+            else "every file named is too large for a part and none could be cut down; see below"
+        )
+        return SplitPlan(
+            mode=SplitMode.NONE,
+            target_per_part=ceiling,
+            target_label=label,
+            reason=reason,
+            notes=notes,
+        )
+
+    # First-fit in the order the prompt named things: locality is a feature, a bin-packed
+    # optimum that scatters related files across parts is worse for the human reading it.
+    #
+    # One constraint on top: the slices of a single file may only move FORWARD through the
+    # parts. Plain first-fit will happily backfill lines 3879-4000 into part 1 next to lines
+    # 1-1939, which packs marginally tighter and asks a reader to hold two disjoint windows of
+    # one file at once. Reading order is worth more than the odd saved part.
+    bins: list[list[PartFile]] = []
+    room: list[int] = []
+    last_bin: dict[str, int] = {}  # display -> the bin its previous slice landed in
+    for unit in units:
+        floor_bin = last_bin.get(unit.display, -1) + 1 if unit.is_slice else 0
+        for i in range(floor_bin, len(room)):
+            if unit.tokens <= room[i]:
+                bins[i].append(unit)
+                room[i] -= unit.tokens
+                break
+        else:
+            i = len(bins)
+            bins.append([unit])
+            room.append(per_part_content - unit.tokens)
+        if unit.is_slice:
+            last_bin[unit.display] = i
+
+    all_labels = [u.label() for u in units]
+    parts: list[Part] = []
+    for i, group in enumerate(bins, start=1):
+        scoped = {u.label() for u in group}
+        deferred = [lbl for lbl in all_labels if lbl not in scoped]
+        body = _render_scope_part(prompt, i, len(bins), group, deferred)
+        parts.append(
+            _finalise(
+                i,
+                len(bins),
+                body,
+                group,
+                count,
+                ceiling,
+                report,
+                # Part 1 has nothing pasted above it; every later part does.
+                carried=handoff_reserve if i > 1 else 0,
+            ),
+        )
+    sliced = {u.display: u for u in units if u.is_slice}
+    if sliced:
+        # A projection for a sliced part assumes the agent reads only those lines. Most
+        # read_file tools take a path and nothing else, and hand back the whole file — so on
+        # such a client the part costs the full file, not the slice. Said out loud, with the
+        # number, because it is the difference between a plan and a plan that works.
+        whole = sum(entry.tokens for entry, _ in _scope_entries(report) if entry.display in sliced)
+        notes.append(
+            f"{len(sliced)} file(s) are scoped as line ranges. That assumes your agent can "
+            f"read a range; a tool that only reads whole files would pull {whole:,} tokens "
+            f"for them instead of the slice, and the parts holding them would run over"
+        )
+    return SplitPlan(
+        mode=SplitMode.SCOPE,
+        target_per_part=ceiling,
+        target_label=label,
+        parts=parts,
+        notes=notes,
+        handoff_reserve=handoff_reserve,
+    )
+
+
+def _scope_scaffold(prompt: str, labels: list[str], count: Callable[[str], int]) -> int:
+    """Cost of everything a scope part carries besides file content: task text and scope block."""
+    probe = _render_scope_part(prompt, 1, max(len(labels), 1), [], labels)
+    return count(probe) + _SCAFFOLD_SLACK
+
+
+def _scope_units(
+    report: CheckReport, per_part_content: int, count: Callable[[str], int]
+) -> tuple[list[PartFile], list[str]]:
+    """Every named file as one unit, or as several line ranges when it is too big for a part.
+
+    Files pulled in by a named DIRECTORY are units too: "refactor everything in src/" is the
+    case a scope split exists for, and a plan that scoped nothing because the user wrote a
+    directory instead of forty filenames would be a plan in name only.
+    """
+    units: list[PartFile] = []
+    notes: list[str] = []
+    for entry, source_dir in _scope_entries(report):
+        if entry.tokens <= per_part_content:
+            units.append(
+                PartFile(display=entry.display, tokens=entry.tokens, source_dir=source_dir)
+            )
+            continue
+        if entry.path is None:
+            notes.append(f"{entry.display} is too large for one part and could not be re-read")
+            continue
+        slices, note = _slice_file(
+            entry.display, entry.path, entry.tokens, per_part_content, count, source_dir
+        )
+        units.extend(slices)
+        if note:
+            notes.append(note)
+    return units, notes
+
+
+def _scope_entries(report: CheckReport) -> list[tuple[CountedFile, str | None]]:
+    """Named files first, then each named directory's contents, each tagged with its origin."""
+    entries: list[tuple[CountedFile, str | None]] = [(f, None) for f in report.files]
+    for directory in report.directories:
+        entries.extend((f, directory.display) for f in directory.files)
+    return entries
+
+
+def _slice_file(
+    display: str,
+    path: Path,
+    total_tokens: int,
+    budget: int,
+    count: Callable[[str], int],
+    source_dir: str | None = None,
+) -> tuple[list[PartFile], str | None]:
+    """Cut one oversized file into line ranges that each fit ``budget``.
+
+    Lines are grown by a characters-per-token ratio (cheap) and then counted exactly (honest);
+    an over-long span is shrunk proportionally until it fits or is a single line.
+    """
+    try:
+        countable = read_countable(path)
+    except (OSError, BinaryFile):
+        return [], f"{display} is too large for one part and could not be re-read to slice"
+    if countable.note is not None:
+        # The counted text is not the file's own lines (a notebook is counted by cell source),
+        # so "lines 40-80 of this file" would name a range that does not exist on disk. Left
+        # whole and reported: a scope instruction nobody can follow is worse than no plan.
+        return [], (
+            f"{display} needs {total_tokens:,} tokens — more than a part holds — and cannot be "
+            f"cut by line range ({countable.note}). Split it yourself, or name fewer files."
+        )
+    lines = countable.text.splitlines(keepends=True)
+    if not lines:
+        return [], None
+
+    chars = sum(len(line) for line in lines)
+    ratio = total_tokens / chars if chars else 1.0
+    out: list[PartFile] = []
+    note: str | None = None
+
+    start = 0
+    while start < len(lines):
+        end = start
+        predicted = 0.0
+        while end < len(lines) and predicted + ratio * len(lines[end]) <= budget:
+            predicted += ratio * len(lines[end])
+            end += 1
+        if end == start:
+            end = start + 1  # a single line wider than the budget still has to go somewhere
+
+        tokens = count("".join(lines[start:end]))
+        for _ in range(8):  # proportional shrink; converges fast, bounded regardless
+            if tokens <= budget or end - start <= 1:
+                break
+            end = start + max(1, int((end - start) * budget / tokens))
+            tokens = count("".join(lines[start:end]))
+
+        if tokens > budget:
+            note = (
+                f"{display} lines {start + 1}-{end}: a single line of {tokens:,} tokens exceeds "
+                f"the per-part room ({budget:,}) and is kept whole"
+            )
+        out.append(
+            PartFile(
+                display=display,
+                tokens=tokens,
+                line_start=start + 1,
+                line_end=end,
+                total_lines=len(lines),
+                source_dir=source_dir,
+            )
+        )
+        start = end
+    return out, note
+
+
+def _render_scope_part(
+    prompt: str, index: int, total: int, files: list[PartFile], deferred: list[str]
+) -> str:
+    lines = [
+        f"[Pharos] Part {index} of {total} — this task was split to fit the context window.",
+        "",
+        "IN SCOPE for this part — read and change only these:",
+    ]
+    lines += [f"  - {f.label()}" for f in files]
+    if deferred:
+        lines += [
+            "",
+            "OUT OF SCOPE — do not open these in this part; other parts cover them:",
+        ]
+        lines += [f"  - {label}" for label in deferred]
+    lines += [
+        "",
+        (
+            "RULE: open ONLY the in-scope files. Opening anything else is what overflowed the "
+            "window in the first place, and it will overflow again. If you believe you need a "
+            "deferred file to proceed, do NOT open it — say which one and why, and stop."
+        ),
+    ]
+    if index < total:
+        lines += [
+            (
+                f"When you finish, end with a hand-off of at most 10 lines: what you changed "
+                f"and what part {index + 1} needs to know. Paste that hand-off above the "
+                f"next part."
+            ),
+        ]
+    elif total > 1:
+        # The last part has nobody to hand off to; asking it to write one anyway wastes output
+        # tokens and reads as a mistake to whoever is following the instructions.
+        lines += ["This is the final part — no hand-off is needed after it."]
+    lines += [
+        "",
+        f"--- TASK (identical in all {total} parts) ---",
+        prompt.strip(),
+    ]
+    if deferred:
+        # Repeated after the task, deliberately. A real run (qwen3.5-9b) read two deferred
+        # files when the rule appeared only above a long task block; attention falls off in
+        # the middle, and the last thing read is the thing obeyed. The scope line is the one
+        # instruction the whole projection rests on, so it gets the last word.
+        # label(), not display: for a sliced file the range IS the permission. "only
+        # forward.py" where the scope is lines 1-427 reads as leave for the whole file.
+        scoped_names = ", ".join(f.label() for f in files)
+        lines += [
+            "",
+            f"--- REMINDER --- In this part you may open ONLY: {scoped_names}. "
+            f"The other {len(deferred)} file(s) listed above belong to other parts.",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------- text mode
+
+
+def _plan_text(
+    prompt: str,
+    report: CheckReport,
+    count: Callable[[str], int],
+    ceiling: int,
+    label: str,
+) -> SplitPlan:
+    """The pasted text itself is the problem: cut it into ordered segments."""
+    overhead = report.overhead.tokens if report.overhead is not None else 0
+    # The text scaffold is fixed-size, so one probe render measures it exactly.
+    scaffold = count(_render_text_part("", 1, 9)) + _SCAFFOLD_SLACK
+    per_part_content = ceiling - overhead - scaffold
+    notes: list[str] = []
+    if per_part_content < _MIN_PART_TOKENS:
+        return SplitPlan(
+            mode=SplitMode.NONE,
+            target_per_part=ceiling,
+            target_label=label,
+            reason=(
+                f"the client overhead ({overhead:,}) and the part scaffold leave under "
+                f"{_MIN_PART_TOKENS} tokens of the {label} ({ceiling:,}) for text"
+            ),
+        )
+    if report.files:
+        notes.append(
+            f"the text is what overflows, so the {len(report.files)} named file(s) are left "
+            f"as-is; a segment that names one still costs its content when the agent reads it"
+        )
+
+    segments, seg_note = _segment_text(prompt, per_part_content, count)
+    if seg_note:
+        notes.append(seg_note)
+    if len(segments) <= 1:
+        return SplitPlan(
+            mode=SplitMode.NONE,
+            target_per_part=ceiling,
+            target_label=label,
+            reason="the text could not be cut into more than one part",
+            notes=notes,
+        )
+
+    parts: list[Part] = []
+    for i, segment in enumerate(segments, start=1):
+        body = _render_text_part(segment, i, len(segments))
+        parts.append(_finalise(i, len(segments), body, [], count, ceiling, report))
+    return SplitPlan(
+        mode=SplitMode.TEXT,
+        target_per_part=ceiling,
+        target_label=label,
+        parts=parts,
+        notes=notes,
+    )
+
+
+def _segment_text(
+    text: str, budget: int, count: Callable[[str], int]
+) -> tuple[list[str], str | None]:
+    """Cut ``text`` into ordered segments of at most ``budget`` tokens.
+
+    Paragraph boundaries first (a paragraph is a unit of meaning); a paragraph too big for a
+    segment falls back to its lines. Spans are grown by a characters-per-token ratio and then
+    COUNTED — prose and fenced code do not tokenize at the same density, so a ratio alone
+    produces segments that miss the budget by a little, which is the one thing this tool may
+    not do. An atom that is over budget by itself is kept whole and reported.
+    """
+    atoms = _atoms(text, budget, count)
+    chars = sum(len(a) for a in atoms) or 1
+    ratio = count(text) / chars
+
+    segments: list[str] = []
+    note: str | None = None
+    start = 0
+    while start < len(atoms):
+        end = start
+        predicted = 0.0
+        while end < len(atoms) and predicted + ratio * len(atoms[end]) <= budget:
+            predicted += ratio * len(atoms[end])
+            end += 1
+        if end == start:
+            end = start + 1
+
+        segment = "".join(atoms[start:end])
+        tokens = count(segment)
+        for _ in range(8):  # proportional shrink; strictly decreasing, so it terminates
+            if tokens <= budget or end - start <= 1:
+                break
+            end = start + max(1, int((end - start) * budget / tokens))
+            segment = "".join(atoms[start:end])
+            tokens = count(segment)
+
+        if tokens > budget:
+            note = (
+                f"one indivisible line of {tokens:,} tokens exceeds the per-part room "
+                f"({budget:,}) and is kept whole — that part will not fit"
+            )
+        segments.append(segment.strip("\n"))
+        start = end
+    return [s for s in segments if s.strip()], note
+
+
+def _atoms(text: str, budget: int, count: Callable[[str], int]) -> list[str]:
+    """The indivisible units a segment is built from: paragraphs, or lines of a big paragraph."""
+    out: list[str] = []
+    for block in _paragraphs(text):
+        if count(block) <= budget:
+            out.append(block)
+        else:
+            out.extend(block.splitlines(keepends=True) or [block])
+    return out
+
+
+def _paragraphs(text: str) -> list[str]:
+    """Split on blank lines, keeping the separators so the text round-trips."""
+    out: list[str] = []
+    buffer: list[str] = []
+    for line in text.splitlines(keepends=True):
+        buffer.append(line)
+        if line.strip() == "":
+            out.append("".join(buffer))
+            buffer = []
+    if buffer:
+        out.append("".join(buffer))
+    return out or [text]
+
+
+def _render_text_part(segment: str, index: int, total: int) -> str:
+    if index < total:
+        instruction = (
+            f"This is segment {index} of {total} of one oversized input. Do NOT act on it yet. "
+            f"Acknowledge in one line what this segment contains and wait; the remaining "
+            f"{total - index} segment(s) follow."
+        )
+    else:
+        instruction = (
+            f"This is the final segment ({index} of {total}). All segments are now in front of "
+            f"you: carry out the task described across them."
+        )
+    return (
+        f"[Pharos] Part {index} of {total} — the input was too large for one request "
+        f"and was cut into ordered segments.\n"
+        f"{instruction}\n"
+        f"\n--- SEGMENT {index}/{total} ---\n"
+        f"{segment}\n"
+    )
+
+
+# ------------------------------------------------------------------------------ shared
+
+
+def _finalise(
+    index: int,
+    total: int,
+    body: str,
+    files: list[PartFile],
+    count: Callable[[str], int],
+    ceiling: int,
+    report: CheckReport,
+    *,
+    carried: int = 0,
+) -> Part:
+    """Cost the rendered part for real: overhead + the text as written + the scoped content.
+
+    ``carried`` is input the part does not contain but will arrive with — the previous part's
+    hand-off, pasted above it.
+    """
+    overhead = report.overhead.tokens if report.overhead is not None else 0
+    projected = overhead + count(body) + sum(f.tokens for f in files) + carried
+    over = max(0, projected - ceiling)
+    return Part(
+        index=index,
+        total=total,
+        body=body,
+        files=files,
+        projected_tokens=projected,
+        fits=over == 0,
+        over_by=over,
+    )
+
+
+def _ceiling(report: CheckReport, target: int | None) -> tuple[int | None, str]:
+    if target is not None:
+        return target, "requested target"
+    budget = report.profile.budget if report.profile is not None else None
+    if budget is None or budget.usable_budget is None:
+        return None, "unknown"
+    if budget.warn_tokens is not None and budget.warn_tokens > 0:
+        return budget.warn_tokens, "warn threshold"
+    return budget.usable_budget, "usable budget"

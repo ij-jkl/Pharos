@@ -98,10 +98,15 @@ def main() -> None:
         from pharos.preflight.cli import main as check_main
 
         raise SystemExit(check_main(argv[1:]))
+    if argv and argv[0] == "split":
+        from pharos.preflight.cli import split_main
+
+        raise SystemExit(split_main(argv[1:]))
     if argv:
         raise SystemExit(
-            f"pharos: unknown arguments {argv!r} — run `pharos` for the dashboard "
-            f"or `pharos check --help` for the pre-flight analyzer"
+            f"pharos: unknown arguments {argv!r} — run `pharos` for the dashboard, "
+            f"`pharos check --help` for the pre-flight analyzer, or `pharos split --help` "
+            f"to cut an oversized prompt into parts that fit"
         )
     try:
         config = load_config()

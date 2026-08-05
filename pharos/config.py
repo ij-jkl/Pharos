@@ -44,6 +44,12 @@ class PharosConfig(BaseModel):
     # Where the proxy records per-request token counts (counts only, never text) so the
     # pre-flight check can calibrate against real observed traffic.
     observations_file: str = Field(default="pharos_observations.json", min_length=1)
+    # Tokens `pharos split` holds back in every scope part for the previous part's hand-off.
+    # Measured across two real agent runs (qwen3.5-9b): 64, 74, 83, 107, 160, 161, 162, 168 and
+    # 328 tokens — for the SAME instruction ("at most 10 lines"). A model's idea of ten lines is
+    # not a constant, so this is a knob rather than a magic number: 500 clears every hand-off
+    # observed, and an agent that writes essays needs it raised.
+    handoff_reserve: int = Field(default=500, ge=0)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

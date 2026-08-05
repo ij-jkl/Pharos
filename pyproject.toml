@@ -1,6 +1,6 @@
 [project]
 name = "pharos"
-version = "0.2.0"
+version = "0.3.0"
 description = "Transparent, context-aware orchestration proxy and live terminal dashboard for local LLM backends."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 pharos = "pharos.__main__:main"
 pharos-profile = "pharos.profiler.cli:main"
+pharos-split = "pharos.preflight.cli:split_main"
 
 [dependency-groups]
 dev = [

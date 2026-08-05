@@ -16,6 +16,12 @@ backend_url = "http://localhost:11434"
 # Tokens reserved for the model's response when computing the usable input budget.
 response_reserve = 1024
 
+# Tokens `pharos split` holds back in every scope part for the previous part's hand-off, which
+# you paste above the next part. Measured across real agent runs (qwen3.5-9b), hand-offs to the
+# same "at most 10 lines" instruction ranged from 64 to 328 tokens — a model's idea of ten lines
+# is not a constant. Raise it if your agent writes long hand-offs.
+handoff_reserve = 500
+
 # Context-usage thresholds (as a fraction of the usable budget) for TUI warnings.
 warn_threshold = 0.80
 alert_threshold = 0.90
