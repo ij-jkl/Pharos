@@ -3,6 +3,8 @@ name = "pharos"
 version = "0.3.0"
 description = "Transparent, context-aware orchestration proxy and live terminal dashboard for local LLM backends."
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Isaac Jordan", email = "isaaz.jordan02@gmail.com" }]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.110",

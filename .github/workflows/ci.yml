@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    # Both platforms on purpose: Windows is where Pharos is developed and where the live
+    # validation runs happened, Linux is where most people will first clone it. fail-fast is
+    # off so a platform-specific break is visible as itself rather than cancelling the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # No GPU and no Ollama on a runner. That is fine: the NVML probe degrades to a labelled
+      # fallback, the backend calls are mocked, and the tokenizer tests that need a real GGUF
+      # skip themselves because tests/models/ is empty on a fresh clone.
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type-check
+        run: uv run mypy pharos
+
+      - name: Test
+        run: uv run pytest -q
