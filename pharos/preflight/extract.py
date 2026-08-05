@@ -27,19 +27,31 @@ from pathlib import Path
 
 # Extensions that make a bare token path-like. Modest on purpose: every entry here widens the
 # false-positive surface ("3.14" must never be a candidate, so no bare numeric suffixes).
-_KNOWN_EXTENSIONS = frozenset({
+_TEXT_EXTENSIONS = frozenset({
     "bash", "bat", "c", "cc", "cfg", "cjs", "cmd", "conf", "cpp", "cs", "css", "csv",
     "dockerfile", "env", "go", "h", "hpp", "html", "ini", "ipynb", "java", "js", "json",
     "jsonl", "jsx", "kt", "lock", "log", "md", "mjs", "php", "ps1", "py", "rb", "rs", "rst",
     "scala", "scss", "sh", "sql", "svelte", "swift", "tcss", "toml", "ts", "tsx", "txt",
     "vue", "xml", "yaml", "yml", "zig",
-    # Binary formats are still REFERENCES — they must resolve and then be surfaced as
-    # "skipped, binary" by the checker. Silently ignoring a named file breaks the contract
-    # that nothing path-like is ever dropped without a word.
+})
+# Binary formats are still REFERENCES — they must resolve and then be surfaced as
+# "skipped, binary" by the checker. Silently ignoring a named file breaks the contract
+# that nothing path-like is ever dropped without a word. Directory expansion, which nobody
+# named file-by-file, uses the text set instead: it may skip quietly, and says how many.
+_BINARY_EXTENSIONS = frozenset({
     "7z", "bin", "bmp", "dll", "exe", "gguf", "gif", "gz", "ico", "jpeg", "jpg", "mp3",
     "mp4", "onnx", "pdf", "png", "pt", "pth", "safetensors", "so", "tar", "ttf", "wav",
     "webp", "woff", "woff2", "zip",
 })
+_KNOWN_EXTENSIONS = _TEXT_EXTENSIONS | _BINARY_EXTENSIONS
+
+# A directory reference can name a tree of any size, and expanding it means reading and
+# tokenizing every file in it. Past this many files the expansion stops and says so — a
+# truncated, labeled answer beats a five-minute pre-flight.
+DIRECTORY_FILE_CAP = 300
+
+# The `--resolve REF=*` answer: count every candidate rather than choose between them.
+ALL_CANDIDATES = "*"
 
 _IGNORED_DIRS = frozenset({
     ".git", ".hg", ".svn", ".venv", "venv", "node_modules", "__pycache__",
@@ -84,9 +96,54 @@ class Extraction:
     missing: list[str] = field(default_factory=list)  # path-like but nowhere to be found
 
 
-def extract_references(prompt: str, root: Path) -> Extraction:
-    """Extract candidates from ``prompt`` and resolve them against ``root``."""
-    return _resolve(_candidates(prompt), root)
+@dataclass(frozen=True, slots=True)
+class DirectoryContents:
+    """What a named directory holds, as far as a token count is concerned."""
+
+    files: list[Path]  # text files, sorted, capped at DIRECTORY_FILE_CAP
+    truncated: bool  # the cap was hit: there are more files than these
+    skipped_non_text: int  # files passed over for having no text extension
+
+
+def extract_references(
+    prompt: str, root: Path, overrides: dict[str, str] | None = None
+) -> Extraction:
+    """Extract candidates from ``prompt`` and resolve them against ``root``.
+
+    ``overrides`` maps a raw reference to the path the user chose for it — the answer to an
+    AMBIGUOUS reference, which Pharos will never guess at on its own.
+    """
+    return _resolve(_candidates(prompt), root, overrides or {})
+
+
+def expand_directory(directory: Path, *, cap: int = DIRECTORY_FILE_CAP) -> DirectoryContents:
+    """List the text files under ``directory``, pruned of vcs/venv/cache dirs.
+
+    Sorted, so a plan built from a directory is the same plan tomorrow. Extension-whitelisted
+    rather than decode-and-see: a pre-flight must not read a 4 GB weights file to discover it
+    is not source.
+    """
+    found: list[Path] = []
+    skipped = 0
+    truncated = False
+    for dirpath, dirnames, filenames in os.walk(directory):
+        dirnames[:] = sorted(d for d in dirnames if d not in _IGNORED_DIRS)
+        for name in sorted(filenames):
+            if not _has_text_extension(name):
+                skipped += 1
+                continue
+            if len(found) >= cap:
+                truncated = True
+                break
+            found.append(Path(dirpath) / name)
+        if truncated:
+            break
+    return DirectoryContents(files=found, truncated=truncated, skipped_non_text=skipped)
+
+
+def _has_text_extension(name: str) -> bool:
+    _, dot, ext = name.rpartition(".")
+    return bool(dot) and ext.lower() in _TEXT_EXTENSIONS
 
 
 def _candidates(prompt: str) -> list[Candidate]:
@@ -131,12 +188,24 @@ def _has_known_extension(raw: str) -> bool:
     return bool(dot) and ext.lower() in _KNOWN_EXTENSIONS
 
 
-def _resolve(candidates: list[Candidate], root: Path) -> Extraction:
+def _resolve(candidates: list[Candidate], root: Path, overrides: dict[str, str]) -> Extraction:
     result = Extraction()
     claimed: set[Path] = set()  # real paths already counted — dedupe across spellings
     index: dict[str, list[Path]] | None = None  # basename -> paths, built lazily once
+    unused = dict(overrides)
 
     for candidate in candidates:
+        chosen = unused.pop(candidate.raw, None)
+        # "*" means "I meant all of them" — the other honest answer to an ambiguous reference,
+        # and the only one that does not require typing out forty paths.
+        take_all = chosen == ALL_CANDIDATES
+        if chosen is not None and not take_all:
+            picked = _resolve_direct(chosen, root)
+            if picked is not None:
+                _classify(result, claimed, candidate.raw, picked, found_by_search=False)
+            else:
+                result.missing.append(f"{candidate.raw} (resolved to {chosen}, which is absent)")
+            continue
         direct = _resolve_direct(candidate.raw, root)
         if direct is not None:
             _classify(result, claimed, candidate.raw, direct, found_by_search=False)
@@ -147,10 +216,19 @@ def _resolve(candidates: list[Candidate], root: Path) -> Extraction:
         if len(matches) == 1:
             _classify(result, claimed, candidate.raw, matches[0], found_by_search=True)
         elif len(matches) > 1:
-            result.ambiguous[candidate.raw] = sorted(matches)
+            if take_all:
+                for match in sorted(matches):
+                    _classify(result, claimed, candidate.raw, match, found_by_search=True)
+            else:
+                result.ambiguous[candidate.raw] = sorted(matches)
         elif candidate.path_like:
             result.missing.append(candidate.raw)
         # Non-path-like candidates that resolve nowhere were prose after all: dropped quietly.
+
+    # An override for a reference the prompt does not contain is a typo in the flag, not a
+    # silent no-op: the user believes they resolved something, and they have not.
+    for raw in unused:
+        result.missing.append(f"{raw} (given to --resolve, but the prompt never names it)")
     return result
 
 

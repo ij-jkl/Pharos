@@ -12,7 +12,8 @@ report says so rather than inventing a constant.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
@@ -24,7 +25,13 @@ from pharos.calibration import (
     load_observations,
 )
 from pharos.config import PharosConfig
-from pharos.preflight.extract import Extraction, extract_references
+from pharos.preflight.content import BinaryFile, read_countable
+from pharos.preflight.extract import (
+    Extraction,
+    ResolvedFile,
+    expand_directory,
+    extract_references,
+)
 from pharos.profiler.profiler import build_profile
 from pharos.profiler.types import EnvironmentProfile
 from pharos.tokenizer.cache import TokenCountCache
@@ -45,6 +52,27 @@ class CountedFile:
     display: str  # path as shown to the user (relative to root where possible)
     tokens: int
     found_by_search: bool
+    path: Path | None = None  # resolved source, so the splitter can re-read and slice it
+    note: str | None = None  # non-obvious treatment, e.g. a notebook counted by cell source
+
+
+@dataclass(frozen=True, slots=True)
+class ExpandedDirectory:
+    """A named directory's text files, counted — an ESTIMATE, deliberately outside the floor.
+
+    The floor is what the prompt guarantees. Naming a directory does not guarantee the agent
+    reads all of it, so these tokens are reported as a separate "if fully read" figure: adding
+    them to the floor would make a lower bound out of a guess.
+    """
+
+    display: str
+    files: list[CountedFile]
+    truncated: bool
+    skipped_non_text: int
+
+    @property
+    def tokens(self) -> int:
+        return sum(f.tokens for f in self.files)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +93,17 @@ class CheckReport:
     verdict: Verdict
     verdict_detail: str
     reserve_warning: str | None
+    directories: list[ExpandedDirectory] = field(default_factory=list)
+    directory_warning: str | None = None  # set when the floor fits but the directories do not
+
+    @property
+    def directory_tokens(self) -> int:
+        return sum(d.tokens for d in self.directories)
+
+    @property
+    def ceiling(self) -> int:
+        """Floor plus every named directory read in full — the other end of the range."""
+        return self.floor + self.directory_tokens
 
 
 async def run_check(
@@ -73,8 +112,12 @@ async def run_check(
     *,
     profile: EnvironmentProfile | None = None,
     skip_profile: bool = False,
+    resolve: dict[str, str] | None = None,
 ) -> CheckReport:
-    """Run the pre-flight for ``prompt``. ``profile`` injects a probe result (tests)."""
+    """Run the pre-flight for ``prompt``. ``profile`` injects a probe result (tests).
+
+    ``resolve`` answers AMBIGUOUS references (raw text -> chosen path); see ``extract``.
+    """
     root_is_fallback = config.target_folder is None
     # Resolved so "not found under ." never appears — the absolute root is the useful message.
     root = (Path(config.target_folder) if config.target_folder else Path.cwd()).resolve()
@@ -84,25 +127,18 @@ async def run_check(
     backend_model = profile.backend.model if profile is not None else None
     model = config.model or backend_model
 
-    counter, counts_exact = _resolve_counter(config, model)
-    cache = TokenCountCache()
-    identity = str(getattr(counter, "path", "")) if counter is not None else "heuristic"
-
-    def count(text: str) -> int:
-        if counter is not None:
-            return cache.get_or_count(text, counter.count, identity=identity)
-        return (len(text) + _HEURISTIC_CHARS_PER_TOKEN - 1) // _HEURISTIC_CHARS_PER_TOKEN
+    count, counts_exact = build_counter(config, model)
 
     prompt_tokens = count(prompt)
-    extraction = extract_references(prompt, root)
+    extraction = extract_references(prompt, root, resolve)
 
     files: list[CountedFile] = []
     skipped_binary: list[str] = []
     for ref in extraction.files:
         display = _display_path(ref.path, root)
         try:
-            content = ref.path.read_bytes().decode("utf-8")
-        except UnicodeDecodeError:
+            countable = read_countable(ref.path)
+        except BinaryFile:
             # A binary file has no text token count; a fabricated one would poison the floor.
             skipped_binary.append(display)
             continue
@@ -111,9 +147,16 @@ async def run_check(
             continue
         files.append(
             CountedFile(
-                display=display, tokens=count(content), found_by_search=ref.found_by_search
+                display=display,
+                tokens=count(countable.text),
+                found_by_search=ref.found_by_search,
+                path=ref.path,
+                note=countable.note,
             )
         )
+
+    claimed = {f.path for f in files}
+    directories = [_expand(ref, root, count, claimed) for ref in extraction.directories]
 
     observations = load_observations(Path(config.observations_file))
     overhead = _overhead(config, observations, model)
@@ -121,6 +164,7 @@ async def run_check(
 
     verdict, detail = _verdict(floor, profile)
     reserve_warning = _reserve_warning(config, observations, model)
+    directory_warning = _directory_warning(floor, directories, profile)
 
     return CheckReport(
         root=root,
@@ -137,7 +181,81 @@ async def run_check(
         verdict=verdict,
         verdict_detail=detail,
         reserve_warning=reserve_warning,
+        directories=directories,
+        directory_warning=directory_warning,
     )
+
+
+def _expand(
+    ref: ResolvedFile,
+    root: Path,
+    count: Callable[[str], int],
+    claimed: set[Path | None],
+) -> ExpandedDirectory:
+    """Count the text files under a named directory, skipping ones already counted by name."""
+    contents = expand_directory(ref.path)
+    counted: list[CountedFile] = []
+    for path in contents.files:
+        if path in claimed:
+            continue  # named explicitly as well: counted once, in the floor
+        try:
+            countable = read_countable(path)
+        except (OSError, BinaryFile):
+            continue  # a text extension that is not text after all; the count says nothing
+        claimed.add(path)
+        counted.append(
+            CountedFile(
+                display=_display_path(path, root),
+                tokens=count(countable.text),
+                found_by_search=False,
+                path=path,
+                note=countable.note,
+            )
+        )
+    return ExpandedDirectory(
+        display=_display_path(ref.path, root),
+        files=counted,
+        truncated=contents.truncated,
+        skipped_non_text=contents.skipped_non_text,
+    )
+
+
+def _directory_warning(
+    floor: int, directories: list[ExpandedDirectory], profile: EnvironmentProfile | None
+) -> str | None:
+    """Flag the case the floor cannot: it fits, but the directories it names do not."""
+    total = sum(d.tokens for d in directories)
+    if not total or profile is None:
+        return None
+    budget = profile.budget.usable_budget
+    if budget is None or floor > budget or floor + total <= budget:
+        return None
+    named = " · ".join(d.display for d in directories)
+    return (
+        f"the floor fits, but reading all of {named} would add ~{total:,} tokens and put the "
+        f"request {floor + total - budget:,} over the budget — name the files you actually "
+        f"need, or split by scope"
+    )
+
+
+def build_counter(
+    config: PharosConfig, model: str | None
+) -> tuple[Callable[[str], int], bool]:
+    """A memoised ``count(text) -> tokens`` plus whether it is the real GGUF tokenizer.
+
+    Shared with the splitter so a plan is measured with exactly the tokenizer that produced
+    the verdict it is answering; a plan counted by a different ruler is not a plan.
+    """
+    counter, counts_exact = _resolve_counter(config, model)
+    cache = TokenCountCache()
+    identity = str(getattr(counter, "path", "")) if counter is not None else "heuristic"
+
+    def count(text: str) -> int:
+        if counter is not None:
+            return cache.get_or_count(text, counter.count, identity=identity)
+        return (len(text) + _HEURISTIC_CHARS_PER_TOKEN - 1) // _HEURISTIC_CHARS_PER_TOKEN
+
+    return count, counts_exact
 
 
 def _resolve_counter(config: PharosConfig, model: str | None) -> tuple[TokenCounter | None, bool]:
