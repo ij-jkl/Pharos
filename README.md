@@ -17,8 +17,6 @@ paste: what a prompt will cost (`pharos check`), and how to cut it up when it wi
 ![The Pharos dashboard: context mismatch banner, context and VRAM gauges, and the request event log](docs/pharos-dashboard.png)
 -->
 
-
-
 ## The problem it solves
 
 Local models advertise big context windows, but the window that is *actually loaded* is
@@ -52,16 +50,30 @@ estimate simply stands.
 
 ## Install
 
-Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is pinned and fetched automatically.
+One command on Windows — it installs what is missing, configures the rest, and finishes by
+running the CLI on a real prompt so you see what it does before you read another line:
+
+```powershell
+irm https://raw.githubusercontent.com/ij-jkl/Pharos/main/install.ps1 | iex
+```
+
+It is safe to re-run: every step checks before it acts, so a second run repairs a half-finished
+first one. Nothing is installed system-wide except [uv](https://docs.astral.sh/uv/), and
+nothing outside the install directory is touched. Use `-Path D:\somewhere` to choose where it
+lands, `-SkipDemo` to stop after setup.
+
+By hand, on any platform — the script does exactly this and nothing more:
 
 ```bash
 git clone https://github.com/ij-jkl/Pharos.git
 cd Pharos
 uv sync
+cp pharos.toml.example pharos.toml
 ```
 
-Runs fine on a machine with no NVIDIA GPU and no backend (everything degrades to N/A /
-UNREACHABLE); an NVIDIA GPU and a local [Ollama](https://ollama.com) make it useful.
+Python 3.12 is pinned and fetched by uv automatically. Runs fine on a machine with no NVIDIA
+GPU and no backend (everything degrades to N/A / UNREACHABLE); an NVIDIA GPU and a local
+[Ollama](https://ollama.com) make it useful.
 
 ## Configure
 
@@ -262,3 +274,9 @@ That last step is the one that matters: the splitter's projection and the checke
 from different code, and a plan whose parts do not re-check as fitting is fiction. It also
 pins down the scope contract by measuring it — a part read literally, deferred filenames and
 all, costs more than its projection, which is exactly why the part says "do not open these".
+
+## Author
+
+Built by **Isaac Jordan** — [LinkedIn](https://www.linkedin.com/in/isaac-jordan-464563215/)
+
+Licensed under the [MIT License](LICENSE).
