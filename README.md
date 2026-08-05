@@ -48,32 +48,41 @@ reports it. On `/v1` streaming, OpenAI-compatible responses only carry `usage` i
 client* asked for it (`stream_options.include_usage`); Pharos never injects that — the
 estimate simply stands.
 
-## Install
+## Install and run
 
-One command on Windows — it installs what is missing, configures the rest, and finishes by
-running the CLI on a real prompt so you see what it does before you read another line:
-
-```powershell
-irm https://raw.githubusercontent.com/ij-jkl/Pharos/main/install.ps1 | iex
-```
-
-It is safe to re-run: every step checks before it acts, so a second run repairs a half-finished
-first one. Nothing is installed system-wide except [uv](https://docs.astral.sh/uv/), and
-nothing outside the install directory is touched. Use `-Path D:\somewhere` to choose where it
-lands, `-SkipDemo` to stop after setup.
-
-By hand, on any platform — the script does exactly this and nothing more:
+Clone it, then run one script — the same one, every time:
 
 ```bash
 git clone https://github.com/ij-jkl/Pharos.git
 cd Pharos
-uv sync
-cp pharos.toml.example pharos.toml
+
+./start.sh        # macOS / Linux
+.\start.ps1       # Windows
 ```
 
-Python 3.12 is pinned and fetched by uv automatically. Runs fine on a machine with no NVIDIA
-GPU and no backend (everything degrades to N/A / UNREACHABLE); an NVIDIA GPU and a local
-[Ollama](https://ollama.com) make it useful.
+The first run installs [uv](https://docs.astral.sh/uv/) if it is missing, fetches Python 3.12,
+installs the dependencies, creates `pharos.toml`, and checks for a backend. Every run after
+that detects all of it is already there, skips straight past, and opens the prompt:
+
+```
+pharos> Refactor everything in `pharos/proxy/` following `README.md`
+
+FLOOR   ≥ 5,007 tokens
+CEILING ≤ 14,615 tokens if every named directory is read in full
+```
+
+Type a prompt to pre-flight it, `s <prompt>` to cut one that does not fit into parts that do,
+`d` for the live dashboard, `q` to quit.
+
+Setup is re-detected rather than remembered, so a half-finished first run is repaired by a
+second one, and a `git pull` that moves dependencies re-syncs on its own. `--reinstall` forces
+the setup steps, `--setup-only` stops before the prompt (`-Reinstall` / `-SetupOnly` on
+PowerShell).
+
+Nothing is installed system-wide except uv, and nothing outside the clone is touched. Pharos
+runs fine on a machine with no NVIDIA GPU and no backend — everything degrades to N/A /
+UNREACHABLE, and the pre-flight plans against a stand-in window instead of a real one. An
+NVIDIA GPU and a local [Ollama](https://ollama.com) make it useful.
 
 ## Configure
 
