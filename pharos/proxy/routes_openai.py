@@ -46,12 +46,15 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
     user_texts: list[str] = []
     message_count = 0
     has_image = False
+    has_system = False
     messages = payload.get("messages")
     if isinstance(messages, list):
         for message in messages:
             if not isinstance(message, dict):
                 continue
             message_count += 1
+            if message.get("role") == "system":
+                has_system = True
             text = content_text(message.get("content"))
             if text:
                 texts.append(text)
@@ -65,10 +68,12 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
                 has_image = True
     # Tool definitions dominate a coding agent's input; previously counted as zero.
     # ``functions`` is the deprecated spelling and lands in the prompt the same way.
+    has_tools = False
     for key in ("tools", "functions"):
         value = payload.get(key)
         if isinstance(value, list) and value:
             texts.append(json_text(value))
+            has_tools = True
     return InputSpec(
         text="\n".join(texts),
         exact=False,
@@ -77,6 +82,7 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
         opaque="images" if has_image else None,
         user_text="\n".join(user_texts),
         message_count=message_count,
+        agent_shaped=has_tools or has_system,
     )
 
 

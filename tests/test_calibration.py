@@ -13,6 +13,7 @@ from pathlib import Path
 from pharos.calibration import (
     Observation,
     ObservationRecorder,
+    _parse_record,
     estimate_client_overhead,
     estimate_typical_output,
     load_observations,
@@ -28,6 +29,7 @@ def _obs(
     exact: bool = True,
     output: int | None = 500,
     ts: float = 1000.0,
+    agent_shaped: bool = True,
 ) -> Observation:
     return Observation(
         ts=ts,
@@ -38,6 +40,7 @@ def _obs(
         user_tokens=user_tokens,
         messages=messages,
         output_tokens=output,
+        agent_shaped=agent_shaped,
     )
 
 
@@ -85,9 +88,17 @@ def test_store_contains_counts_only(tmp_path: Path) -> None:
     raw = json.loads(path.read_text(encoding="utf-8"))
     allowed = {
         "ts", "endpoint", "model", "input_tokens", "input_exact",
-        "user_tokens", "messages", "output_tokens",
+        "user_tokens", "messages", "output_tokens", "agent_shaped",
     }
     assert set(raw[0].keys()) == allowed
+    # Names alone would not catch a field that later starts carrying content, so the guard
+    # checks shapes too: every value is a number, a flag, or the model name. `endpoint` and
+    # `model` are the only strings, and neither comes from the body's text.
+    for key, value in raw[0].items():
+        if key in {"endpoint", "model"}:
+            assert value is None or isinstance(value, str)
+        else:
+            assert isinstance(value, (int, float, bool)) or value is None
 
 
 def test_recorder_debounce_asks_for_flush_at_threshold(tmp_path: Path) -> None:
@@ -112,6 +123,44 @@ def test_overhead_prefers_fewest_message_records() -> None:
     assert estimate is not None
     assert estimate.tokens == 10_000  # min over the messages==1 group only
     assert "fewest-message = 1" in estimate.provenance
+
+
+def test_a_bare_poke_at_the_proxy_does_not_erase_the_learned_overhead() -> None:
+    """Found live: four curl requests collapsed a real 1,800-token estimate to 10.
+
+    The estimator minimises over the fewest-message records, and a hand-written curl has one
+    message, no system prompt and no tools — so it wins that minimum and defines the overhead
+    for every later pre-flight. A proxy sees more than one client; the estimate has to survive
+    that. Agent-shaped records are therefore preferred over bare ones.
+    """
+    agent = _obs(input_tokens=1_235, user_tokens=3, messages=2, agent_shaped=True)
+    pokes = [
+        _obs(input_tokens=14, user_tokens=4, messages=1, agent_shaped=False) for _ in range(4)
+    ]
+    estimate = estimate_client_overhead([agent, *pokes], "qwen3.5-9b-heretic")
+    assert estimate is not None
+    assert estimate.tokens == 1_232  # the agent's real overhead, not the poke's 10
+    assert "agent-shaped" in estimate.provenance
+
+
+def test_bare_records_still_estimate_when_that_is_all_there_is() -> None:
+    """Preferring agent-shaped records must not mean refusing to answer without them."""
+    pokes = [_obs(input_tokens=100, user_tokens=10, messages=1, agent_shaped=False)]
+    estimate = estimate_client_overhead(pokes, "qwen3.5-9b-heretic")
+    assert estimate is not None
+    assert estimate.tokens == 90
+    assert "all," in estimate.provenance  # and it says the pool was not agent-shaped
+
+
+def test_records_written_before_the_field_existed_still_parse() -> None:
+    """Old stores must degrade to 'not agent-shaped', never to a crash."""
+    legacy = {
+        "ts": 1.0, "endpoint": "ollama-chat", "model": "qwen3.5-9b-heretic",
+        "input_tokens": 500, "input_exact": True, "user_tokens": 50,
+        "messages": 2, "output_tokens": 10,
+    }
+    parsed = _parse_record(legacy)
+    assert parsed is not None and parsed.agent_shaped is False
 
 
 def test_overhead_is_minimum_not_mean() -> None:

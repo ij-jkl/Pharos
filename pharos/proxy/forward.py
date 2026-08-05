@@ -130,6 +130,10 @@ class InputSpec:
     # carried. client overhead = total input - user content (see pharos.calibration).
     user_text: str = ""
     message_count: int = 0
+    # True when the request carried a tool catalogue or a system prompt — the signature of a
+    # coding agent rather than a bare poke at the endpoint. The overhead estimator needs it to
+    # compare like with like; see pharos.calibration.
+    agent_shaped: bool = False
 
 
 async def counted_forward(
@@ -256,6 +260,7 @@ async def _record_observation(
             user_tokens=user_tokens,
             messages=spec.message_count,
             output_tokens=metrics.eval_count,
+            agent_shaped=spec.agent_shaped,
         )
         if recorder.add(observation):
             await recorder.flush()

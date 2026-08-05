@@ -48,12 +48,15 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
     user_texts: list[str] = []
     message_count = 0
     has_image = False
+    has_system = False
     messages = payload.get("messages")
     if isinstance(messages, list):
         for message in messages:
             if not isinstance(message, dict):
                 continue
             message_count += 1
+            if message.get("role") == "system":
+                has_system = True
             text = content_text(message.get("content"))
             if text:
                 texts.append(text)
@@ -68,7 +71,8 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
     # Tool definitions dominate a coding agent's input and were previously counted as zero:
     # measured 268 uncounted tokens for a single trivial tool, 382 for three.
     tools = payload.get("tools")
-    if isinstance(tools, list) and tools:
+    has_tools = isinstance(tools, list) and bool(tools)
+    if has_tools:
         texts.append(json_text(tools))
     return InputSpec(
         text="\n".join(texts),
@@ -78,6 +82,7 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
         opaque="images" if has_image else None,
         user_text="\n".join(user_texts),
         message_count=message_count,
+        agent_shaped=has_tools or has_system,
     )
 
 
@@ -109,6 +114,8 @@ def _extract_generate(payload: dict[str, Any]) -> InputSpec:
         # The prompt is the user-authored portion; system/suffix/context are client-added.
         user_text=prompt if isinstance(prompt, str) else "",
         message_count=1,
+        # /api/generate has no tool catalogue, so a system prompt is the only agent tell.
+        agent_shaped=isinstance(payload.get("system"), str) and bool(payload.get("system")),
     )
 
 

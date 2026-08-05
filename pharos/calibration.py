@@ -15,6 +15,11 @@ Estimator design (the part that has to be right):
   lower bound, which is the one promise its output makes. Restricting to fewest-message
   records first makes it a real first-turn estimate rather than a hopeful one: in a long
   session with no fresh starts, a global minimum would still carry history.
+* AGENT-SHAPED records (tools or a system prompt) are preferred over bare ones. A minimum is
+  only as representative as the pool it minimises over, and a proxy sees more than one client:
+  four `curl` pokes at the endpoint are enough to drag the estimate from ~1,800 tokens to ~10
+  and keep it there. Found live, on real traffic — the bare records stay as a fallback for a
+  store that has nothing better in it.
 * Exact records (backend-reconciled) are preferred over estimated ones whenever any exist.
 
 Writes go through ``ObservationRecorder``, which batches in memory and flushes off the event
@@ -55,6 +60,9 @@ class Observation:
     user_tokens: int  # tokens of user-authored content alone (same tokenizer as the estimate)
     messages: int  # message count of the request (1 for completion-style endpoints)
     output_tokens: int | None  # eval_count when the backend reported it
+    # True when the request carried tools or a system prompt: the shape of a coding agent, as
+    # opposed to a bare curl at the endpoint. Still counts only — a boolean, never text.
+    agent_shaped: bool = False
 
 
 def load_observations(path: Path) -> list[Observation]:
@@ -88,6 +96,9 @@ def _parse_record(item: object) -> Observation | None:
             output_tokens=int(item["output_tokens"])
             if item.get("output_tokens") is not None
             else None,
+            # Absent in records written before this field existed: they read as not
+            # agent-shaped, which only ever makes them a fallback, never a wrong answer.
+            agent_shaped=bool(item.get("agent_shaped", False)),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -169,14 +180,21 @@ def estimate_client_overhead(
     pool = _matching(observations, model)
     if not pool:
         return None
-    exact = [o for o in pool if o.input_exact]
-    used, kind = (exact, "exact") if exact else (pool, "estimated")
+    # Agent-shaped records first. One `curl` at the proxy carries no system prompt and no tool
+    # catalogue, so its client_added is ~10 tokens — and being a MINIMUM over the fewest-message
+    # records, that single poke would otherwise define the estimate for every later pre-flight,
+    # collapsing 1,800 tokens of real agent overhead to nothing. Mixing clients is normal; the
+    # estimate has to survive it.
+    agent = [o for o in pool if o.agent_shaped]
+    shaped, shape_note = (agent, "agent-shaped") if agent else (pool, "all")
+    exact = [o for o in shaped if o.input_exact]
+    used, kind = (exact, "exact") if exact else (shaped, "estimated")
     fewest = min(o.messages for o in used)
     first_turn_like = [o for o in used if o.messages == fewest]
     tokens = min(max(o.input_tokens - o.user_tokens, 0) for o in first_turn_like)
     provenance = (
         f"learned · min over {len(first_turn_like)} of {len(pool)} observed requests "
-        f"({kind} inputs, fewest-message = {fewest})"
+        f"({shape_note}, {kind} inputs, fewest-message = {fewest})"
     )
     return OverheadEstimate(tokens=tokens, provenance=provenance)
 
