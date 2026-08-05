@@ -307,7 +307,7 @@ Re-run once the target model is warm before concluding anything.
 **Still open:** the human half — actually driving Copilot/Cursor against
 `http://127.0.0.1:11435/v1` for real work, including tool calls. Not automatable here.
 tok/s measured **33.9** on this box (9B **Q8_0**, not Q4) — below the 25–60 band's midpoint
-but plausible for the heavier quant.
+but plausible for the heavier quant. **Runbook in §13.**
 
 ---
 
@@ -506,3 +506,208 @@ are documented only, pending a v0.2 scope decision. `kv_mib_per_1k` left at 32.
 
 `pharos.toml` values that differ from the example: `model = "qwen3.5-9b-heretic"`.
 `kv_mib_per_1k` left at 32; measured ≈26 for this model.
+
+## ☑ 12. `pharos split` — do the parts actually fit?
+
+Everything the splitter promises is arithmetic done offline; the one thing it cannot prove on
+its own is that a part it called 5,960 tokens really lands under the loaded window when a real
+client sends it. Confirm with the proxy running and the dashboard open:
+
+1. Pick a prompt that `pharos check` calls EXCEEDS against the live budget, then
+   `uv run pharos split "<same prompt>" --out parts/`.
+2. Paste `parts/part-01.txt` into the coding agent pointed at the proxy. Watch the event log:
+   the request's counted input should land at or below the part's projection, and the context
+   gauge should stay under the warn threshold.
+3. Repeat for the remaining parts, carrying each hand-off forward. The hand-off is extra input
+   the projection does not include — confirm it stays small enough that the last part, with the
+   most accumulated hand-off text, still fits.
+4. Note whether the agent honoured the OUT OF SCOPE block. If it reads deferred files anyway,
+   the projection is not wrong — the scope contract is — and the wording is what needs work.
+
+Open question this settles: whether one packed part per request is the right granularity, or
+whether the hand-off accumulation means later parts need a smaller target than the warn
+threshold.
+
+### Outcome of the 2026-08-05 run (§12, live)
+
+RTX 3060, Ollama, qwen3.5-9b-heretic Q8_0, `num_ctx=32768` -> usable 31,744 (warn 25,395).
+Method: build a real plan against the live budget, then for each part assemble the request an
+OBEDIENT agent would send — the part body plus the contents of exactly the files it scopes,
+honouring line ranges — and compare Ollama's own `prompt_eval_count` against Pharos's
+projection minus the terms the harness cannot reproduce (learned client overhead, hand-off
+allowance).
+
+**Scope mode**, prompt `Refactor everything in \`pharos/\`…`, 3 parts:
+
+| part | projected | expected | backend | delta | fits |
+|---|---|---|---|---|---|
+| 1 | 25,099 | 23,273 | 23,282 | +0.04% | yes |
+| 2 | 23,417 | 21,391 | 21,400 | +0.04% | yes |
+| 3 | 7,237 | 5,211 | 5,220 | +0.17% | yes |
+
+**Text mode**, a 72,730-token pasted document, 4 parts: +0.04% / +0.04% / +0.04% / +0.48%,
+every part inside the budget, and all 120 section markers present and in order across the
+segments (nothing lost at a cut).
+
+The deviation is a CONSTANT +9 tokens on every part, not a percentage: it is the chat
+template's own scaffolding, which §"Input-counting audit" already documents as deliberately
+uncounted. Pharos under-counts by that fixed amount, which is the safe direction for a floor.
+Slicing is confirmed sound: a file cut at line 427/684 costs what the parts claim.
+
+Streaming through the proxy, same prompt direct vs. proxied (seed 7, temperature 0): 25 chunks
+each, byte-identical assembled content, identical final-chunk keys.
+
+### Finding: one `curl` erased the learned client overhead (fixed)
+
+Live traffic found what no unit test did. After four bare `curl`-shaped requests through the
+proxy, `pharos check` reported `client overhead ~10` where the real coding-agent overhead was
+~1,826. The estimator minimises `input - user` over the FEWEST-message records, and a
+hand-written poke has one message, no system prompt and no tools — so it wins that minimum and
+then defines the overhead for every later pre-flight. The floor stayed technically a lower
+bound, and completely lost its point.
+
+Fix: observations now record `agent_shaped` (the request carried tools or a system prompt —
+a boolean, so the counts-only contract holds), and the estimator prefers agent-shaped records,
+falling back to bare ones only when there is nothing better. Re-validated live: with one
+agent-shaped record and four pokes in the same store, the estimate is 1,232, not 10. Records
+written before the field exists parse as not-agent-shaped, so old stores degrade rather than
+crash.
+
+Left as-is: `pharos_observations.json.bak` holds the pre-fix store from this session (records
+without the new field), kept rather than deleted.
+
+### §12 continued: the scope contract, measured against a real agent
+
+The open question — *does an agent handed a part actually leave the deferred files alone?* —
+was answered by running every part through the live model as a coding agent: a `read_file`
+tool it could call, answered for real, so the conversation grew exactly as it would in a
+session. Three parts, ~33 planned files, qwen3.5-9b at `num_ctx=32768`.
+
+**Run 1 (original wording): 2 violations.** Part 2 opened `pharos/naming.py` and
+`pharos/__init__.py`, neither in its scope, and the conversation peaked at 25,451 tokens
+against a 23,990 projection. Still inside the 31,744 budget, so nothing broke — but the
+exposure is real and now has a number on it.
+
+Two changes followed, both from reading that run:
+
+* The rule was rewritten as a RULE with a consequence and a stated alternative ("do NOT open
+  it — say which one and why, and stop"), and a one-line REMINDER naming the in-scope files
+  was added *after* the task block. Attention falls off in the middle of a long prompt; the
+  last thing read is the thing obeyed, and the scope line is what the whole projection rests
+  on, so it gets the last word.
+* That reminder names files by `label()`, not `display`. Naming "forward.py" where the scope
+  is lines 1-427 reads as leave for the whole file.
+
+**Run 2 (greedy) and Run 3 (temperature 0.8, an independently sampled trajectory): 0
+violations each.** Two runs is not a proof, and the mechanism is a prompt, not an
+enforcement — but the change is measured, not hoped for.
+
+Also confirmed in these runs: no part overflowed the loaded window; VRAM peaked at 10,781 MiB
+of 12,288 with no OOM; and the projection tracked the real conversation closely once the agent
+had read its scope (part 2: 23,569 actual vs 23,005 projected, the difference being the
+harness's own tool catalogue).
+
+### Finding: "at most 10 lines" is not a constant (fixed)
+
+Hand-off sizes across those runs, for the identical instruction: 64, 74, 83, 107, 160, 161,
+162, 168 and **328** tokens. The reserve had just been raised 200 -> 320 on the strength of the
+first three measurements; the 328-token hand-off arrived on the very next trajectory and blew
+through it. A guessed constant becomes a broken promise the moment a model gets wordy.
+
+Fixed by making it `handoff_reserve` in `pharos.toml`, defaulting to 500 (clears every
+hand-off observed), documented with the measurements rather than a round number.
+
+### Finding: a sliced part assumes a range-capable reader (documented, not fixable here)
+
+`read_file(path)` on a typical agent takes a path and nothing else, and returns the whole
+file. A part scoped to `forward.py (lines 1-427 of 684)` therefore costs the FULL file on such
+a client, not the slice. Pharos cannot fix another agent's tool signature, so the plan now
+says it out loud with the number: what those files would cost if read whole. Silence here
+would have been a plan that quietly does not work.
+
+## ☐ 13. The human half — a real coding agent, doing real work
+
+The last unverified claim in the project. Everything in §7 that a script could check is
+confirmed: passthrough is byte-identical, `options` survive, headers are clean. What no script
+here can produce is a real agent's traffic — a system prompt, a tool catalogue, a conversation
+that grows over a dozen turns, and tool calls that actually round-trip. Two things rest on it
+that nothing else can settle:
+
+- **The passthrough claim is only as strong as the clients that have exercised it.** So far
+  that is `curl` and a purpose-built harness, both of which send what Pharos expects.
+- **`agent_shaped` calibration was fixed against one synthetic record.** The whole point of
+  §12's finding is that the learned overhead should come from agent-shaped traffic. Until a
+  real agent has written observations, the pre-flight floor for a real agent is still an
+  extrapolation from a harness.
+
+### Setup
+
+```bash
+ollama run qwen3.5-9b-heretic "hi"     # model resident at a known num_ctx
+uv run pharos                           # dashboard up, proxy on 11435
+```
+
+Point the client at the proxy and nothing else — the value of the run comes from it being the
+only endpoint for a whole session:
+
+| client | where |
+|---|---|
+| Continue / Cline | `apiBase: http://127.0.0.1:11435/v1` on an `openai`-type provider |
+| Cursor | Models → OpenAI → Override base URL → `http://127.0.0.1:11435/v1` |
+| Copilot (BYOK) | OpenAI-compatible endpoint → same URL |
+
+Any dummy string works as the API key; Pharos forwards headers untouched and Ollama ignores it.
+
+Before starting, snapshot the store so the session's contribution is separable:
+
+```bash
+cp pharos_observations.json observations-before-13.json
+```
+
+### Then just work for 20–30 minutes
+
+Real tasks, not prompts written to be validated: have it read files, edit something, run a
+test, iterate on a failure. Tool calls are the part that matters — they are the request shape
+(`tools` in the body, `tool_calls` in the messages) that §"Input-counting audit" measured but
+that no real client has yet sent through the proxy.
+
+### Pass criteria
+
+1. **Indistinguishable from talking to Ollama directly.** No client-side error, no stall, no
+   truncated stream. The test for any oddity: point back at `11434` and see if it survives. If
+   it vanishes, it is a passthrough bug — keep `pharos.log` and the failing request.
+2. **Every request appears in the TUI** — `→`, `✎ input ~N`, `✓ status`. A request the agent
+   made that the log does not show is a counting gap, and worth more than a clean run.
+3. **Tool calls round-trip.** The agent calls a tool, gets a result, continues. Note the input
+   count on the turns that carry a tool catalogue: they should be dramatically larger than the
+   bare turns (the audit measured ~+258 tokens for one tool, ~+905 for eight).
+4. **The label is `gguf`, never `heuristic`**, and never the red
+   `(untrusted · other model's tokenizer)` — if the client sends a model name that is not the
+   one in `pharos.toml`, that red label is correct behaviour, but it means the session's counts
+   are not the ones you want to draw conclusions from. Fix the client's model name and re-run.
+5. **The context gauge tracks a growing conversation.** Over a dozen turns it should climb
+   toward the warn threshold rather than sitting flat — a flat gauge across a long session
+   means the conversation is not being counted as it accumulates.
+
+### What to record afterwards
+
+```bash
+# Did the session write agent-shaped observations?
+python -c "import json; r=json.load(open('pharos_observations.json'))['records']; print(len(r), 'records,', sum(bool(x.get('agent_shaped')) for x in r), 'agent-shaped')"
+
+# What does the pre-flight now think a real agent costs?
+uv run pharos check "add a docstring to pharos/config.py" --json | python -c "import json,sys; print(json.load(sys.stdin)['overhead'])"
+```
+
+**Expect:** agent-shaped records in the store, and an `overhead.tokens` in the ~1,000–2,000
+band with `provenance` naming the observed traffic — the ~1,826 figure §12 quotes came from a
+real agent, so a number in that neighbourhood is the calibration fix confirming itself against
+the traffic it was designed for. A figure near 10 means bare pokes are still winning the
+minimum, and the fix did not hold outside its test.
+
+**If a request breaks:** the two most likely shapes are a body field no route parses (the
+counting path takes a COPY, so a parse failure should degrade the count, never the request —
+if it killed the request, that is the bug) and a streaming client that disconnects differently
+from `curl` (§10 covers abort handling for `curl`'s shape only).
+
+Record the outcome here the way §12 records its runs: what was measured, not what was hoped.

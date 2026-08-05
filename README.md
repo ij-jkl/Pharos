@@ -1,11 +1,23 @@
 # Pharos
 
+[![CI](https://github.com/ij-jkl/Pharos/actions/workflows/ci.yml/badge.svg)](https://github.com/ij-jkl/Pharos/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A transparent, context-aware proxy and live terminal dashboard that sits between a local
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.1 "Observe"** — observe-only and a pure passthrough. Pharos never mutates a
-request or a response; it watches the traffic and tells you the truth about it.
+**Status: v0.3 "Divide"** — the proxy stays observe-only and a pure passthrough (Pharos never
+mutates a request or a response), and alongside it two offline tools tell you, before you
+paste: what a prompt will cost (`pharos check`), and how to cut it up when it will not fit
+(`pharos split`).
+
+<!-- Capture docs/pharos-dashboard.png (see docs/CAPTURE.md), then uncomment:
+![The Pharos dashboard: context mismatch banner, context and VRAM gauges, and the request event log](docs/pharos-dashboard.png)
+-->
+
+
 
 ## The problem it solves
 
@@ -92,6 +104,9 @@ uv run pharos check "Refactor `src/auth/login.py` and `src/auth/session.py` per 
 uv run pharos check --file prompt.txt
 ```
 
+The prompt can also arrive on stdin — pipe it, or run `pharos check` with no argument, paste,
+and end with Ctrl-Z Enter (Windows) / Ctrl-D (Unix). The same is true of `pharos split`.
+
 `pharos check` extracts the files you explicitly named, tokenizes them exactly, adds the
 client overhead learned from traffic previously observed through the proxy (system prompt,
 tool catalogue — the part that made your 50-token prompt a 20K request), and compares the
@@ -102,6 +117,96 @@ exceeds, `2` no verdict (backend unreachable or no model loaded) — scriptable.
 
 File references are resolved against `target_folder` from `pharos.toml`. The check runs
 entirely locally and sends nothing to the backend.
+
+### Floor and ceiling
+
+Name a **directory** and you get a second number. The floor stays what the prompt guarantees;
+the directory's text files are counted separately and reported as a ceiling:
+
+```
+pharos/preflight (directory, if fully read)   +15,257   estimate — 5 text files
+
+FLOOR   ≥ 1,845 tokens
+CEILING ≤ 17,102 tokens if every named directory is read in full
+```
+
+Adding those tokens to the floor would turn a lower bound into a guess, so they stay out of
+it — but a floor that fits while the ceiling does not is called out explicitly, because the
+floor is not the number that has to survive contact with the agent. Expansion prunes
+vcs/venv/cache directories, whitelists text extensions (it will not read a `.safetensors` to
+find out it is not source) and stops at 300 files, saying so when it does.
+
+## Split a prompt that does not fit (v0.3 "Divide")
+
+When the verdict is EXCEEDS, the answer is not "write a smaller prompt" — it is to cut the
+work into pieces that each fit:
+
+```bash
+uv run pharos split "Refactor `src/auth/login.py` and `src/auth/session.py` per docs/plan.md"
+uv run pharos split --file prompt.txt --out parts/     # writes parts/part-01.txt …
+uv run pharos check "…" --split                        # same plan, after the report
+```
+
+The split is mechanical and local — no model is asked what your task *means*, nothing leaves
+the machine — and it takes one of two shapes depending on what actually overflows:
+
+- **scope split** — the task text fits but the files it names do not. Every part repeats your
+  task verbatim and narrows the scope to a subset of the files; files too large for one part
+  are cut into line ranges (`forward.py (lines 428-684 of 684)`), and the slices of one file
+  only ever move forward through the parts — no part asks you to hold two disjoint windows of
+  the same file. A named directory contributes its files here too, each labelled with where it
+  came from, which is what makes "refactor everything in `src/`" splittable at all. Each part
+  names the files it defers, so the agent knows what it is *not* to open, and asks for a
+  ≤10-line hand-off to paste above the next part; room for that hand-off is held back from
+  every part and counted into the ones that will carry it.
+- **text split** — the pasted text itself is too big (a log, a spec, a transcript). Parts are
+  ordered segments cut on paragraph, then line boundaries; the first parts ask only for an
+  acknowledgement and the last one asks for the work.
+
+Every part carries a projected cost measured with the same tokenizer that produced the
+verdict — client overhead + the part as written + the content it scopes — and each is packed
+against the warn threshold, not the hard limit. Two honesty rules stay in force: the
+projection is a floor that holds only while the agent stays inside the part's scope, and a
+plan that cannot work is refused rather than faked. If the client overhead alone fills the
+window, or a single line is wider than a part, `pharos split` says so instead of shipping
+parts that will fail.
+
+`--target N` plans against N tokens per part without probing the backend — useful offline, or
+to plan for a window you have not loaded yet. Exit codes: `0` a plan whose every part fits (or
+nothing to split), `1` no plan or a part still over, `2` no budget to plan against.
+
+## Ambiguity, notebooks, and JSON
+
+Three smaller things that decide whether the number is trustworthy:
+
+**Ambiguous references are never guessed.** `utils.py` matching both `src/` and `tests/` is
+reported, not resolved by coin-flip. Answer it and re-run:
+
+```bash
+uv run pharos check "fix utils.py" --resolve utils.py=tests/utils.py
+uv run pharos check "fix utils.py" --resolve utils.py=*   # I meant all of them
+uv run pharos check "fix utils.py" --pick     # choose from a list, interactively
+```
+
+`--pick` needs a terminal to ask on; when the prompt itself came from stdin, or output is
+piped, it says so and defers to `--resolve` rather than blocking on a prompt nobody can answer.
+A `--resolve` for a reference the prompt never makes is reported too — it is a typo in the
+flag, not a silent no-op.
+
+**Notebooks are counted as cell sources, outputs excluded.** A `.ipynb` is JSON, and a
+notebook with two plots carries tens of thousands of tokens of base64 that an agent never
+sees; counting the raw file overshoots by an order of magnitude, and an over-count is not a
+floor. The treatment is printed next to the number. The same reader feeds the splitter, so a
+notebook that is too big for one part is refused rather than cut — a line range into a
+notebook names a document that does not exist on disk.
+
+**`--json` makes it scriptable.** Both commands take `--json` and emit the full report — every
+count with its provenance, the budget, the verdict, and (for `split`) the plan with each part's
+projection and body. Human output moves to stderr, so stdout is the payload alone:
+
+```bash
+uv run pharos split --file prompt.txt --json | jq '.plan.parts[] | {index, projected_tokens}'
+```
 
 ## Point your client at it
 
@@ -120,13 +225,17 @@ re-encoding or re-chunking.
 ## What Pharos does NOT do (yet)
 
 - **No request mutation, ever.** No fields added or removed, no prompt rewriting, no
-  `stream_options` injection. The proxy remains a pure observer; `pharos check` is advisory
-  and runs entirely outside the request path.
-- **No prediction of which files an agent will read** — `pharos check` only counts files you
-  name explicitly, which is why its verdict is a floor and says so.
+  `stream_options` injection. The proxy remains a pure observer; `pharos check` and
+  `pharos split` are advisory and run entirely outside the request path.
+- **No prediction of which files an agent will read** — `pharos check` counts what you named:
+  files exactly, into the floor; directories in full, into a separate ceiling. What the agent
+  decides to open on its own is in neither number. A split part is a floor on the same terms:
+  it holds while the agent respects the scope block it was given.
 - **No history compaction** and no automatic trimming when you approach the budget — it
   warns; it does not intervene.
-- **No prompt decomposition / task splitting.**
+- **No semantic decomposition.** `pharos split` cuts by scope and by position, never by
+  meaning; it does not ask a model to reorganise your task, and it does not run the parts
+  for you.
 - **No change auditing / filesystem watching.**
 
 Those belong to later tiers. The contract is simple: what your agent sends is what the
@@ -145,3 +254,11 @@ uv run pytest
 Tokenizer tests against a real GGUF auto-skip unless a model file is present under
 `tests/models/` (gitignored). See `DESKTOP_VALIDATION.md` for the checklist of assumptions
 to confirm against a live GPU + Ollama machine.
+
+`tests/test_end_to_end.py` runs the whole loop against a mocked backend — a coding-agent-shaped
+request through the proxy, the observation it records, the overhead the pre-flight learns from
+it, the split that overhead forces, and then each generated part fed back through the checker.
+That last step is the one that matters: the splitter's projection and the checker's floor come
+from different code, and a plan whose parts do not re-check as fitting is fiction. It also
+pins down the scope contract by measuring it — a part read literally, deferred filenames and
+all, costs more than its projection, which is exactly why the part says "do not open these".
