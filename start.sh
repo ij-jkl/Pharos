@@ -47,6 +47,20 @@ ok()   { printf '    %sok  %s%s\n' "$C_GREEN" "$1" "$C_OFF"; }
 info() { printf '        %s%s%s\n' "$C_GREY" "$1" "$C_OFF"; }
 note() { printf '    %s!   %s%s\n' "$C_YELLOW" "$1" "$C_OFF"; }
 
+# Drawn, not generated: a figlet dependency for five lines of decoration is not worth an install
+# step. Quoted with <<'EOF' so the backslashes arrive as themselves.
+banner() {
+    printf '\n%s' "$C_CYAN"
+    cat <<'EOF'
+   ____  _   _    _    ____   ___  ____
+  |  _ \| | | |  / \  |  _ \ / _ \/ ___|
+  | |_) | |_| | / _ \ | |_) | | | \___ \
+  |  __/|  _  |/ ___ \|  _ <| |_| |___) |
+  |_|   |_| |_/_/   \_\_| \_\\___/|____/
+EOF
+    printf '%s' "$C_OFF"
+}
+
 die() {
     printf '\n%sFAILED: %s%s\n' "$C_RED" "$1" "$C_OFF" >&2
     [ $# -gt 1 ] && printf '        %s%s%s\n' "$C_YELLOW" "$2" "$C_OFF" >&2
@@ -93,11 +107,13 @@ if [ "$HAVE_UV" = 1 ] && [ "$HAVE_ENV" = 1 ] && [ "$HAVE_CONFIG" = 1 ] && [ "$RE
     READY=1
 fi
 
+banner
+
 if [ "$READY" = 1 ]; then
-    printf '\n  Pharos — ready\n'
+    printf '\n  ready\n'
     printf '  %sAlready set up; skipping installation.%s\n' "$C_GREY" "$C_OFF"
 else
-    printf '\n  Pharos — first-time setup\n'
+    printf '\n  first-time setup\n'
     printf '  %sSee your context budget before your agent silently overflows it.%s\n' "$C_GREY" "$C_OFF"
 
     if [ -z "$ROOT" ]; then
@@ -150,10 +166,96 @@ cd "$ROOT"
 
 LOADED_MODEL=""
 HAVE_BACKEND=0
-if PS_JSON=$(curl -sf -m 4 "$OLLAMA_URL/api/ps" 2>/dev/null); then
-    HAVE_BACKEND=1
-    LOADED_MODEL=$(printf '%s' "$PS_JSON" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
-fi
+
+detect_loaded_model() {
+    LOADED_MODEL=""
+    local json
+    if json=$(curl -sf -m 4 "$OLLAMA_URL/api/ps" 2>/dev/null); then
+        HAVE_BACKEND=1
+        LOADED_MODEL=$(printf '%s' "$json" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
+    else
+        HAVE_BACKEND=0
+    fi
+}
+
+# The model named in pharos.toml is the one whose GGUF vocabulary gets loaded, so it is the only
+# one that counts as exact. Loading another still works, but every count comes back marked
+# untrusted, which is worth saying out loud rather than leaving to be discovered.
+configured_model() {
+    [ -f "$ROOT/pharos.toml" ] || return 0
+    sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/pharos.toml" | head -1
+}
+
+same_model() {
+    # /api/ps reports `<name>:latest`; pharos.toml usually holds the untagged name.
+    [ -n "$1" ] && [ -n "$2" ] && [ "${1%:latest}" = "${2%:latest}" ]
+}
+
+offer_model_load() {
+    local tags names sizes configured count i name gb answer choice default
+    tags=$(curl -sf -m 4 "$OLLAMA_URL/api/tags" 2>/dev/null) || return 0
+
+    names=$(printf '%s' "$tags" | grep -o '"name":"[^"]*"' | sed 's/"name":"\(.*\)"/\1/')
+    [ -z "$names" ] && { note "No models pulled yet. Get one with:  ollama pull qwen3:8b"; return 0; }
+
+    sizes=$(printf '%s' "$tags" | grep -o '"size":[0-9]*' | sed 's/"size"://')
+    configured=$(configured_model)
+
+    printf '\n  No model is loaded, so there is no real window to measure against.\n'
+    printf '  You already have these:\n\n'
+
+    count=0
+    default=1
+    while IFS= read -r name; do
+        count=$((count + 1))
+        gb=$(printf '%s' "$sizes" | sed -n "${count}p")
+        gb=$(awk "BEGIN{printf \"%.1f\", ${gb:-0}/1073741824}")
+        if same_model "$name" "$configured"; then
+            default=$count
+            printf '    %2d. %-34s %5s GB   <- named in pharos.toml, counts exactly\n' "$count" "$name" "$gb"
+        else
+            printf '    %2d. %-34s %5s GB\n' "$count" "$name" "$gb"
+        fi
+    done <<EOF
+$names
+EOF
+
+    choice=$(printf '%s' "$names" | sed -n "${default}p")
+    printf '\n  %sLoad which? [Enter for %s, a number, or s to skip]%s ' "$C_CYAN" "$choice" "$C_OFF"
+    IFS= read -r answer || return 0
+    answer=$(printf '%s' "$answer" | tr -d '[:space:]')
+
+    case "$answer" in
+        s|skip|n|no) return 0 ;;
+        '') ;;
+        *[!0-9]*) note "Not one of the listed numbers - skipping."; return 0 ;;
+        *)
+            if [ "$answer" -lt 1 ] || [ "$answer" -gt "$count" ]; then
+                note "Not one of the listed numbers - skipping."; return 0
+            fi
+            choice=$(printf '%s' "$names" | sed -n "${answer}p") ;;
+    esac
+
+    if [ -n "$configured" ] && ! same_model "$choice" "$configured"; then
+        note "pharos.toml names '$configured', so counts for '$choice' will be marked untrusted."
+    fi
+
+    printf '\n'
+    info "loading $choice into VRAM - first load of a large model takes a while"
+    curl -sf -m 600 "$OLLAMA_URL/api/chat" \
+        -H 'Content-Type: application/json' \
+        -d "{\"model\":\"$choice\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":false}" \
+        >/dev/null 2>&1 || { note "could not load it"; return 0; }
+
+    detect_loaded_model
+    if [ -n "$LOADED_MODEL" ]; then
+        ok "loaded $LOADED_MODEL"
+    else
+        note "it did not stay resident - continuing without a verdict"
+    fi
+}
+
+detect_loaded_model
 
 if [ "$READY" = 0 ]; then
     step "Looking for an Ollama backend"
@@ -161,7 +263,6 @@ if [ "$READY" = 0 ]; then
         ok "backend up, model resident: $LOADED_MODEL"
     elif [ "$HAVE_BACKEND" = 1 ]; then
         ok "backend up, but no model is loaded right now"
-        info 'load one with:  ollama run <model> "hi"'
     else
         note "no backend at $OLLAMA_URL"
         info "Pharos runs fine without one — the pre-flight just cannot give a real verdict,"
@@ -178,6 +279,13 @@ fi
 if [ "$SETUP_ONLY" = 1 ]; then
     printf '\n  %sSetup complete. Run ./start.sh again to open the CLI.%s\n\n' "$C_GREEN" "$C_OFF"
     exit 0
+fi
+
+# Nothing resident means every verdict below would be arithmetic against a number nobody
+# measured. The models are already on disk, so offer them rather than printing a command to go
+# and type somewhere else.
+if [ "$HAVE_BACKEND" = 1 ] && [ -z "$LOADED_MODEL" ] && [ -t 0 ]; then
+    offer_model_load
 fi
 
 # --- the CLI ----------------------------------------------------------------------------------

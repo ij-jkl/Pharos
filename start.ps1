@@ -81,6 +81,17 @@ function Write-Note {
     Write-Host "    !   $Message" -ForegroundColor Yellow
 }
 
+function Write-Banner {
+    # Drawn, not generated: a figlet dependency for five lines of decoration is not worth an
+    # install step, and hard-coding it keeps the file ASCII-clean (see the .NOTES block).
+    Write-Host ''
+    Write-Host '   ____  _   _    _    ____   ___  ____  ' -ForegroundColor Cyan
+    Write-Host '  |  _ \| | | |  / \  |  _ \ / _ \/ ___| ' -ForegroundColor Cyan
+    Write-Host '  | |_) | |_| | / _ \ | |_) | | | \___ \ ' -ForegroundColor Cyan
+    Write-Host '  |  __/|  _  |/ ___ \|  _ <| |_| |___) |' -ForegroundColor Cyan
+    Write-Host '  |_|   |_| |_/_/   \_\_| \_\\___/|____/ ' -ForegroundColor Cyan
+}
+
 function Stop-WithHelp {
     param([string] $Problem, [string] $Fix)
     Write-Host ''
@@ -135,14 +146,16 @@ if ($root) {
 
 $ready = $haveUv -and $haveEnv -and $haveConfig -and -not $Reinstall
 
+Write-Banner
+
 if ($ready) {
     Write-Host ''
-    Write-Host '  Pharos - ready' -ForegroundColor White
+    Write-Host '  ready' -ForegroundColor White
     Write-Host '  Already set up; skipping installation.' -ForegroundColor DarkGray
 }
 else {
     Write-Host ''
-    Write-Host '  Pharos - first-time setup' -ForegroundColor White
+    Write-Host '  first-time setup' -ForegroundColor White
     Write-Host '  See your context budget before your agent silently overflows it.' -ForegroundColor DarkGray
 
     # --- git -------------------------------------------------------------------------------
@@ -226,17 +239,123 @@ Set-Location $root
 # arithmetic against a stand-in window, so it is checked every run and reported plainly.
 # ---------------------------------------------------------------------------------------------
 
-$loadedModel = $null
-$haveBackend = $false
+function Get-LoadedModel {
+    try {
+        $ps = Invoke-RestMethod -Uri "$OllamaUrl/api/ps" -TimeoutSec 4
+        $script:haveBackend = $true
+        if ($ps.models -and $ps.models.Count -gt 0) { return $ps.models[0].name }
+    }
+    catch {
+        $script:haveBackend = $false
+    }
+    return $null
+}
 
-try {
-    $ps = Invoke-RestMethod -Uri "$OllamaUrl/api/ps" -TimeoutSec 4
-    $haveBackend = $true
-    if ($ps.models -and $ps.models.Count -gt 0) { $loadedModel = $ps.models[0].name }
+function Get-PulledModels {
+    try {
+        $tags = Invoke-RestMethod -Uri "$OllamaUrl/api/tags" -TimeoutSec 4
+        if ($tags.models) { return @($tags.models) }
+    }
+    catch { }
+    return @()
 }
-catch {
-    $haveBackend = $false
+
+function Get-ConfiguredModel {
+    <#
+        The model named in pharos.toml is the one whose GGUF vocabulary gets loaded, so it is
+        the only one that produces counts labelled exact. Loading a different one still works,
+        but every count comes back red as "untrusted - other model's tokenizer", which is worth
+        pointing at rather than letting someone discover it from the colour.
+    #>
+    $cfg = Join-Path $root 'pharos.toml'
+    if (-not (Test-Path $cfg)) { return $null }
+    $hit = Select-String -Path $cfg -Pattern '^\s*model\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if ($hit) { return $hit.Matches[0].Groups[1].Value }
+    return $null
 }
+
+function Test-SameModel {
+    # /api/ps and /api/tags report `<name>:latest`; the natural thing to write in pharos.toml
+    # is the untagged name. Compare with the tag stripped from both sides.
+    param([string] $A, [string] $B)
+    if (-not $A -or -not $B) { return $false }
+    return ($A -replace ':latest$', '') -eq ($B -replace ':latest$', '')
+}
+
+function Request-ModelLoad {
+    <# Offer the models already on disk, and load the chosen one through the API so no ollama
+       binary is needed. Returns the newly loaded model name, or $null if nothing was loaded. #>
+
+    $models = Get-PulledModels
+    if ($models.Count -eq 0) {
+        Write-Note 'No models pulled yet. Get one with:  ollama pull qwen3:8b'
+        return $null
+    }
+
+    $configured = Get-ConfiguredModel
+
+    Write-Host ''
+    Write-Host '  No model is loaded, so there is no real window to measure against.' -ForegroundColor White
+    Write-Host '  You already have these:' -ForegroundColor White
+    Write-Host ''
+
+    $default = 0
+    for ($i = 0; $i -lt $models.Count; $i++) {
+        $name = $models[$i].name
+        $gb = [math]::Round($models[$i].size / 1GB, 1)
+        $mark = ''
+        if (Test-SameModel $name $configured) {
+            $mark = '   <- named in pharos.toml, counts exactly'
+            $default = $i
+        }
+        Write-Host ("    {0,2}. {1,-34} {2,5} GB{3}" -f ($i + 1), $name, $gb, $mark) -ForegroundColor Gray
+    }
+
+    $choice = $models[$default].name
+    Write-Host ''
+    Write-Host "  Load which? [Enter for $choice, a number, or s to skip] " -ForegroundColor Cyan -NoNewline
+
+    try { $answer = (Read-Host).Trim() } catch { Write-Host ''; return $null }
+
+    if ($answer -in @('s', 'skip', 'n', 'no')) { return $null }
+    if ($answer -ne '') {
+        $n = 0
+        if (-not [int]::TryParse($answer, [ref]$n) -or $n -lt 1 -or $n -gt $models.Count) {
+            Write-Note "Not one of the listed numbers - skipping."
+            return $null
+        }
+        $choice = $models[$n - 1].name
+    }
+
+    if ($configured -and -not (Test-SameModel $choice $configured)) {
+        Write-Note "pharos.toml names '$configured', so counts for '$choice' will be marked untrusted."
+    }
+
+    Write-Host ''
+    Write-Info "loading $choice into VRAM - first load of a large model takes a while"
+
+    $body = @{
+        model    = $choice
+        messages = @(@{ role = 'user'; content = 'hi' })
+        stream   = $false
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $null = Invoke-RestMethod -Uri "$OllamaUrl/api/chat" -Method Post -Body $body `
+                                  -ContentType 'application/json' -TimeoutSec 600
+    }
+    catch {
+        Write-Note "could not load it: $($_.Exception.Message)"
+        return $null
+    }
+
+    $now = Get-LoadedModel
+    if ($now) { Write-Ok "loaded $now" } else { Write-Note 'it did not stay resident - continuing without a verdict' }
+    return $now
+}
+
+$haveBackend = $false
+$loadedModel = Get-LoadedModel
 
 if (-not $ready) {
     Write-Step 'Looking for an Ollama backend'
@@ -245,16 +364,6 @@ if (-not $ready) {
     }
     elseif ($haveBackend) {
         Write-Ok 'backend up, but no model is loaded right now'
-        try {
-            $tags = Invoke-RestMethod -Uri "$OllamaUrl/api/tags" -TimeoutSec 4
-            if ($tags.models -and $tags.models.Count -gt 0) {
-                Write-Info "load one with:  ollama run $($tags.models[0].name) `"hi`""
-            }
-            else {
-                Write-Info 'no models pulled yet - try:  ollama pull qwen3:8b'
-            }
-        }
-        catch { Write-Info 'could not list pulled models' }
     }
     else {
         Write-Note "no backend at $OllamaUrl"
@@ -276,6 +385,13 @@ if ($SetupOnly) {
     Write-Host '  Setup complete. Run .\start.ps1 again to open the CLI.' -ForegroundColor Green
     Write-Host ''
     exit 0
+}
+
+# Nothing resident means every verdict below would be arithmetic against a number nobody
+# measured. The models are already on disk, so offer them rather than printing a command to go
+# and type somewhere else.
+if ($haveBackend -and -not $loadedModel -and -not [Console]::IsInputRedirected) {
+    $loadedModel = Request-ModelLoad
 }
 
 # ---------------------------------------------------------------------------------------------
