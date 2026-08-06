@@ -8,10 +8,13 @@ machine; pull a small GGUF (e.g. Qwen3-0.6B) into tests/models/ to enable them.
 from __future__ import annotations
 
 import json
+import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+import pharos.tokenizer.gguf as gguf
 from pharos.config import PharosConfig
 from pharos.tokenizer.cache import TokenCountCache
 from pharos.tokenizer.gguf import GgufTokenizer
@@ -213,3 +216,87 @@ def test_gguf_with_cache_tokenizes_once() -> None:
     second = cache.get_or_count("cache me", counting)
     assert first == second > 0
     assert calls == ["cache me"]
+
+
+# --- llama.cpp log sink ---------------------------------------------------------------------------
+#
+# Driven with a stand-in for the llama_cpp module rather than the real one: the behaviour under
+# test is ours, and the native library offers no way to ask which callback is registered or to
+# make it emit on demand. The stand-in also keeps these tests running on a machine with no GGUF.
+
+
+class FakeLlamaCpp:
+    """Just enough llama_cpp: the CFUNCTYPE decorator and the setter, both recording."""
+
+    def __init__(self) -> None:
+        self.registered: list[object] = []
+
+    @staticmethod
+    def llama_log_callback(func: object) -> object:
+        return func
+
+    def llama_log_set(self, callback: object, user_data: object) -> None:
+        self.registered.append(callback)
+
+
+@pytest.fixture
+def fresh_sink() -> Iterator[None]:
+    """Clear the process-wide sink around a test and put the original back."""
+    saved = gguf._log_sink
+    gguf._log_sink = None
+    try:
+        yield
+    finally:
+        gguf._log_sink = saved
+
+
+def test_log_sink_registers_with_llama_cpp(fresh_sink: None) -> None:
+    fake = FakeLlamaCpp()
+    gguf._install_log_sink(fake)
+    assert len(fake.registered) == 1
+    # The reference has to survive the call: a collected ctypes callback is a crash, not a
+    # traceback, and it would happen inside llama.cpp with no Python frame to blame.
+    assert gguf._log_sink is fake.registered[0]
+
+
+def test_log_sink_installs_only_once(fresh_sink: None) -> None:
+    fake = FakeLlamaCpp()
+    gguf._install_log_sink(fake)
+    gguf._install_log_sink(fake)
+    gguf._install_log_sink(FakeLlamaCpp())
+    assert len(fake.registered) == 1
+
+
+def test_log_sink_diverts_llama_output_to_the_log(
+    fresh_sink: None, caplog: pytest.LogCaptureFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = FakeLlamaCpp()
+    gguf._install_log_sink(fake)
+    noisy = b"llama_context: n_ctx_seq (512) > n_ctx_train (0) -- possible training context\n"
+
+    with caplog.at_level(logging.DEBUG, logger="pharos.tokenizer"):
+        fake.registered[0](2, noisy, None)
+
+    assert "n_ctx_seq (512) > n_ctx_train (0)" in caplog.text
+    # The whole point: the loader note is kept, but it never reaches the terminal, where it
+    # would land under the `pharos check` report or on top of the TUI.
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_log_sink_swallows_its_own_failures(fresh_sink: None) -> None:
+    """A raising sink surfaces as "Exception ignored on calling ctypes callback function".
+
+    It is raised into C, so no caller can catch it and no `try` around the model load helps.
+    Teardown is the real case — logging is half dismantled there — so the body must be total.
+    """
+    fake = FakeLlamaCpp()
+    gguf._install_log_sink(fake)
+    sink = fake.registered[0]
+
+    class Exploding:
+        def decode(self, *args: object, **kwargs: object) -> str:
+            raise RuntimeError("interpreter is going down")
+
+    sink(2, Exploding(), None)  # must not raise
