@@ -1,9 +1,10 @@
-"""Shared pytest fixtures: event bus, fake tokenizer, and a proxy-app client factory."""
+"""Shared pytest fixtures: LF-pinned file writes, event bus, fake tokenizer, proxy client."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 
 import httpx
 import pytest
@@ -12,6 +13,35 @@ from pharos.config import PharosConfig
 from pharos.events import EventBus, PharosEvent
 from pharos.proxy.app import create_app
 from pharos.tokenizer.gguf import TokenCounter
+
+
+@pytest.fixture(autouse=True)
+def lf_only_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``Path.write_text`` emit LF on every platform, for every test.
+
+    Fixture sizes ARE assertions here: "three files of ~1,500 heuristic tokens each" only
+    holds if each file is 6,000 bytes. ``write_text`` translates "\\n" to ``os.linesep``, so
+    the identical fixture is 6,000 bytes on Linux and 7,000 on Windows — and the counter reads
+    what is on disk, which is right, because CRLF is what a model would receive.
+
+    The consequence was that the suite tested a different thing on each platform, and the
+    difference stayed invisible until one assertion sat near a budget threshold: the scope
+    split test passed on Windows and failed on Linux CI purely on padding. Pinning the
+    fixtures removes the platform from the arithmetic. Production code is untouched and still
+    counts CRLF honestly wherever it finds it.
+    """
+    original = Path.write_text
+
+    def write_lf(
+        self: Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> int:
+        return original(self, data, encoding=encoding, errors=errors, newline=newline or "\n")
+
+    monkeypatch.setattr(Path, "write_text", write_lf)
 
 
 class FakeTokenizer:

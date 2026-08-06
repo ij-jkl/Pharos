@@ -58,10 +58,17 @@ async def _plan(root: Path, prompt: str, *, loaded_ctx: int | None = 8192, **ove
 
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
-    """Three files of ~1,000 heuristic tokens each (4,000 chars): no two fit one small part."""
+    """Three files of ~1,500 heuristic tokens each (6,000 chars): no two fit one small part.
+
+    Sized to clear the 3,072-token usable budget these tests plan against (4,096 loaded minus
+    a 1,024 reserve) with room to spare, not to sit on it. At the original 4,000 characters the
+    three files came to 3,000 tokens — 72 short — and the test only saw "exceeds" on Windows,
+    where write_text had silently inflated each file by its 666 CRLFs. See conftest's
+    ``lf_only_writes`` for why that is no longer possible.
+    """
     (tmp_path / "src").mkdir()
     for name in ("alpha.py", "beta.py", "gamma.py"):
-        (tmp_path / "src" / name).write_text(("x = 1\n" * 666)[:4000], encoding="utf-8")
+        (tmp_path / "src" / name).write_text("x = 1\n" * 1000, encoding="utf-8")
     return tmp_path
 
 
@@ -255,7 +262,7 @@ async def test_target_override_plans_without_a_backend(tree: Path) -> None:
     assert plan.mode is SplitMode.SCOPE
     assert plan.target_per_part == 1600
     assert plan.target_label == "requested target"
-    # Three ~1,000-token files against a 1,600-token ceiling: no two share a part, and the
+    # Three ~1,500-token files against a 1,600-token ceiling: no two share a part, and the
     # count is not pinned harder than that — the scaffold's size is an implementation detail.
     assert len(plan.parts) >= 3
     assert {f.display for part in plan.parts for f in part.files} == {
