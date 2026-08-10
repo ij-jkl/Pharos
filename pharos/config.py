@@ -50,6 +50,18 @@ class PharosConfig(BaseModel):
     # not a constant, so this is a knob rather than a magic number: 500 clears every hand-off
     # observed, and an agent that writes essays needs it raised.
     handoff_reserve: int = Field(default=500, ge=0)
+    # The context window `pharos run` asks the backend to load the model with. Ollama picks a
+    # conservative VRAM-based default (4,096 on a 12 GB card), which is too small to plan an
+    # agentic edit against: the part scaffold alone fills it. Left unset, whatever is already
+    # loaded is used and measured as-is — Pharos never silently changes a window it is also
+    # reporting on. Set it and `pharos run` loads the model with that window and says so.
+    num_ctx: int | None = Field(default=None, ge=256)
+    # Most files `pharos run` puts in one part. Unlike every other number in this file this one
+    # is a HEURISTIC, not a measurement: it bounds how much WORK a part contains, not how many
+    # tokens. A local model handed thirteen files that all fit the window reads all thirteen
+    # and then answers in prose without editing anything — the limit reached is the model's,
+    # not the hardware's, and no token count predicts it. Raise it for a stronger model.
+    max_files_per_part: int = Field(default=4, ge=1)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

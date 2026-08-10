@@ -119,11 +119,19 @@ def build_plan(
     report: CheckReport,
     *,
     target: int | None = None,
+    max_files: int | None = None,
 ) -> SplitPlan:
     """Plan a split of ``prompt`` given its pre-flight ``report``.
 
     ``target`` overrides the per-part ceiling — the escape hatch for planning offline, when
     no backend was reachable to state a budget.
+
+    ``max_files`` caps how many files land in one part regardless of how well they fit. Token
+    budgets are the reason this module exists, but they are not the only limit a plan meets:
+    an agent handed thirteen files that fit its window comfortably will read all thirteen and
+    then describe the work instead of doing it. That ceiling belongs to the model, not the
+    hardware, so nothing here can measure it — the cap is a stated preference, and callers
+    that only want the token split leave it None and get exactly the previous behaviour.
     """
     ceiling, label = _ceiling(report, target)
     if ceiling is None:
@@ -141,7 +149,11 @@ def build_plan(
     # A prompt whose FLOOR fits can still need splitting: name a directory and the request is
     # the floor plus whatever of that directory the agent reads. Split against the ceiling —
     # the number that has to fit for the work to actually go through.
-    if report.ceiling <= ceiling:
+    #
+    # A file cap overrides "nothing to split" outright: the whole point of it is the task that
+    # fits and still will not get done.
+    too_many = max_files is not None and len(_scope_entries(report)) > max_files
+    if report.ceiling <= ceiling and not too_many:
         detail = (
             f"the floor ({report.floor:,}) already sits inside the {label} ({ceiling:,})"
             if not report.directory_tokens
@@ -176,7 +188,9 @@ def build_plan(
         )
 
     if report.prompt_tokens + fixed <= ceiling:
-        return _plan_scope(prompt, report, count, ceiling, label, config.handoff_reserve)
+        return _plan_scope(
+            prompt, report, count, ceiling, label, config.handoff_reserve, max_files
+        )
     return _plan_text(prompt, report, count, ceiling, label)
 
 
@@ -190,6 +204,7 @@ def _plan_scope(
     ceiling: int,
     label: str,
     handoff_reserve: int,
+    max_files: int | None = None,
 ) -> SplitPlan:
     """Repeat the task in every part; bin-pack the named files across the parts."""
     overhead = report.overhead.tokens if report.overhead is not None else 0
@@ -258,6 +273,8 @@ def _plan_scope(
     for unit in units:
         floor_bin = last_bin.get(unit.display, -1) + 1 if unit.is_slice else 0
         for i in range(floor_bin, len(room)):
+            if max_files is not None and len(bins[i]) >= max_files:
+                continue
             if unit.tokens <= room[i]:
                 bins[i].append(unit)
                 room[i] -= unit.tokens

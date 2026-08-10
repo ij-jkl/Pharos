@@ -22,6 +22,14 @@ response_reserve = 1024
 # is not a constant. Raise it if your agent writes long hand-offs.
 handoff_reserve = 500
 
+# The window `pharos run` asks the backend to load the model with. Ollama picks a cautious
+# VRAM-based default (4,096 on a 12 GB card), and that is too small for agentic work: the part
+# scaffold alone fills it before a single file can be scoped in. Leave it commented out and
+# whatever is already loaded is used and measured as-is — Pharos never quietly changes a window
+# it is also reporting on. Uncomment it and `pharos run` loads the model at that size and says
+# so. `pharos check` will tell you what the card can actually hold.
+# num_ctx = 16384
+
 # Context-usage thresholds (as a fraction of the usable budget) for TUI warnings.
 warn_threshold = 0.80
 alert_threshold = 0.90
