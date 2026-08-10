@@ -271,14 +271,15 @@ Scorecard
   what has already been done. Those are counted separately as `wandering`.
 - **Headroom** is the highest fraction of any part's ceiling actually used. Near 100% means
   the next slightly larger file breaks the run.
-- **Drift** is Pharos's own projection divided by the backend's `prompt_eval_count`, paired
-  per request and shown as a range — the number this project is least entitled to hide. Above
-  1.0 means Pharos counted *more* than the backend saw: safe, and wasteful, because parts come
-  out smaller than they needed to be. That is the normal case (**1.12x–1.53x** measured),
-  since the tool catalogue is counted as the JSON that goes on the wire while the backend
-  renders it through a more compact chat template Pharos cannot see. Below 1.0 means a ceiling
-  was enforced against an estimate sitting *under* the real prompt — not a ceiling at all —
-  and that is flagged.
+- **Drift** is Pharos's own projection against the backend's `prompt_eval_count`, paired per
+  request — the number this project is least entitled to hide, and the one it has been most
+  wrong about. Measured against a live backend, the projection sits at **0.96–0.98x**: about
+  40–50 tokens *below* what the backend reports, near-constant whatever the conversation size.
+  That is the chat template's own scaffolding, which Pharos cannot see, and the safety margin
+  subtracted from every ceiling exists to absorb it. So the useful question is not "is it
+  under" — it always is — but whether the shortfall has outgrown the margin. The scorecard
+  reports the worst shortfall in **tokens** for that reason: 0.96x is 40 tokens on a small
+  prompt and 800 on a large one.
 
 `--json` emits the same thing for a script or a CI step, and **the exit code follows coverage,
 not survival**: 0 only when the run wrote everything it was given and no part failed. A run

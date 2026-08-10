@@ -991,3 +991,21 @@ def test_the_churn_guard_counts_per_file_not_per_part(workspace: Workspace) -> N
                 room=999, count=_count,
             )
             assert result.ok
+
+
+def test_the_system_prompt_is_not_charged_twice(workspace: Workspace) -> None:
+    """It lives in messages[0] and was ALSO folded into the per-request constant.
+
+    Measured on a real workspace: 353 phantom tokens on every projection, which was most of
+    the gap between what Pharos projected and what the backend reported.
+    """
+    backend = FakeBackend([{"role": "assistant", "content": "ok", "tool_calls": []}])
+    session = _session(backend, _box(workspace, None), budget=100_000)
+    box = ToolBox(workspace=workspace)
+
+    assert session.catalogue_tokens == _count(catalogue_text(box.catalogue()))
+
+    system = system_prompt_for(workspace.root)
+    session._messages = [{"role": "system", "content": system}]
+    charged = session._projected() - session.catalogue_tokens
+    assert charged == _count(system) + 8  # once, plus the per-message constant

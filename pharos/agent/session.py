@@ -200,9 +200,13 @@ class AgentSession:
             f"{_SYSTEM_PROMPT}\n\nThe workspace root is {toolbox.workspace.root}. "
             f"Every path you pass to a tool is relative to it."
         )
-        # The catalogue and the system prompt together are this client's whole overhead, and
-        # both are counted rather than estimated — see the note above _SYSTEM_PROMPT.
-        self._catalogue_tokens = count(catalogue_text(self._tools)) + count(self._system_prompt)
+        # The CATALOGUE only. The system prompt is messages[0] and is counted there like any
+        # other message; adding it here as well charged every request for it twice — 353
+        # phantom tokens per projection on a real workspace, which is most of the gap between
+        # what Pharos projected and what the backend reported. The planner subtracts both
+        # (agent_overhead_tokens) because there it is genuinely fixed cost that no message
+        # carries yet.
+        self._catalogue_tokens = count(catalogue_text(self._tools))
         # The hand-off has to fit AFTER the conversation that produced it, so it comes out of
         # the ceiling up front rather than being hoped for at the end.
         self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN

@@ -25,6 +25,7 @@ from rich.console import Console
 
 from pharos.agent.runner import RunOutcome, run_task
 from pharos.agent.scorecard import Scorecard, score, to_dict
+from pharos.agent.session import SAFETY_MARGIN
 from pharos.agent.tools import workspace_root
 from pharos.agent.workspace import GitGuardError
 from pharos.config import ConfigError, load_config
@@ -189,9 +190,11 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             else f"{card.drift_low:.2f}-{card.drift_high:.2f}x"
         )
         note = (
-            "  [yellow](one or more requests came in UNDER the real prompt)[/]"
+            f"  [yellow](under the real prompt by {card.worst_shortfall:,} tokens — more than "
+            f"the {SAFETY_MARGIN}-token margin absorbs)[/]"
             if card.under_counted
-            else "  [dim](always above the real prompt: conservative)[/]"
+            else f"  [dim](worst shortfall {card.worst_shortfall:,} tokens, inside the "
+                 f"{SAFETY_MARGIN}-token margin)[/]"
         )
         at_peak = (
             f", {card.drift_at_peak:.2f}x on the largest"

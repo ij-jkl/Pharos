@@ -31,24 +31,31 @@ The five:
   been wrong.
 * **Headroom** — the highest fraction of any part's ceiling actually used. Near 100% means the
   next slightly larger file breaks the run; low means the division has room.
-* **Drift** — Pharos's own projection divided by the backend's ``prompt_eval_count``, paired
-  per REQUEST and reported as a range. The number this project is least entitled to hide.
-  Above 1.0 means Pharos counted more than the backend saw: safe, and wasteful, because parts
-  come out smaller than they needed to be. Below 1.0 means a ceiling was enforced against an
-  estimate that sat under the real prompt, which is not a ceiling at all — that is the alarm.
-  Measured across two real runs: 1.12x to 1.53x, never under.
+* **Drift** — Pharos's own projection against the backend's ``prompt_eval_count``, paired per
+  REQUEST. The number this project is least entitled to hide, and the one it has been most
+  wrong about.
 
-  The pairing is the whole point. The first version divided a part's PEAK projection by
-  whichever count came back last, which are two different requests: it read 2.56x on a run
-  whose honest worst case was 1.53x, and that fabricated number went into a docstring and a
-  README before the arithmetic was checked.
+  Measured, after removing a bug that charged every request twice for the system prompt: the
+  projection sits at 0.96-0.98x, i.e. about 40-50 tokens BELOW what the backend reports,
+  roughly constant regardless of conversation size. That is the chat template's own
+  scaffolding, which Pharos cannot see. ``SAFETY_MARGIN`` is subtracted from every ceiling to
+  absorb exactly this, so the interesting question is not "is it under" — it always is — but
+  whether the shortfall has outgrown the margin. That is what ``under_counted`` asks, and why
+  the shortfall is reported in tokens rather than as a ratio: 0.96x is 40 tokens on a small
+  prompt and 800 on a large one.
+
+  Two earlier versions of this number were wrong in ways worth remembering. The first divided
+  a part's PEAK projection by whichever count came back last — two different requests — and
+  read 2.56x. The second was honest arithmetic over a double-counted projection, and read
+  1.09-2.20x "conservative". Both went into a docstring and a README before being checked
+  against the backend directly.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pharos.agent.session import PartResult
+from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import normalise
 
 # Below this, a hand-off from a part that changed files is not a summary of anything. Chosen
@@ -89,6 +96,11 @@ class Scorecard:
     # that decides whether a ceiling holds is the ratio where the window is nearly full.
     drift_at_peak: float | None = None
     drift_samples: int = 0
+    # Worst shortfall in TOKENS: how far the projection sat below the backend's count on the
+    # request where it was furthest under. The ratio alone cannot say whether that matters —
+    # 0.96x is 40 tokens on a small prompt and 800 on a large one — and tokens are what the
+    # safety margin is denominated in.
+    worst_shortfall: int = 0
 
     nudged_parts: int = 0
     abandoned_parts: int = 0
@@ -114,12 +126,16 @@ class Scorecard:
 
     @property
     def under_counted(self) -> bool:
-        """Any request where Pharos projected FEWER tokens than the backend then reported.
+        """Under by more than the margin that exists to absorb it.
 
-        The only direction that matters for safety: a ceiling enforced against an estimate
-        that sits under the real prompt is not a ceiling. Over-counting merely wastes room.
+        Being slightly under is the normal, measured state: the chat template adds scaffolding
+        Pharos cannot see, so the projection sits about 40-50 tokens below the backend's count
+        regardless of conversation size. ``SAFETY_MARGIN`` is subtracted from every ceiling for
+        exactly that. An alarm that fired on every run would be noise, so this asks the
+        question that matters instead — did the shortfall outgrow the margin, at which point
+        the ceiling stops being one.
         """
-        return self.drift_low is not None and self.drift_low < 1.0
+        return self.worst_shortfall > SAFETY_MARGIN
 
     @property
     def complete(self) -> bool:
@@ -181,6 +197,7 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
     ]
     ratios = [ours / theirs for ours, theirs in pairs]
     biggest = max(pairs, key=lambda pair: pair[0], default=None)
+    shortfall = max((theirs - ours for ours, theirs in pairs), default=0)
 
     return Scorecard(
         parts=len(parts),
@@ -203,6 +220,7 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
         drift_low=min(ratios) if ratios else None,
         drift_at_peak=(biggest[0] / biggest[1]) if biggest else None,
         drift_samples=len(ratios),
+        worst_shortfall=max(shortfall, 0),
         nudged_parts=sum(1 for p in parts if p.nudged),
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
         failed_parts=sum(1 for p in parts if p.error),
@@ -239,6 +257,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             ),
             "requests": card.drift_samples,
         },
+        "worst_shortfall_tokens": card.worst_shortfall,
         "under_counted": card.under_counted,
         "nudged_parts": card.nudged_parts,
         "abandoned_parts": card.abandoned_parts,

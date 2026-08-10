@@ -174,11 +174,33 @@ def test_drift_pairs_each_projection_with_its_own_request() -> None:
     assert not card.under_counted
 
 
-def test_a_request_counted_under_the_real_prompt_raises_the_alarm() -> None:
-    """A ceiling enforced against an estimate below the real prompt is not a ceiling."""
-    parts = [_part(scoped=["a.py"], wrote=["a.py"], drift_samples=[(900, 1000)])]
+def test_a_small_shortfall_is_normal_and_raises_nothing() -> None:
+    """Being slightly under is the measured resting state, not an incident.
+
+    The chat template adds scaffolding Pharos cannot see, so the projection sits about 40-50
+    tokens below the backend's count whatever the conversation size. SAFETY_MARGIN exists for
+    exactly that, and an alarm firing on every run would be noise.
+    """
+    parts = [_part(scoped=["a.py"], wrote=["a.py"], drift_samples=[(1_378, 1_430)])]
     card = score(parts, handoff_reserve=500)
-    assert card.drift_low == 0.9 and card.under_counted
+    assert card.drift_low < 1.0  # under...
+    assert card.worst_shortfall == 52
+    assert not card.under_counted  # ...but well inside the margin
+
+
+def test_a_shortfall_bigger_than_the_margin_raises_the_alarm() -> None:
+    """Past that point the ceiling is being enforced against a number below the real prompt."""
+    parts = [_part(scoped=["a.py"], wrote=["a.py"], drift_samples=[(9_000, 9_600)])]
+    card = score(parts, handoff_reserve=500)
+    assert card.worst_shortfall == 600
+    assert card.under_counted
+
+
+def test_over_counting_never_raises_the_alarm() -> None:
+    """Wasted room is not a safety problem, so it must not read as one."""
+    parts = [_part(scoped=["a.py"], wrote=["a.py"], drift_samples=[(2_000, 1_000)])]
+    card = score(parts, handoff_reserve=500)
+    assert card.worst_shortfall == 0 and not card.under_counted
 
 
 def test_drift_is_absent_when_the_backend_never_said() -> None:
