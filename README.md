@@ -8,10 +8,10 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.3 "Divide"** — the proxy stays observe-only and a pure passthrough (Pharos never
-mutates a request or a response), and alongside it two offline tools tell you, before you
-paste: what a prompt will cost (`pharos check`), and how to cut it up when it will not fit
-(`pharos split`).
+**Status: v0.4 "Do"** — the proxy stays observe-only and a pure passthrough (Pharos never
+mutates a request or a response). Alongside it, three tools outside the request path: what a
+prompt will cost before you paste it (`pharos check`), how to cut it up when it will not fit
+(`pharos split`), and carrying those parts out against your local model (`pharos run`).
 
 <!-- Capture docs/pharos-dashboard.png (see docs/CAPTURE.md), then uncomment:
 ![The Pharos dashboard: context mismatch banner, context and VRAM gauges, and the request event log](docs/pharos-dashboard.png)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -82,3 +83,26 @@ def test_version_matches_pyproject() -> None:
     other ships a package whose metadata disagrees with the module it installs."""
     declared = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pharos.__version__ == declared["project"]["version"]
+
+
+def test_readme_status_line_matches_the_version() -> None:
+    """The README is the third hand-edited place the version lives, and the one people read.
+
+    It drifted once already: a v0.4 section was added while the status line above it still
+    said v0.3, and the check above passed the whole time because it only compares the module
+    to the packaging metadata. A repo whose own front page disagrees with what it installs is
+    exactly the kind of unlabelled inconsistency this project is about.
+    """
+    readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    status = re.search(r"\*\*Status: v(\d+\.\d+)", readme)
+    assert status is not None, "README has no **Status: vX.Y** line"
+
+    major_minor = ".".join(pharos.__version__.split(".")[:2])
+    assert status.group(1) == major_minor
+
+    # Every tier heading must be at or below the declared version; a section for a tier that
+    # has not shipped reads as a promise rather than a description.
+    released = tuple(int(part) for part in major_minor.split("."))
+    headings = set(re.findall(r"^## .*\(v(\d+\.\d+) \"", readme, re.MULTILINE))
+    ahead = [v for v in headings if tuple(int(p) for p in v.split(".")) > released]
+    assert not ahead, f"README documents tiers not yet released: {sorted(ahead)}"
