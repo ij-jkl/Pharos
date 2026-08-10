@@ -35,14 +35,21 @@ The five:
   REQUEST. The number this project is least entitled to hide, and the one it has been most
   wrong about.
 
-  Measured, after removing a bug that charged every request twice for the system prompt: the
-  projection sits at 0.96-0.98x, i.e. about 40-50 tokens BELOW what the backend reports,
-  roughly constant regardless of conversation size. That is the chat template's own
-  scaffolding, which Pharos cannot see. ``SAFETY_MARGIN`` is subtracted from every ceiling to
-  absorb exactly this, so the interesting question is not "is it under" — it always is — but
-  whether the shortfall has outgrown the margin. That is what ``under_counted`` asks, and why
-  the shortfall is reported in tokens rather than as a ratio: 0.96x is 40 tokens on a small
-  prompt and 800 on a large one.
+  On conversations constructed by hand and put to a live backend, the projection lands at
+  0.87x-0.98x — tens of tokens BELOW what the backend reports, which is the chat template's
+  own scaffolding and cannot be seen from here. Across a real four-part run the per-request
+  ratio ranged 0.96x to 2.57x. The high end is NOT explained: the two shapes that looked like
+  candidates (a large file in a tool result, a large file inside tool_call arguments) both
+  measured under 1.0 when tested directly. It is recorded as unexplained rather than given a
+  plausible story, because three plausible stories about this number have already been wrong.
+
+  Only the low side threatens anything. Over-counting wastes room; under-counting means a
+  ceiling was enforced against a number below the real prompt. ``SAFETY_MARGIN`` is subtracted
+  from every ceiling to absorb the residue, so ``under_counted`` asks whether the shortfall
+  outgrew that margin rather than whether it exists — it always does. The shortfall is
+  reported in tokens for the same reason: 0.96x is 40 tokens on a small prompt and 800 on a
+  large one, and only one of those matters. Measured worst shortfall on a real run: 60 tokens,
+  against a 256-token margin.
 
   Two earlier versions of this number were wrong in ways worth remembering. The first divided
   a part's PEAK projection by whichever count came back last — two different requests — and

@@ -323,7 +323,7 @@ async def run_task(
                 handoff_reserve=config.handoff_reserve,
                 on_event=_prefixed(say, index),
             )
-            part_body = _with_handoff(body, handoff, index)
+            part_body = _with_handoff(body, handoff, index, files)
             _logger.info("part %d body: %s", index, part_body)
             result = await session.run(part_body)
             _logger.info(
@@ -381,14 +381,45 @@ def _bodies(plan: SplitPlan) -> list[tuple[str, list[PartFile] | None]]:
     ]
 
 
-def _with_handoff(body: str, handoff: str | None, index: int) -> str:
-    """Paste the previous part's hand-off above this one, as the part body itself instructs."""
-    if not handoff or index == 1:
-        return body
-    return (
-        f"--- HAND-OFF FROM PART {index - 1} ---\n{handoff.strip()}\n"
-        f"--- END HAND-OFF ---\n\n{body}"
-    )
+def _with_handoff(
+    body: str, handoff: str | None, index: int, files: list[PartFile] | None = None
+) -> str:
+    """The prompt a part actually receives: what it inherits, what it owes, and its scope.
+
+    Two things the splitter's body does not say, both learned from watching runs.
+
+    A hand-off pasted above a task reads as a verdict on that task. Part 1 reported the work
+    complete and parts 2, 3 and 4 did nothing at all — correctly, by their reading. It is
+    labelled as context about OTHER files, and the point is repeated after it, because the
+    last thing read is the thing obeyed.
+
+    And a list of files reads as material, not as a checklist. Runs settle around half the
+    scope and stop, satisfied. The reminder that catches that only fires AFTER the model has
+    decided it is finished, which is late and costs a round trip; stating the count up front
+    is the cheap half of the same idea. The count, not the names — the names are in the scope
+    block immediately below, and repeating them would spend the one budget this project exists
+    to protect.
+    """
+    sections: list[str] = []
+    if handoff and index > 1:
+        sections.append(
+            f"--- HAND-OFF FROM PART {index - 1} (context only) ---\n{handoff.strip()}\n"
+            f"--- END HAND-OFF ---\n"
+            f"That hand-off describes work on DIFFERENT files. The files scoped to you below "
+            f"have NOT been done yet — do them now, whatever it says about progress."
+        )
+    if files:
+        total = len(files)
+        subject = "file" if total == 1 else "files"
+        sections.append(
+            f"YOUR TARGET: {total} {subject}. This part is not finished until every one of the "
+            f"{total} in-scope {subject} listed below has been CHANGED on disk. Work through "
+            f"them one at a time — read it, edit it, then move to the next — and do not stop "
+            f"after the first. If one genuinely needs no change, say which and why; do not "
+            f"skip it silently."
+        )
+    sections.append(body)
+    return "\n\n".join(sections)
 
 
 def workspace_for(config: PharosConfig) -> Path:

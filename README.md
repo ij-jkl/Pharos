@@ -273,13 +273,15 @@ Scorecard
   the next slightly larger file breaks the run.
 - **Drift** is Pharos's own projection against the backend's `prompt_eval_count`, paired per
   request — the number this project is least entitled to hide, and the one it has been most
-  wrong about. Measured against a live backend, the projection sits at **0.96–0.98x**: about
-  40–50 tokens *below* what the backend reports, near-constant whatever the conversation size.
-  That is the chat template's own scaffolding, which Pharos cannot see, and the safety margin
-  subtracted from every ceiling exists to absorb it. So the useful question is not "is it
-  under" — it always is — but whether the shortfall has outgrown the margin. The scorecard
-  reports the worst shortfall in **tokens** for that reason: 0.96x is 40 tokens on a small
-  prompt and 800 on a large one.
+  wrong about. Put to a live backend on hand-built conversations it lands at **0.87–0.98x**:
+  tens of tokens *below* what the backend reports, which is the chat template's own
+  scaffolding and is invisible from here. Across a real run the per-request ratio ranged
+  0.96–2.57x, and the high end is **not explained** — two plausible causes were tested
+  directly and both measured *under* 1.0. It is left recorded as unexplained rather than given
+  a story. Only the low side threatens anything: over-counting wastes room, under-counting
+  means a ceiling was enforced against a number below the real prompt. So the scorecard
+  reports the worst shortfall in **tokens** against the safety margin that absorbs it —
+  measured at 60 tokens against a 256-token margin.
 
 `--json` emits the same thing for a script or a CI step, and **the exit code follows coverage,
 not survival**: 0 only when the run wrote everything it was given and no part failed. A run

@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 import pytest
 
-from pharos.agent.runner import _edit_target, _load_payload
+from pharos.agent.runner import _edit_target, _load_payload, _with_handoff
 from pharos.agent.session import (
     AgentSession,
     PartResult,
@@ -1009,3 +1009,40 @@ def test_the_system_prompt_is_not_charged_twice(workspace: Workspace) -> None:
     session._messages = [{"role": "system", "content": system}]
     charged = session._projected() - session.catalogue_tokens
     assert charged == _count(system) + 8  # once, plus the per-message constant
+
+
+# --- what a part is actually told ------------------------------------------------------------
+
+
+def test_a_part_is_told_how_many_files_it_must_change(tmp_path: Path) -> None:
+    """A list of files reads as material, not a checklist; runs settled at half the scope.
+
+    The nudge that catches this only fires after the model has decided it is finished. Saying
+    the count up front is the cheap half of the same idea.
+    """
+    prompt = _with_handoff("SCOPE BLOCK", None, 1, [_part_file("a.py"), _part_file("b.py")])
+
+    assert "YOUR TARGET: 2 files" in prompt
+    assert "not finished until every one of the 2" in prompt
+    assert prompt.endswith("SCOPE BLOCK")  # the target comes first, the scope block last
+    assert "a.py" not in prompt  # names live in the scope block; repeating them costs tokens
+
+
+def test_a_single_file_part_is_told_in_the_singular() -> None:
+    prompt = _with_handoff("SCOPE", None, 1, [_part_file("a.py")])
+    assert "YOUR TARGET: 1 file." in prompt and "1 files" not in prompt
+
+
+def test_an_unscoped_part_gets_no_target_it_cannot_meet(tmp_path: Path) -> None:
+    """One unrestricted part has no list to complete, so a count would be a fiction."""
+    assert _with_handoff("SCOPE", None, 1, None) == "SCOPE"
+
+
+def test_a_handoff_is_framed_as_context_about_other_files() -> None:
+    """Part 1 reported the task complete and parts 2-4 then did nothing, correctly by their
+    reading. The framing is repeated after the hand-off because the last thing read wins."""
+    prompt = _with_handoff("SCOPE", "I finished the documentation task.", 2, [_part_file("b.py")])
+
+    assert "context only" in prompt
+    assert "DIFFERENT files" in prompt
+    assert prompt.index("have NOT been done yet") > prompt.index("I finished")

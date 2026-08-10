@@ -10,10 +10,10 @@ sends a request it has not already proven fits, and the last thing it does alway
 happen. That ordering is the whole design: a run that discovers it is out of window while
 trying to report that it is out of window has lost the work.
 
-The count is deliberately CONSERVATIVE, and in practice it runs above what the backend reports
-rather than below — 1.12x to 1.53x across two measured runs, never under. The tool catalogue is
-counted as the JSON that goes on the wire, while the backend renders it into the prompt through
-a chat template that is more compact, and there is no way from here to see that rendering.
+The count is close, and slightly LOW on the shapes that have been measured against a live
+backend: 0.87x to 0.98x, tens of tokens under. That residue is the chat template's own
+scaffolding, invisible from here, and SAFETY_MARGIN is subtracted from every ceiling to absorb
+it — the worst shortfall observed on a real run was 60 tokens against a 256-token margin.
 
 Erring high is the safe direction — a part sized against an inflated estimate fits, where the
 reverse eventually overflows — but it is not free: it makes parts smaller and runs longer than
