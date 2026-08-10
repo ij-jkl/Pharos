@@ -261,6 +261,9 @@ async def _record_observation(
             messages=spec.message_count,
             output_tokens=metrics.eval_count,
             agent_shaped=spec.agent_shaped,
+            # Only meaningful when something was actually counted; a request with no
+            # user-authored content has nothing that could have used the wrong vocabulary.
+            user_exact=_tokenizer_matches(state, spec) if spec.user_text else None,
         )
         if recorder.add(observation):
             await recorder.flush()

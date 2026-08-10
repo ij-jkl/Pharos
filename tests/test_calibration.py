@@ -30,6 +30,7 @@ def _obs(
     output: int | None = 500,
     ts: float = 1000.0,
     agent_shaped: bool = True,
+    user_exact: bool | None = None,
 ) -> Observation:
     return Observation(
         ts=ts,
@@ -41,6 +42,7 @@ def _obs(
         messages=messages,
         output_tokens=output,
         agent_shaped=agent_shaped,
+        user_exact=user_exact,
     )
 
 
@@ -88,7 +90,7 @@ def test_store_contains_counts_only(tmp_path: Path) -> None:
     raw = json.loads(path.read_text(encoding="utf-8"))
     allowed = {
         "ts", "endpoint", "model", "input_tokens", "input_exact",
-        "user_tokens", "messages", "output_tokens", "agent_shaped",
+        "user_tokens", "messages", "output_tokens", "agent_shaped", "user_exact",
     }
     assert set(raw[0].keys()) == allowed
     # Names alone would not catch a field that later starts carrying content, so the guard
@@ -212,3 +214,60 @@ def test_typical_output_is_median_of_matching_records() -> None:
     ]
     assert estimate_typical_output(observations, "qwen3.5-9b-heretic") == 900
     assert estimate_typical_output([], "qwen3.5-9b-heretic") is None
+
+
+def test_a_record_from_the_wrong_vocabulary_is_not_learned_from(tmp_path: Path) -> None:
+    """Overhead is input_tokens minus user_tokens; the two have to be commensurable.
+
+    input_exact says the MINUEND came from the backend. The subtrahend comes from the one
+    tokenizer the proxy has bound, so a request naming a different model produces an exact
+    total minus a count in another vocabulary. Subtracting those yields an overhead that is
+    confidently wrong, which is worse than a smaller sample.
+    """
+    good = _obs(input_tokens=2000, user_tokens=100, user_exact=True)
+    wrong = _obs(input_tokens=2000, user_tokens=1900, user_exact=False)
+
+    learned = estimate_client_overhead([good, wrong], "qwen3.5-9b-heretic")
+
+    assert learned is not None
+    assert learned.tokens == 1900  # the wrong-vocabulary record would have said 100
+
+
+def test_records_written_before_the_flag_still_count(tmp_path: Path) -> None:
+    """None means "never checked", which is not the same as "checked and failed".
+
+    Treating an old store as untrusted would throw away everyone's calibration on upgrade;
+    treating it as trusted would launder an unknown into a claim. It is kept, and the record
+    says None rather than True so the distinction survives.
+    """
+    legacy = _obs(input_tokens=2000, user_tokens=100)
+    assert legacy.user_exact is None
+
+    learned = estimate_client_overhead([legacy], "qwen3.5-9b-heretic")
+    assert learned is not None and learned.tokens == 1900
+
+
+def test_the_flag_survives_a_round_trip_through_the_store(tmp_path: Path) -> None:
+    path = tmp_path / "obs.json"
+    recorder = ObservationRecorder(path)
+    recorder.add(_obs(input_tokens=10, user_tokens=1, user_exact=False))
+    recorder._flush_sync()
+
+    assert load_observations(path)[0].user_exact is False
+
+
+def test_a_pool_of_only_wrong_vocabulary_records_says_so() -> None:
+    """Refusing would be unhelpful; an unlabelled number would be the one thing not allowed."""
+    only_wrong = [_obs(input_tokens=2000, user_tokens=1900, user_exact=False)]
+
+    estimate = estimate_client_overhead(only_wrong, "qwen3.5-9b-heretic")
+
+    assert estimate is not None and estimate.tokens == 100
+    assert "different model's vocabulary" in estimate.provenance
+
+
+def test_a_clean_pool_carries_no_caveat() -> None:
+    """The warning has to mean something, so it must not appear on records that are fine."""
+    clean = [_obs(input_tokens=2000, user_tokens=100, user_exact=True)]
+    estimate = estimate_client_overhead(clean, "qwen3.5-9b-heretic")
+    assert estimate is not None and "vocabulary" not in estimate.provenance

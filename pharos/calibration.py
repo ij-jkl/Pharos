@@ -57,12 +57,30 @@ class Observation:
     model: str | None
     input_tokens: int  # reconciled prompt_eval_count when reported, else the labeled estimate
     input_exact: bool  # True only when input_tokens came from backend reconciliation
-    user_tokens: int  # tokens of user-authored content alone (same tokenizer as the estimate)
+    user_tokens: int  # tokens of user-authored content alone, counted by the bound tokenizer
     messages: int  # message count of the request (1 for completion-style endpoints)
     output_tokens: int | None  # eval_count when the backend reported it
     # True when the request carried tools or a system prompt: the shape of a coding agent, as
     # opposed to a bare curl at the endpoint. Still counts only — a boolean, never text.
     agent_shaped: bool = False
+    # Whether ``user_tokens`` was counted with the vocabulary the request actually named.
+    #
+    # ``input_exact`` is about the MINUEND: it is True when input_tokens came from the
+    # backend's own prompt_eval_count. Overhead is learned by SUBTRACTING user_tokens from it,
+    # and that subtrahend comes from the one tokenizer the proxy has bound. Point a second
+    # model at the proxy and the two numbers stop being commensurable — an exact total minus a
+    # count taken in another model's vocabulary — with nothing in the record admitting it.
+    #
+    # None means "written before this was tracked". Deliberately not True: a record that never
+    # knew is not the same as one that checked and passed, and this project does not launder
+    # unknowns into confidence. The learner accepts None and rejects False, so existing stores
+    # keep working while the case now known to be wrong is dropped.
+    user_exact: bool | None = None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    """Tri-state read: absent stays absent rather than collapsing into False."""
+    return None if value is None else bool(value)
 
 
 def load_observations(path: Path) -> list[Observation]:
@@ -99,6 +117,7 @@ def _parse_record(item: object) -> Observation | None:
             # Absent in records written before this field existed: they read as not
             # agent-shaped, which only ever makes them a fallback, never a wrong answer.
             agent_shaped=bool(item.get("agent_shaped", False)),
+            user_exact=_optional_bool(item.get("user_exact")),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -187,14 +206,30 @@ def estimate_client_overhead(
     # estimate has to survive it.
     agent = [o for o in pool if o.agent_shaped]
     shaped, shape_note = (agent, "agent-shaped") if agent else (pool, "all")
+    # Drop records whose user_tokens came from the wrong vocabulary: subtracting one of those
+    # from an exact total yields an overhead that is confidently wrong, which is worse than a
+    # smaller sample. Records predating the flag (None) are kept — see Observation.user_exact.
+    commensurable = [o for o in shaped if o.user_exact is not False]
+    # Falling back to them rather than refusing: an overhead the user can see and distrust
+    # beats none at all, and someone whose pharos.toml names one model while another is in use
+    # should still get a number. But it gets said out loud in the provenance — every figure in
+    # this project carries where it came from, and "quietly slightly wrong" is the one outcome
+    # that is not allowed.
+    mismatched = not commensurable and any(o.user_exact is False for o in shaped)
+    shaped = commensurable or shaped
     exact = [o for o in shaped if o.input_exact]
     used, kind = (exact, "exact") if exact else (shaped, "estimated")
     fewest = min(o.messages for o in used)
     first_turn_like = [o for o in used if o.messages == fewest]
     tokens = min(max(o.input_tokens - o.user_tokens, 0) for o in first_turn_like)
+    caveat = (
+        " · counted against a different model's vocabulary, so the subtraction is approximate"
+        if mismatched
+        else ""
+    )
     provenance = (
         f"learned · min over {len(first_turn_like)} of {len(pool)} observed requests "
-        f"({shape_note}, {kind} inputs, fewest-message = {fewest})"
+        f"({shape_note}, {kind} inputs, fewest-message = {fewest}){caveat}"
     )
     return OverheadEstimate(tokens=tokens, provenance=provenance)
 
