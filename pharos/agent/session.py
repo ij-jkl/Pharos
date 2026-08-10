@@ -10,11 +10,16 @@ sends a request it has not already proven fits, and the last thing it does alway
 happen. That ordering is the whole design: a run that discovers it is out of window while
 trying to report that it is out of window has lost the work.
 
-The count is a floor, on the same terms as everywhere else in Pharos. Serialised JSON is not
-byte-identical to what the model's chat template produces, and the backend adds its own
-scaffolding Pharos cannot see. That is why the ceiling keeps a margin rather than aiming at
-the last token, and why ``prompt_eval_count`` from the response is recorded and reported: it
-is the ground truth, and a run that drifts from its own estimate should say so.
+The count is deliberately CONSERVATIVE, and in practice it runs well above what the backend
+reports rather than below. Measured on a real run: 2.56x. The tool catalogue is counted as the
+JSON that goes on the wire, while the backend renders it into the prompt through a chat
+template that is far more compact, and there is no way from here to see that rendering.
+
+Erring high is the safe direction — a part sized against an inflated estimate fits, where the
+reverse eventually overflows — but it is not free: it makes parts smaller and runs longer than
+they need to be. So the ratio is measured against ``prompt_eval_count`` on every part and
+published in the scorecard rather than quietly absorbed. Calling this a "floor" would be the
+comfortable word and the wrong one.
 """
 
 from __future__ import annotations

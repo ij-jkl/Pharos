@@ -259,7 +259,11 @@ Scorecard
   conversation, so the hand-off is the *only* thing carrying context forward — this checks one
   was produced wherever there was a next part, and that it fitted the reserve held back for
   it. A hand-off that overran means the next part began with a truncated thread, which is a
-  `handoff_reserve` problem rather than a model failure.
+  `handoff_reserve` problem rather than a model failure. A hand-off can also be present and
+  carry nothing: a real run produced three of three whose largest was **six tokens** against a
+  500-token reserve while coverage sat at 31%, and the first version of this metric called
+  that continuity. A part that *changed files* and then reported six tokens has dropped the
+  thread; a part that changed nothing is entitled to be brief. They are counted separately.
 - **Revisits** are the fingerprint of a part that lost the thread: reaching for a file another
   part already owned. The scope layer refuses it, so it is recorded rather than damaging.
   Deliberately *not* the same as a path the model invented — one real run tried to write to a
@@ -267,9 +271,13 @@ Scorecard
   what has already been done. Those are counted separately as `wandering`.
 - **Headroom** is the highest fraction of any part's ceiling actually used. Near 100% means
   the next slightly larger file breaks the run.
-- **Drift** is Pharos's own projection against the backend's `prompt_eval_count` — the number
-  this project is least entitled to hide. Above 1.0 is conservative; below 1.0 means the
-  estimate sat under the real prompt, which is the direction that eventually overflows.
+- **Drift** is Pharos's own projection divided by the backend's `prompt_eval_count` — the
+  number this project is least entitled to hide. Above 1.0 means Pharos counted *more* than
+  the backend saw: safe, and wasteful, because parts come out smaller than they needed to be.
+  It measured **2.56x** on a real run, because the tool catalogue is counted as the JSON that
+  goes on the wire while the backend renders it through a far more compact chat template that
+  Pharos cannot see. Below 1.0 is the direction that eventually overflows, and the one worth
+  alarm.
 
 `--json` emits the same thing for a script or a CI step, and **the exit code follows coverage,
 not survival**: 0 only when the run wrote everything it was given and no part failed. A run

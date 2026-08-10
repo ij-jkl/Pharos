@@ -18,6 +18,11 @@ The five:
   starts from an empty conversation. So: was one produced wherever there was a next part, and
   did it fit the reserve held back for it. A hand-off that overran its reserve was planned
   against a budget that was too small, which is a config finding, not a model failure.
+  A hand-off can also be present and still carry nothing. A real run produced three of three
+  hand-offs whose largest was SIX tokens against a 500-token reserve, and the metric called
+  that continuity while coverage sat at 31%. Emptiness is only honest when the part had
+  nothing to report; a part that wrote files and then said six tokens about it has dropped the
+  thread just as surely as one that said nothing at all, so those are counted separately.
 * **Revisits** — the fingerprint of a part that lost the thread. A part reaching for a file
   ANOTHER PART OWNED is redoing work already done; the scope layer refuses it, so it is
   recorded rather than damaging. Distinguished from a path the model simply invented, which is
@@ -26,10 +31,11 @@ The five:
   been wrong.
 * **Headroom** — the highest fraction of any part's ceiling actually used. Near 100% means the
   next slightly larger file breaks the run; low means the division has room.
-* **Drift** — Pharos's own projection against the backend's ``prompt_eval_count``. The number
-  this project is least entitled to hide. Under 1.0 is over-counting (safe, wasteful); over
-  1.0 means the estimate was below what the backend actually saw, which is the direction that
-  eventually overflows a window.
+* **Drift** — Pharos's own projection divided by the backend's ``prompt_eval_count``. The
+  number this project is least entitled to hide. Above 1.0 means Pharos counted MORE than the
+  backend saw: safe, and wasteful, because parts come out smaller than they needed to be —
+  2.56x on a measured run. Below 1.0 means the estimate sat under the real prompt, which is
+  the direction that eventually overflows a window and the one worth alarm.
 """
 
 from __future__ import annotations
@@ -38,6 +44,11 @@ from dataclasses import dataclass, field
 
 from pharos.agent.session import PartResult
 from pharos.agent.tools import normalise
+
+# Below this, a hand-off from a part that changed files is not a summary of anything. Chosen
+# against measured hand-offs: real ones ran 64-328 tokens (see PharosConfig.handoff_reserve),
+# and the degenerate ones observed were single digits. Nothing useful lives in between.
+_THIN_HANDOFF_TOKENS = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +66,8 @@ class Scorecard:
     handoff_reserve: int = 0
     largest_handoff: int = 0
     handoff_overruns: int = 0
+
+    thin_handoffs: int = 0  # parts that wrote files and then reported almost nothing
 
     revisits: list[str] = field(default_factory=list)  # files another part already owned
     invented: list[str] = field(default_factory=list)  # paths in no part's scope at all
@@ -80,6 +93,7 @@ class Scorecard:
         return (
             self.handoffs_produced == self.handoffs_expected
             and not self.handoff_overruns
+            and not self.thin_handoffs
             and not self.revisits
         )
 
@@ -116,6 +130,14 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
             if path not in bucket:
                 bucket.append(path)
 
+    # A hand-off from a part that CHANGED something has to describe it. From a part that did
+    # nothing, brevity is the honest answer, so silence there is not held against continuity.
+    thin = sum(
+        1
+        for p in parts[:-1]
+        if p.files_written and p.handoff_tokens < _THIN_HANDOFF_TOKENS
+    )
+
     # The last part hands off to nobody, so it is not expected to produce one.
     expects_handoff = parts[:-1] if len(parts) > 1 else []
     produced = [p for p in expects_handoff if p.text.strip()]
@@ -143,6 +165,7 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
         handoff_overruns=sum(
             1 for p in expects_handoff if handoff_reserve and p.handoff_tokens > handoff_reserve
         ),
+        thin_handoffs=thin,
         revisits=revisits,
         invented=invented,
         peak_fraction=peak_fraction,
@@ -171,6 +194,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             "largest": card.largest_handoff,
             "overruns": card.handoff_overruns,
         },
+        "thin_handoffs": card.thin_handoffs,
         "revisits": card.revisits,
         "invented_paths": card.invented,
         "peak_fraction": round(card.peak_fraction, 3),

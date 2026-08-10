@@ -161,6 +161,12 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
                 f"                 [yellow]{card.handoff_overruns} overran the reserve[/] — "
                 f"raise handoff_reserve, or the next part starts with a truncated thread"
             )
+        if card.thin_handoffs:
+            console.print(
+                f"                 [yellow]{card.thin_handoffs} part(s) changed files and "
+                f"reported almost nothing[/] — the next part started without knowing what "
+                f"had been done"
+            )
         if card.revisits:
             console.print(
                 f"                 [yellow]{len(card.revisits)} revisit(s)[/]: a part reached "

@@ -17,7 +17,7 @@ def _part(
     scoped: list[str],
     wrote: list[str] | None = None,
     handoff: str = "did the thing",
-    handoff_tokens: int = 10,
+    handoff_tokens: int = 60,
     refusals: list[str] | None = None,
     peak: int = 100,
     ceiling: int = 1000,
@@ -199,3 +199,27 @@ def test_an_unrestricted_run_that_wrote_something_counts_as_complete() -> None:
     card = score([_part(scoped=[], wrote=["a.py"])], handoff_reserve=500)
     assert card.coverage is None
     assert not card.failed_parts and not card.abandoned_parts
+
+
+def test_a_part_that_wrote_files_and_said_nothing_lost_the_thread() -> None:
+    """Measured on a real run: three of three hand-offs produced, largest SIX tokens against a
+    500-token reserve, while coverage sat at 31%. The metric called that continuity."""
+    parts = [
+        _part(scoped=["a.py"], wrote=["a.py"], handoff="ok", handoff_tokens=6),
+        _part(scoped=["b.py"], wrote=["b.py"]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.handoffs_produced == card.handoffs_expected == 1  # present...
+    assert card.thin_handoffs == 1  # ...and carrying nothing
+    assert not card.kept_the_thread
+
+
+def test_a_part_that_changed_nothing_may_be_brief() -> None:
+    """Silence is the honest answer when there was nothing to report; only work needs a summary."""
+    parts = [
+        _part(scoped=["a.py"], wrote=[], handoff="NO CHANGES NEEDED", handoff_tokens=4),
+        _part(scoped=["b.py"], wrote=["b.py"]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.thin_handoffs == 0
+    assert card.kept_the_thread
