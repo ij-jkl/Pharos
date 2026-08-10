@@ -56,12 +56,21 @@ class PharosConfig(BaseModel):
     # loaded is used and measured as-is — Pharos never silently changes a window it is also
     # reporting on. Set it and `pharos run` loads the model with that window and says so.
     num_ctx: int | None = Field(default=None, ge=256)
-    # Most files `pharos run` puts in one part. Unlike every other number in this file this one
-    # is a HEURISTIC, not a measurement: it bounds how much WORK a part contains, not how many
-    # tokens. A local model handed thirteen files that all fit the window reads all thirteen
-    # and then answers in prose without editing anything — the limit reached is the model's,
-    # not the hardware's, and no token count predicts it. Raise it for a stronger model.
-    max_files_per_part: int = Field(default=4, ge=1)
+    # Most files `pharos run` puts in one part. It bounds how much WORK a part contains, not
+    # how many tokens — the limit it exists for belongs to the model, not the hardware, and no
+    # token count predicts it.
+    #
+    # Measured rather than guessed, on the same 13-file task run four times against
+    # qwen2.5-coder:14b in a 16K window. A part completes about 1.5 to 2.0 files and then stops
+    # believing itself finished, whatever it was given: 1.5, 2.0, 1.5 files per part when parts
+    # held four. Window pressure was never the cause — peak usage sat at 42-51% of the ceiling
+    # throughout. Nor was persuasion the answer: stating the target up front, naming the
+    # outstanding files, and asking again all failed to push a part past roughly two.
+    #
+    # So the fix is arithmetic. At four files per part that task covered 46%, 62%, 46%. At two,
+    # 92%. The cost is more parts, which is more hand-offs and more chances to drop the thread
+    # — worth watching in the scorecard, and worth raising for a model that finishes more.
+    max_files_per_part: int = Field(default=2, ge=1)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

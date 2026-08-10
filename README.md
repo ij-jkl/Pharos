@@ -229,8 +229,16 @@ a hope into a bound.
 
 Two limits are in play and only one is measurable. The window is exact. How many files a model
 will work through in one sitting before it stops calling tools and starts describing them is a
-property of the model, not the hardware — `max_files_per_part` (default 4) bounds it, and it is
-the one number in `pharos.toml` that is a preference rather than a measurement.
+property of the model, not the hardware — `max_files_per_part` (default 2) bounds it.
+
+That default is measured, not guessed. On the same 13-file task against `qwen2.5-coder:14b`, a
+part completes about **1.5–2.0 files** and then believes itself finished, whatever it was
+given. Window pressure is never the cause: peak usage sat at 42–51% of the ceiling throughout.
+Nor is persuasion the fix — stating the target up front, naming the outstanding files, and
+asking again all failed to push a part past roughly two. So the fix is arithmetic. At four
+files per part that task covered **46%, 62%, 46%**; at two, **92%**. Raise it for a model that
+finishes more, and watch the scorecard's continuity line, since more parts means more
+hand-offs.
 
 **It does not make the model good.** Pharos proves the task fits and that every part ran; it
 does not check that the code is right. Small local models still invent types, miss files, and

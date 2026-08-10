@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import pharos
-from pharos.config import ConfigError, load_config
+from pharos.config import ConfigError, PharosConfig, load_config
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,3 +106,10 @@ def test_readme_status_line_matches_the_version() -> None:
     headings = set(re.findall(r"^## .*\(v(\d+\.\d+) \"", readme, re.MULTILINE))
     ahead = [v for v in headings if tuple(int(p) for p in v.split(".")) > released]
     assert not ahead, f"README documents tiers not yet released: {sorted(ahead)}"
+
+
+def test_the_files_per_part_default_is_the_measured_one() -> None:
+    """Two, not four. On a 13-file task against qwen2.5-coder:14b a part completes about 1.5
+    to 2.0 files whatever it is given; at four per part that task covered 46/62/46%, at two it
+    covered 92%. The number is load-bearing, so a silent change should fail here first."""
+    assert PharosConfig().max_files_per_part == 2
