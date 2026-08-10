@@ -271,13 +271,14 @@ Scorecard
   what has already been done. Those are counted separately as `wandering`.
 - **Headroom** is the highest fraction of any part's ceiling actually used. Near 100% means
   the next slightly larger file breaks the run.
-- **Drift** is Pharos's own projection divided by the backend's `prompt_eval_count` — the
-  number this project is least entitled to hide. Above 1.0 means Pharos counted *more* than
-  the backend saw: safe, and wasteful, because parts come out smaller than they needed to be.
-  It measured **2.56x** on a real run, because the tool catalogue is counted as the JSON that
-  goes on the wire while the backend renders it through a far more compact chat template that
-  Pharos cannot see. Below 1.0 is the direction that eventually overflows, and the one worth
-  alarm.
+- **Drift** is Pharos's own projection divided by the backend's `prompt_eval_count`, paired
+  per request and shown as a range — the number this project is least entitled to hide. Above
+  1.0 means Pharos counted *more* than the backend saw: safe, and wasteful, because parts come
+  out smaller than they needed to be. That is the normal case (**1.12x–1.53x** measured),
+  since the tool catalogue is counted as the JSON that goes on the wire while the backend
+  renders it through a more compact chat template Pharos cannot see. Below 1.0 means a ceiling
+  was enforced against an estimate sitting *under* the real prompt — not a ceiling at all —
+  and that is flagged.
 
 `--json` emits the same thing for a script or a CI step, and **the exit code follows coverage,
 not survival**: 0 only when the run wrote everything it was given and no part failed. A run

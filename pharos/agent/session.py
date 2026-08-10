@@ -10,10 +10,10 @@ sends a request it has not already proven fits, and the last thing it does alway
 happen. That ordering is the whole design: a run that discovers it is out of window while
 trying to report that it is out of window has lost the work.
 
-The count is deliberately CONSERVATIVE, and in practice it runs well above what the backend
-reports rather than below. Measured on a real run: 2.56x. The tool catalogue is counted as the
-JSON that goes on the wire, while the backend renders it into the prompt through a chat
-template that is far more compact, and there is no way from here to see that rendering.
+The count is deliberately CONSERVATIVE, and in practice it runs above what the backend reports
+rather than below — 1.12x to 1.53x across two measured runs, never under. The tool catalogue is
+counted as the JSON that goes on the wire, while the backend renders it into the prompt through
+a chat template that is more compact, and there is no way from here to see that rendering.
 
 Erring high is the safe direction — a part sized against an inflated estimate fits, where the
 reverse eventually overflows — but it is not free: it makes parts smaller and runs longer than
@@ -34,7 +34,7 @@ from typing import Any
 
 import httpx
 
-from pharos.agent.tools import ToolBox, catalogue_text
+from pharos.agent.tools import ToolBox, catalogue_text, normalise
 
 _logger = logging.getLogger("pharos.agent")
 
@@ -114,6 +114,21 @@ _NO_WRITE_NUDGE = (
     "NO CHANGES NEEDED."
 )
 
+def _incomplete_nudge(missing: list[str], unread: list[str]) -> str:
+    """Name the files still outstanding. A generic reminder is useless to a model that has
+    already written something and believes it is finished."""
+    listed = ", ".join(missing[:8]) + (f" (+{len(missing) - 8} more)" if len(missing) > 8 else "")
+    never_opened = (
+        f" You have not even read: {', '.join(unread[:8])}." if unread else ""
+    )
+    return (
+        f"You are not done. These files are yours for this part and are still unchanged on "
+        f"disk: {listed}.{never_opened} Read each one and make the edit with replace_lines or "
+        f"write_file. Any hand-off you were given describes work on OTHER files. If a file "
+        f"genuinely needs no change, name it and say why — do not skip it silently."
+    )
+
+
 _HANDOFF_REQUEST = (
     "Stop here. Do not call any more tools. In at most 10 lines, write the hand-off for the "
     "next part: what you changed, what you did not get to, and anything it needs to know. "
@@ -151,6 +166,10 @@ class PartResult:
     # "finished" tells you nothing on its own; whether it wrote what it owned, handed the
     # thread on, and had room to breathe is what says the run held together.
     ceiling: int = 0  # what this part was allowed, so peak means something as a fraction
+    # (our projection, the backend's prompt_eval_count) for each request, paired at the moment
+    # it was sent. Comparing a part's PEAK against whichever count came back last compares two
+    # different requests and inflates the ratio — measured 2.56x that way against a true 1.3x.
+    drift_samples: list[tuple[int, int]] = field(default_factory=list)
     nudged: bool = False  # it answered without editing and had to be asked again
     scoped: list[str] = field(default_factory=list)  # the files this part owned
     handoff_tokens: int = 0  # size of the hand-off it produced
@@ -188,6 +207,7 @@ class AgentSession:
         # the ceiling up front rather than being hoped for at the end.
         self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN
         self._messages: list[dict[str, Any]] = []
+        self._drift: list[tuple[int, int]] = []
 
     @property
     def catalogue_tokens(self) -> int:
@@ -227,6 +247,7 @@ class AgentSession:
             {"role": "system", "content": self._system_prompt},
             {"role": "user", "content": part_body},
         ]
+        self._drift = []
         nudged = False
         failures = 0
         scoped = sorted(self._toolbox.scope) if self._toolbox.scope else []
@@ -275,6 +296,7 @@ class AgentSession:
                     ceiling=self._ceiling,
                     nudged=nudged,
                     scoped=scoped,
+                    drift_samples=list(self._drift),
                     error=f"backend call failed: {_describe(exc)}",
                 )
 
@@ -286,16 +308,43 @@ class AgentSession:
                 if recovered:
                     self._on_event(f"recovered {len(calls)} tool call(s) written as text")
             self._messages.append(_assistant_message(message))
-            if not calls and not self._toolbox.files_written and not nudged:
-                nudged = True
+            if not calls and not nudged:
+                # Not "wrote nothing" — "did not write everything it owns". A part that edits
+                # two of its four files and stops looks like success to an all-or-nothing
+                # check, and partial coverage is the failure mode that actually happens: runs
+                # here have landed between 31% and 70%. The reminder names the specific files
+                # still outstanding, because "you have not called write_file" tells a model
+                # that just called write_file twice nothing it can act on.
+                written = {normalise(p) for p in self._toolbox.files_written}
+                missing = [p for p in scoped if normalise(p) not in written]
                 text = str(message.get("content") or "")
-                # "NO CHANGES NEEDED" is only credible from a part that actually looked. A
-                # part that opened none of its own files is answering from the hand-off above
-                # it, which describes somebody else's files.
-                looked = bool(self._toolbox.files_read)
-                if not looked or "NO CHANGES NEEDED" not in text.upper():
-                    self._on_event("answered without editing — asking once for the actual edit")
-                    _logger.info("no-edit reply (read %s): %r", self._toolbox.files_read, text)
+                # "NO CHANGES NEEDED" is only credible about files it actually opened. A part
+                # answering from the hand-off above it is describing somebody else's work.
+                read = {normalise(p) for p in self._toolbox.files_read}
+                unread = [p for p in missing if normalise(p) not in read]
+                declined = "NO CHANGES NEEDED" in text.upper() and not unread
+                if missing and not declined:
+                    nudged = True
+                    self._on_event(
+                        f"stopped with {len(missing)} of {len(scoped)} file(s) unchanged — "
+                        f"asking once more"
+                    )
+                    _logger.info("incomplete part (read %s, wrote %s): %r",
+                                 sorted(read), sorted(written), text)
+                    self._messages.append(
+                        {"role": "user", "content": _incomplete_nudge(missing, unread)}
+                    )
+                    continue
+                # An unrestricted part has no list to check against, so fall back to the
+                # all-or-nothing question rather than never asking at all.
+                unscoped_and_idle = (
+                    not scoped
+                    and not self._toolbox.files_written
+                    and "NO CHANGES NEEDED" not in text.upper()
+                )
+                if unscoped_and_idle:
+                    nudged = True
+                    self._on_event("answered without editing — asking once for the edit")
                     self._messages.append({"role": "user", "content": _NO_WRITE_NUDGE})
                     continue
             if not calls:
@@ -312,6 +361,7 @@ class AgentSession:
                     ceiling=self._ceiling,
                     nudged=nudged,
                     scoped=scoped,
+                    drift_samples=list(self._drift),
                     handoff_tokens=self._count(str(message.get("content") or "")),
                 )
 
@@ -345,6 +395,7 @@ class AgentSession:
             ceiling=self._ceiling,
             nudged=nudged,
             scoped=scoped,
+            drift_samples=list(self._drift),
             handoff_tokens=self._count(text),
         )
 
@@ -404,6 +455,7 @@ class AgentSession:
         project exists to refuse.
         """
         room = max(self._ceiling - self._projected(), _MIN_REPLY_ROOM)
+        # Paired below with whatever prompt_eval_count comes back for THIS request.
         payload: dict[str, Any] = {
             "model": self._model,
             "messages": self._messages,
@@ -413,6 +465,7 @@ class AgentSession:
         if tools:
             payload["tools"] = tools
 
+        projected_now = self._projected()
         content: list[str] = []
         tool_calls: list[dict[str, Any]] = []
         message: dict[str, Any] = {"role": "assistant"}
@@ -458,6 +511,8 @@ class AgentSession:
                         f"(cap {room:,} tokens)"
                     )
 
+        if prompt_eval:
+            self._drift.append((projected_now, prompt_eval))
         message["content"] = "".join(content)
         if tool_calls:
             message["tool_calls"] = tool_calls

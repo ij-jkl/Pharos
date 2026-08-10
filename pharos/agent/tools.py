@@ -52,6 +52,13 @@ _HIDDEN = frozenset({".git", "__pycache__", ".venv", "node_modules", ".mypy_cach
 
 _MAX_LIST_ENTRIES = 200
 
+# Writes to one file before a part is told to leave it alone. Observed live: a part called
+# replace_lines on the same file a dozen times in a row. Every call succeeded, so the
+# consecutive-failure breaker never saw it, and every edit moved the lines underneath the
+# model's map so it kept "fixing" what it had just changed — while the other files it owned
+# were never opened. Churn on one file is the coverage failure in slow motion.
+_MAX_WRITES_PER_FILE = 5
+
 _logger = logging.getLogger("pharos.agent")
 
 # How a caller counts tokens; injected so the dispatcher never reaches for a tokenizer itself.
@@ -97,6 +104,7 @@ class ToolBox:
     files_written: list[str] = field(default_factory=list)
     files_read: list[str] = field(default_factory=list)
     scope_refusals: list[str] = field(default_factory=list)
+    write_counts: dict[str, int] = field(default_factory=dict)
 
     # -- catalogue -----------------------------------------------------------------------
 
@@ -174,6 +182,23 @@ class ToolBox:
         return ToolResult(
             f"Unknown tool {name!r}. Available: read_file, write_file, list_dir.", ok=False
         )
+
+    def _note_write(self, display: str) -> ToolResult | None:
+        """Count a write, and cut a part off once it is plainly churning on one file."""
+        count = self.write_counts.get(display, 0) + 1
+        self.write_counts[display] = count
+        if count > _MAX_WRITES_PER_FILE:
+            others = [p for p in (self.scope or {}) if p != display] if self.scope else []
+            move_on = f" Files still yours: {', '.join(others)}." if others else ""
+            return ToolResult(
+                f"Refused: {display} has already been rewritten {count - 1} times in this "
+                f"part. Further edits to it are being declined so the rest of the work is not "
+                f"starved of the window.{move_on} Leave it as it is.",
+                ok=False,
+            )
+        if display not in self.files_written:
+            self.files_written.append(display)
+        return None
 
     def _entry(self, display: str) -> ScopeEntry | None:
         """The scope entry for a path, or None when scope does not cover it."""
@@ -279,12 +304,13 @@ class ToolBox:
                 f"complete file contents.",
                 ok=False,
             )
+        churn = self._note_write(display)
+        if churn is not None:
+            return churn
         if self.undo is not None:
             self.undo.before_write(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8", newline=_existing_newline(path))
-        if display not in self.files_written:
-            self.files_written.append(display)
         return ToolResult(f"Wrote {display} ({len(content.splitlines()):,} lines).", wrote=display)
 
     def _replace_lines(self, arguments: dict[str, Any]) -> ToolResult:
@@ -330,6 +356,9 @@ class ToolBox:
         # Read the file's own ending BEFORE the snapshot copy and the write: read_text above
         # normalised CRLF to LF in memory, so writing back without this converts the whole file
         # and a three-line edit shows as 150 changed lines.
+        churn = self._note_write(display)
+        if churn is not None:
+            return churn
         ending = _existing_newline(path)
         if self.undo is not None:
             self.undo.before_write(path)
@@ -338,8 +367,6 @@ class ToolBox:
             encoding="utf-8",
             newline=ending,
         )
-        if display not in self.files_written:
-            self.files_written.append(display)
         # Every line below the edit has just moved, and the model is still holding numbers from
         # a read taken before it. Editing top-to-bottom off a stale map lands the second change
         # in the wrong place — silently, because the tool call itself succeeds. Say the shift

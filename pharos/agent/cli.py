@@ -180,14 +180,27 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
         )
 
     console.print(f"  headroom     peak used {card.peak_fraction:.0%} of a part's ceiling")
-    if card.drift is not None:
-        # Over 1.0 means we projected MORE than the backend saw: safe, but wasteful. Under
-        # 1.0 is the direction that eventually overflows, so it is the one flagged.
-        under = card.drift < 1.0
+    if card.drift_high is not None and card.drift_low is not None:
+        # A range, not a number: high is wasted room, and anything under 1.0 means a ceiling
+        # was enforced against an estimate below the real prompt, which is not a ceiling.
+        span = (
+            f"{card.drift_low:.2f}x"
+            if round(card.drift_low, 2) == round(card.drift_high, 2)
+            else f"{card.drift_low:.2f}-{card.drift_high:.2f}x"
+        )
+        note = (
+            "  [yellow](one or more requests came in UNDER the real prompt)[/]"
+            if card.under_counted
+            else "  [dim](always above the real prompt: conservative)[/]"
+        )
+        at_peak = (
+            f", {card.drift_at_peak:.2f}x on the largest"
+            if card.drift_at_peak is not None
+            else ""
+        )
         console.print(
-            f"  drift        our estimate ran {card.drift:.2f}x the backend's count"
-            + ("  [yellow](below the real prompt — the direction that overflows)[/]"
-               if under else "  [dim](above the real prompt: conservative)[/]")
+            f"  drift        our estimate ran {span} the backend's count "
+            f"over {card.drift_samples} request(s){at_peak}{note}"
         )
     if card.nudged_parts or card.abandoned_parts:
         console.print(

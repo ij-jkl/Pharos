@@ -899,3 +899,95 @@ def await_run(session: AgentSession, body: str) -> PartResult:
     import asyncio
 
     return asyncio.run(session.run(body))
+
+
+# --- the nudge, when a part is only partly done ---------------------------------------------
+
+
+async def test_a_part_that_wrote_some_of_its_files_is_still_asked_for_the_rest(
+    workspace: Workspace,
+) -> None:
+    """Partial coverage is the failure that actually happens; real runs landed at 31-70%.
+
+    An all-or-nothing check sees two writes and calls it done. The reminder has to name what
+    is outstanding, because "you have not called write_file" tells a model that just called
+    write_file nothing it can act on.
+    """
+    write_one = {
+        "role": "assistant", "content": "",
+        "tool_calls": [{"function": {"name": "write_file",
+                                     "arguments": {"path": "src/alpha.py", "content": "a=1\n"}}}],
+    }
+    done = {"role": "assistant", "content": "All finished.", "tool_calls": []}
+    backend = FakeBackend([write_one, done])
+    box = _box(workspace, scope_from_part_files(
+        [_part_file("src/alpha.py"), _part_file("src/beta.py")]
+    ))
+
+    await _session(backend, box, budget=100_000).run("edit both")
+
+    asked = [m for r in backend.requests for m in r["messages"] if m.get("role") == "user"]
+    reminder = [m["content"] for m in asked if "still unchanged" in m.get("content", "")]
+    assert reminder, "the part stopped half-done and was never asked about the rest"
+    assert "src/beta.py" in reminder[0]
+    assert "src/alpha.py" not in reminder[0]  # already written; naming it invites a rewrite
+
+
+async def test_a_fully_covered_part_is_not_nagged(workspace: Workspace) -> None:
+    """The reminder must mean something, so it cannot fire on a part that did its job."""
+    write_both = {
+        "role": "assistant", "content": "",
+        "tool_calls": [
+            {"function": {"name": "write_file",
+                          "arguments": {"path": "src/alpha.py", "content": "a=1\n"}}},
+            {"function": {"name": "write_file",
+                          "arguments": {"path": "src/beta.py", "content": "b=2\n"}}},
+        ],
+    }
+    done = {"role": "assistant", "content": "Done both.", "tool_calls": []}
+    backend = FakeBackend([write_both, done])
+    box = _box(workspace, scope_from_part_files(
+        [_part_file("src/alpha.py"), _part_file("src/beta.py")]
+    ))
+
+    result = await _session(backend, box, budget=100_000).run("edit both")
+
+    assert sorted(result.files_written) == ["src/alpha.py", "src/beta.py"]
+    assert not result.nudged
+
+
+def test_a_part_may_not_churn_forever_on_one_file(workspace: Workspace) -> None:
+    """Observed live: a dozen replace_lines on the same file, every one succeeding.
+
+    The consecutive-failure breaker never saw it because nothing failed, and each edit moved
+    the lines under the model's map so it kept fixing what it had just changed — while its
+    other files went unopened. Churn on one file is the coverage failure in slow motion.
+    """
+    target = workspace.root / "src" / "alpha.py"
+    target.write_text("a = 1\n", encoding="utf-8")
+    box = ToolBox(workspace=workspace, scope=scope_from_part_files(
+        [_part_file("src/alpha.py"), _part_file("src/beta.py")]
+    ))
+
+    outcomes = [
+        box.dispatch("write_file", {"path": "src/alpha.py", "content": f"a = {i}\n"},
+                     room=999, count=_count)
+        for i in range(8)
+    ]
+
+    assert all(r.ok for r in outcomes[:5]), "the first few edits are legitimate"
+    assert not outcomes[5].ok and "already been rewritten" in outcomes[5].text
+    assert "src/beta.py" in outcomes[5].text  # points at the work being starved
+    assert target.read_text(encoding="utf-8") == "a = 4\n"  # the 6th write never landed
+
+
+def test_the_churn_guard_counts_per_file_not_per_part(workspace: Workspace) -> None:
+    """Editing several files a few times each is normal work, not churn."""
+    box = ToolBox(workspace=workspace)
+    for _ in range(4):
+        for name in ("alpha", "beta"):
+            result = box.dispatch(
+                "write_file", {"path": f"src/{name}.py", "content": "x = 1\n"},
+                room=999, count=_count,
+            )
+            assert result.ok

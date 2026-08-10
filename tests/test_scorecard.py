@@ -25,6 +25,7 @@ def _part(
     nudged: bool = False,
     stopped: bool = False,
     error: str | None = None,
+    drift_samples: list[tuple[int, int]] | None = None,
 ) -> PartResult:
     return PartResult(
         text=handoff,
@@ -39,6 +40,7 @@ def _part(
         nudged=nudged,
         scoped=scoped,
         handoff_tokens=handoff_tokens,
+        drift_samples=drift_samples or [],
     )
 
 
@@ -155,14 +157,35 @@ def test_headroom_is_the_worst_part_not_the_average() -> None:
     assert score(parts, handoff_reserve=500).peak_fraction == 0.95
 
 
-def test_drift_compares_our_estimate_to_the_backends_count() -> None:
-    parts = [_part(scoped=["a.py"], wrote=["a.py"], peak=1200, reported=1000)]
-    assert score(parts, handoff_reserve=500).drift == 1.2
+def test_drift_pairs_each_projection_with_its_own_request() -> None:
+    """Dividing a part's PEAK by whichever count arrived last compares two different requests.
+
+    Measured that way a real run read 2.56x where its honest worst case was 1.53x, because the
+    peak came from mid-loop and the reported count from the final, smaller call.
+    """
+    parts = [
+        _part(scoped=["a.py"], wrote=["a.py"], peak=9_000,  # never used for drift
+              drift_samples=[(1200, 1000), (2600, 2000)]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.drift_low == 1.2
+    assert card.drift_high == 1.3
+    assert card.drift_samples == 2
+    assert not card.under_counted
+
+
+def test_a_request_counted_under_the_real_prompt_raises_the_alarm() -> None:
+    """A ceiling enforced against an estimate below the real prompt is not a ceiling."""
+    parts = [_part(scoped=["a.py"], wrote=["a.py"], drift_samples=[(900, 1000)])]
+    card = score(parts, handoff_reserve=500)
+    assert card.drift_low == 0.9 and card.under_counted
 
 
 def test_drift_is_absent_when_the_backend_never_said() -> None:
-    parts = [_part(scoped=["a.py"], wrote=["a.py"], reported=None)]
-    assert score(parts, handoff_reserve=500).drift is None
+    parts = [_part(scoped=["a.py"], wrote=["a.py"], drift_samples=[])]
+    card = score(parts, handoff_reserve=500)
+    assert card.drift_high is None and card.drift_low is None
+    assert not card.under_counted  # unknown must not read as an alarm
 
 
 # --- the machine-readable form ------------------------------------------------------------

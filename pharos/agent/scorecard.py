@@ -31,11 +31,17 @@ The five:
   been wrong.
 * **Headroom** — the highest fraction of any part's ceiling actually used. Near 100% means the
   next slightly larger file breaks the run; low means the division has room.
-* **Drift** — Pharos's own projection divided by the backend's ``prompt_eval_count``. The
-  number this project is least entitled to hide. Above 1.0 means Pharos counted MORE than the
-  backend saw: safe, and wasteful, because parts come out smaller than they needed to be —
-  2.56x on a measured run. Below 1.0 means the estimate sat under the real prompt, which is
-  the direction that eventually overflows a window and the one worth alarm.
+* **Drift** — Pharos's own projection divided by the backend's ``prompt_eval_count``, paired
+  per REQUEST and reported as a range. The number this project is least entitled to hide.
+  Above 1.0 means Pharos counted more than the backend saw: safe, and wasteful, because parts
+  come out smaller than they needed to be. Below 1.0 means a ceiling was enforced against an
+  estimate that sat under the real prompt, which is not a ceiling at all — that is the alarm.
+  Measured across two real runs: 1.12x to 1.53x, never under.
+
+  The pairing is the whole point. The first version divided a part's PEAK projection by
+  whichever count came back last, which are two different requests: it read 2.56x on a run
+  whose honest worst case was 1.53x, and that fabricated number went into a docstring and a
+  README before the arithmetic was checked.
 """
 
 from __future__ import annotations
@@ -73,7 +79,16 @@ class Scorecard:
     invented: list[str] = field(default_factory=list)  # paths in no part's scope at all
 
     peak_fraction: float = 0.0  # highest part peak / its ceiling
-    drift: float | None = None  # our estimate / the backend's count, worst part
+    # Our projection over the backend's count, per REQUEST. A range, because one number hides
+    # which direction it went: high is waste, and anything below 1.0 is the failure mode.
+    drift_high: float | None = None
+    drift_low: float | None = None
+    # The ratio for the BIGGEST request of the run. The over-count is a fixed offset — the
+    # tool catalogue, counted as wire JSON against the backend's compact rendering — so the
+    # ratio is worst on the smallest conversation, where it could not matter less. The one
+    # that decides whether a ceiling holds is the ratio where the window is nearly full.
+    drift_at_peak: float | None = None
+    drift_samples: int = 0
 
     nudged_parts: int = 0
     abandoned_parts: int = 0
@@ -96,6 +111,15 @@ class Scorecard:
             and not self.thin_handoffs
             and not self.revisits
         )
+
+    @property
+    def under_counted(self) -> bool:
+        """Any request where Pharos projected FEWER tokens than the backend then reported.
+
+        The only direction that matters for safety: a ceiling enforced against an estimate
+        that sits under the real prompt is not a ceiling. Over-counting merely wastes room.
+        """
+        return self.drift_low is not None and self.drift_low < 1.0
 
     @property
     def complete(self) -> bool:
@@ -146,11 +170,17 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
         (p.peak_tokens / p.ceiling for p in parts if p.ceiling > 0),
         default=0.0,
     )
-    measured = [
-        p.peak_tokens / p.reported_tokens
-        for p in parts
-        if p.reported_tokens
+    # Each ratio pairs one request's projection with that same request's prompt_eval_count.
+    # Dividing a part's PEAK by whichever count arrived last compares two different requests:
+    # it read 2.56x on a run whose honest worst case was 1.53x.
+    pairs = [
+        (ours, theirs)
+        for part in parts
+        for ours, theirs in part.drift_samples
+        if theirs > 0
     ]
+    ratios = [ours / theirs for ours, theirs in pairs]
+    biggest = max(pairs, key=lambda pair: pair[0], default=None)
 
     return Scorecard(
         parts=len(parts),
@@ -169,7 +199,10 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
         revisits=revisits,
         invented=invented,
         peak_fraction=peak_fraction,
-        drift=max(measured) if measured else None,
+        drift_high=max(ratios) if ratios else None,
+        drift_low=min(ratios) if ratios else None,
+        drift_at_peak=(biggest[0] / biggest[1]) if biggest else None,
+        drift_samples=len(ratios),
         nudged_parts=sum(1 for p in parts if p.nudged),
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
         failed_parts=sum(1 for p in parts if p.error),
@@ -198,7 +231,15 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "revisits": card.revisits,
         "invented_paths": card.invented,
         "peak_fraction": round(card.peak_fraction, 3),
-        "estimate_over_backend": None if card.drift is None else round(card.drift, 3),
+        "estimate_over_backend": {
+            "high": None if card.drift_high is None else round(card.drift_high, 3),
+            "low": None if card.drift_low is None else round(card.drift_low, 3),
+            "at_largest_request": (
+                None if card.drift_at_peak is None else round(card.drift_at_peak, 3)
+            ),
+            "requests": card.drift_samples,
+        },
+        "under_counted": card.under_counted,
         "nudged_parts": card.nudged_parts,
         "abandoned_parts": card.abandoned_parts,
         "failed_parts": card.failed_parts,
