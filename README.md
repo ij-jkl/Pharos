@@ -196,6 +196,47 @@ parts that will fail.
 to plan for a window you have not loaded yet. Exit codes: `0` a plan whose every part fits (or
 nothing to split), `1` no plan or a part still over, `2` no budget to plan against.
 
+## Carry the task out (v0.4 "Do")
+
+`pharos run` executes the plan instead of printing it. It pre-flights the task, divides it
+with the same splitter, then runs each part as its own conversation against your local model
+— fresh context each time, seeded only with the previous part's hand-off.
+
+```bash
+pharos run "Refactor the controllers in `backend/Controllers/` to a consistent response shape"
+pharos run --dry-run "..."     # plan only; changes nothing
+pharos run --no-split "..."    # one undivided conversation, for comparison
+```
+
+This is the one part of Pharos that **writes files**, so it will not start without a way back:
+in a git repository it requires a clean tree and puts the run on its own `pharos-run/…` branch;
+in a plain folder it copies every original into `.pharos/undo-<timestamp>/` before the first
+write. Review with `git diff`, or copy the snapshot back.
+
+Three properties make this compatible with everything above:
+
+- **The proxy is untouched.** The runner is a *client* of it, like Continue or Cursor. Its
+  traffic is observed on the way past, never rewritten.
+- **Overhead is counted, not learned.** Pharos wrote this client, so it counts its own system
+  prompt and tool catalogue exactly instead of estimating them from observed traffic.
+- **Nothing is trimmed.** A file too large for the remaining window is *refused*, not
+  truncated, and the model is told the size and the room left. A part that reaches its ceiling
+  stops and hands off rather than silently dropping its earliest context.
+
+Scope is enforced in the tool layer, not merely requested in the prompt: a part told to open
+three files physically cannot open a fourth. That is what turns the splitter's projection from
+a hope into a bound.
+
+Two limits are in play and only one is measurable. The window is exact. How many files a model
+will work through in one sitting before it stops calling tools and starts describing them is a
+property of the model, not the hardware — `max_files_per_part` (default 4) bounds it, and it is
+the one number in `pharos.toml` that is a preference rather than a measurement.
+
+**It does not make the model good.** Pharos proves the task fits and that every part ran; it
+does not check that the code is right. Small local models still invent types, miss files, and
+occasionally answer in prose without editing anything — the report says `wrote nothing` when
+that happens, per part, rather than letting the totals absorb it. `git diff` is your reviewer.
+
 ## Ambiguity, notebooks, and JSON
 
 Three smaller things that decide whether the number is trustworthy:
@@ -246,8 +287,10 @@ re-encoding or re-chunking.
 ## What Pharos does NOT do (yet)
 
 - **No request mutation, ever.** No fields added or removed, no prompt rewriting, no
-  `stream_options` injection. The proxy remains a pure observer; `pharos check` and
-  `pharos split` are advisory and run entirely outside the request path.
+  `stream_options` injection. The proxy remains a pure observer. `pharos check` and
+  `pharos split` are advisory; `pharos run` writes files but does so as an ordinary client of
+  the proxy, outside the request path — the constraint applies to what Pharos does to *other
+  people's* traffic, and it has not moved.
 - **No prediction of which files an agent will read** — `pharos check` counts what you named:
   files exactly, into the floor; directories in full, into a separate ceiling. What the agent
   decides to open on its own is in neither number. A split part is a floor on the same terms:
@@ -255,8 +298,10 @@ re-encoding or re-chunking.
 - **No history compaction** and no automatic trimming when you approach the budget — it
   warns; it does not intervene.
 - **No semantic decomposition.** `pharos split` cuts by scope and by position, never by
-  meaning; it does not ask a model to reorganise your task, and it does not run the parts
-  for you.
+  meaning, and no model is ever asked what your task means. `pharos run` executes those same
+  mechanically-derived parts — it divides by files and by position, never by intent.
+- **No verification of the work.** `pharos run` proves a task fit and ran; it does not build,
+  test or review what the model wrote.
 - **No change auditing / filesystem watching.**
 
 Those belong to later tiers. The contract is simple: what your agent sends is what the
