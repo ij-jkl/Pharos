@@ -37,7 +37,7 @@ def _part(
         scope_refusals=refusals or [],
         error=error,
         ceiling=ceiling,
-        nudged=nudged,
+        nudges=1 if nudged else 0,
         scoped=scoped,
         handoff_tokens=handoff_tokens,
         drift_samples=drift_samples or [],

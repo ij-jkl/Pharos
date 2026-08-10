@@ -61,6 +61,13 @@ _MIN_REPLY_ROOM = 256
 # stays this far clear of the real budget. Roughly one long tool result of slack.
 SAFETY_MARGIN = 256
 
+# How many times a part may be reminded that it stopped short. One was not enough: a part
+# that wrote one of four files, was reminded, wrote a second and stopped had spent the only
+# ask available. Each further reminder has to be earned by the previous one having produced a
+# write, so a part that ignores the reminder is not asked a third time, and the cost of a
+# part that simply will not finish stays bounded.
+_MAX_NUDGES = 4
+
 # A model that keeps calling tools without converging is burning the window; stop and hand off
 # rather than let it spin. Reached in practice only when a part was scoped too wide.
 _MAX_STEPS = 40
@@ -170,7 +177,11 @@ class PartResult:
     # it was sent. Comparing a part's PEAK against whichever count came back last compares two
     # different requests and inflates the ratio — measured 2.56x that way against a true 1.3x.
     drift_samples: list[tuple[int, int]] = field(default_factory=list)
-    nudged: bool = False  # it answered without editing and had to be asked again
+    nudges: int = 0  # how many times it stopped short and had to be asked again
+
+    @property
+    def nudged(self) -> bool:
+        return self.nudges > 0
     scoped: list[str] = field(default_factory=list)  # the files this part owned
     handoff_tokens: int = 0  # size of the hand-off it produced
 
@@ -252,7 +263,8 @@ class AgentSession:
             {"role": "user", "content": part_body},
         ]
         self._drift = []
-        nudged = False
+        nudges = 0
+        written_at_last_nudge = 0
         failures = 0
         scoped = sorted(self._toolbox.scope) if self._toolbox.scope else []
         peak = self._projected()
@@ -298,7 +310,7 @@ class AgentSession:
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
                     ceiling=self._ceiling,
-                    nudged=nudged,
+                    nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
                     error=f"backend call failed: {_describe(exc)}",
@@ -312,7 +324,7 @@ class AgentSession:
                 if recovered:
                     self._on_event(f"recovered {len(calls)} tool call(s) written as text")
             self._messages.append(_assistant_message(message))
-            if not calls and not nudged:
+            if not calls and nudges < _MAX_NUDGES:
                 # Not "wrote nothing" — "did not write everything it owns". A part that edits
                 # two of its four files and stops looks like success to an all-or-nothing
                 # check, and partial coverage is the failure mode that actually happens: runs
@@ -327,11 +339,18 @@ class AgentSession:
                 read = {normalise(p) for p in self._toolbox.files_read}
                 unread = [p for p in missing if normalise(p) not in read]
                 declined = "NO CHANGES NEEDED" in text.upper() and not unread
-                if missing and not declined:
-                    nudged = True
+                # A second ask is only worth making if the first one moved something. A part
+                # that writes one of four files, is reminded, writes a second and stops was
+                # never asked again — the one-shot flag was spent. Asking again while progress
+                # continues is most of the remaining coverage; asking again after a reminder
+                # that achieved nothing is just paying for the same refusal twice.
+                progressed = len(self._toolbox.files_written) > written_at_last_nudge
+                if missing and not declined and (nudges == 0 or progressed):
+                    nudges += 1
+                    written_at_last_nudge = len(self._toolbox.files_written)
                     self._on_event(
                         f"stopped with {len(missing)} of {len(scoped)} file(s) unchanged — "
-                        f"asking once more"
+                        f"asking again ({nudges} of {_MAX_NUDGES})"
                     )
                     _logger.info("incomplete part (read %s, wrote %s): %r",
                                  sorted(read), sorted(written), text)
@@ -346,8 +365,8 @@ class AgentSession:
                     and not self._toolbox.files_written
                     and "NO CHANGES NEEDED" not in text.upper()
                 )
-                if unscoped_and_idle:
-                    nudged = True
+                if unscoped_and_idle and nudges == 0:
+                    nudges += 1
                     self._on_event("answered without editing — asking once for the edit")
                     self._messages.append({"role": "user", "content": _NO_WRITE_NUDGE})
                     continue
@@ -363,7 +382,7 @@ class AgentSession:
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
                     ceiling=self._ceiling,
-                    nudged=nudged,
+                    nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
                     handoff_tokens=self._count(str(message.get("content") or "")),
@@ -397,7 +416,7 @@ class AgentSession:
             stopped_early=stopped_early,
             scope_refusals=list(self._toolbox.scope_refusals),
             ceiling=self._ceiling,
-            nudged=nudged,
+            nudges=nudges,
             scoped=scoped,
             drift_samples=list(self._drift),
             handoff_tokens=self._count(text),
@@ -421,7 +440,16 @@ class AgentSession:
         result = self._toolbox.dispatch(name, arguments, room=room, count=self._count)
         detail = result.wrote or arguments.get("path") or ""
         self._on_event(f"{'ok ' if result.ok else '!! '}{name} {detail}".rstrip())
-        _logger.info("tool %s(%s) ok=%s", name, arguments, result.ok)
+        if result.ok:
+            _logger.info("tool %s(%s) ok", name, _loggable(arguments))
+        else:
+            # The reason, not just the fact. Six consecutive failures abandoned a part and the
+            # log said only which tool and which path — so the one question worth asking, why,
+            # needed the run reproducing. A refusal already carries its own explanation; it
+            # just was not being written down.
+            _logger.warning(
+                "tool %s(%s) REFUSED: %s", name, _loggable(arguments), result.text[:400]
+            )
         if as_user:
             # A model whose template never emitted a structured call will not reliably render
             # a "tool" turn back either, so the result goes in as ordinary user text. Same
@@ -572,6 +600,22 @@ def recover_tool_calls(content: str, known: set[str]) -> list[dict[str, Any]]:
             if isinstance(name, str) and name in known and isinstance(arguments, dict):
                 calls.append({"function": {"name": name, "arguments": arguments}})
     return calls
+
+
+def _loggable(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Tool arguments with any file content shortened.
+
+    A write_file call carries an entire source file in `content`. Logging that verbatim turns
+    the run log into a second copy of the repository and buries the one field that identifies
+    the call, which is the path.
+    """
+    trimmed: dict[str, Any] = {}
+    for key, value in arguments.items():
+        if isinstance(value, str) and len(value) > 120:
+            trimmed[key] = f"<{len(value)} chars>"
+        else:
+            trimmed[key] = value
+    return trimmed
 
 
 def _describe(exc: Exception) -> str:

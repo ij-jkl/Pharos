@@ -11,6 +11,7 @@ reproducible on any machine.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -1046,3 +1047,77 @@ def test_a_handoff_is_framed_as_context_about_other_files() -> None:
     assert "context only" in prompt
     assert "DIFFERENT files" in prompt
     assert prompt.index("have NOT been done yet") > prompt.index("I finished")
+
+
+async def test_a_part_still_making_progress_is_asked_again(workspace: Workspace) -> None:
+    """One reminder was not enough: a part that wrote one of four files, was reminded, wrote a
+    second and stopped had already spent the only ask available."""
+    def writes(path: str) -> dict[str, Any]:
+        return {
+            "role": "assistant", "content": "",
+            "tool_calls": [{"function": {"name": "write_file",
+                                         "arguments": {"path": path, "content": "x = 1\n"}}}],
+        }
+    stop = {"role": "assistant", "content": "Done.", "tool_calls": []}
+    # Writes one, stops; reminded, writes another, stops; reminded again, writes the third.
+    backend = FakeBackend([
+        writes("src/a.py"), stop, writes("src/b.py"), stop, writes("src/c.py"), stop,
+    ])
+    box = _box(workspace, scope_from_part_files(
+        [_part_file("src/a.py"), _part_file("src/b.py"), _part_file("src/c.py")]
+    ))
+
+    result = await _session(backend, box, budget=100_000).run("edit all three")
+
+    assert sorted(result.files_written) == ["src/a.py", "src/b.py", "src/c.py"]
+    assert result.nudges >= 2  # the second ask is what got the third file
+
+
+async def test_a_part_ignoring_the_reminder_is_not_asked_forever(workspace: Workspace) -> None:
+    """Each further ask has to be earned by the last one producing a write, or a part that
+    will not finish costs the same refusal over and over."""
+    stop = {"role": "assistant", "content": "I have finished.", "tool_calls": []}
+    backend = FakeBackend([stop])
+    box = _box(workspace, scope_from_part_files(
+        [_part_file("src/alpha.py"), _part_file("src/beta.py")]
+    ))
+
+    result = await _session(backend, box, budget=100_000).run("edit both")
+
+    assert result.files_written == []
+    assert result.nudges == 1  # asked once, ignored, not asked again
+
+
+def test_a_refused_call_is_logged_with_its_reason(
+    workspace: Workspace, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Six consecutive failures abandoned a real part and the log said only which tool.
+
+    The one question worth asking — why — needed the whole run reproducing.
+    """
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    session = _session(FakeBackend([]), box, budget=100_000)
+
+    with caplog.at_level(logging.WARNING, logger="pharos.agent"):
+        session._execute({"function": {"name": "read_file",
+                                       "arguments": {"path": "src/beta.py"}}})
+
+    assert "REFUSED" in caplog.text
+    assert "not in this part's scope" in caplog.text
+
+
+def test_file_content_is_not_copied_into_the_log(
+    workspace: Workspace, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A write_file call carries a whole source file; logging it verbatim buries the path."""
+    box = _box(workspace, None)
+    session = _session(FakeBackend([]), box, budget=100_000)
+    big = "x = 1\n" * 500
+
+    with caplog.at_level(logging.INFO, logger="pharos.agent"):
+        session._execute({"function": {"name": "write_file",
+                                       "arguments": {"path": "src/alpha.py", "content": big}}})
+
+    assert "src/alpha.py" in caplog.text
+    assert "x = 1" not in caplog.text
+    assert "chars>" in caplog.text
