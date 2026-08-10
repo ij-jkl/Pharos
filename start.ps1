@@ -437,7 +437,7 @@ Write-Host '  Type a prompt to pre-flight it. Name files and folders in backtick
 Write-Host '  e.g.  Refactor everything in `pharos/proxy/` following `README.md`' -ForegroundColor DarkGray
 Write-Host ''
 Write-Host '    s <prompt>   cut it into parts that fit        d   live dashboard' -ForegroundColor DarkGray
-Write-Host '    q            quit' -ForegroundColor DarkGray
+Write-Host '    r <prompt>   carry it out (writes files)        q   quit' -ForegroundColor DarkGray
 
 if ([Console]::IsInputRedirected) {
     Write-Host ''
@@ -475,6 +475,15 @@ while ($true) {
 
     if ($line -match '^s\s+(.+)$') {
         Invoke-Check -Prompt $Matches[1] -Split
+        continue
+    }
+
+    # The only command here that changes anything on disk, so it says so before it starts.
+    # Not routed through Invoke-Check: a run owns the terminal for minutes and streams its own
+    # progress, and capturing that would hide the very output that proves it is not stuck.
+    if ($line -match '^r\s+(.+)$') {
+        Write-Info 'carrying out the task - this WRITES files; git branch or snapshot is your undo'
+        uv run pharos run $Matches[1]
         continue
     }
 

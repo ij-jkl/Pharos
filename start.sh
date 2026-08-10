@@ -337,6 +337,13 @@ while true; do
             uv run pharos || true
             continue ;;
         s\ *) run_pharos split "${line#s }"; continue ;;
+        # The only command here that writes to disk, so it says so first. Not routed through
+        # run_pharos: a run owns the terminal for minutes and streams its own progress, and
+        # capturing that would hide the output that proves it is not stuck.
+        r\ *)
+            info "carrying out the task — this WRITES files; git branch or snapshot is your undo"
+            uv run pharos run "${line#r }" || true
+            continue ;;
     esac
 
     run_pharos check "$line"
