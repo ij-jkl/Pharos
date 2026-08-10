@@ -16,6 +16,20 @@ from pharos.tokenizer.gguf import TokenCounter
 
 
 @pytest.fixture(autouse=True)
+def no_forced_colour(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Strip colour-forcing variables so Rich renders plain text under capture.
+
+    Several tests assert on what the user reads — "matches 2 files", a verdict word, a warning.
+    Rich honours FORCE_COLOR/CLICOLOR_FORCE even when its output is a pytest capture buffer, so
+    on a machine that exports one (this shell exports FORCE_COLOR=3) those assertions fail
+    against strings full of escape sequences, and the failure looks like a broken report rather
+    than a broken environment. The suite should test the words, not the terminal it ran in.
+    """
+    for name in ("FORCE_COLOR", "CLICOLOR_FORCE", "PY_COLORS"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def lf_only_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make ``Path.write_text`` emit LF on every platform, for every test.
 
