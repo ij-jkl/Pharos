@@ -237,6 +237,48 @@ does not check that the code is right. Small local models still invent types, mi
 occasionally answer in prose without editing anything — the report says `wrote nothing` when
 that happens, per part, rather than letting the totals absorb it. `git diff` is your reviewer.
 
+### Did it work? The scorecard
+
+"Every part completed" is not success. A part completes by replying without calling a tool —
+exactly what a model does when it has read its files and *described* the change instead of
+making it. So every run ends with five numbers, none of which require asking a model anything:
+
+```
+Scorecard
+  coverage     14 of 20 scoped files written (70%)
+                 untouched: Repositories/NoteRepository.cs
+  continuity   3 of 3 hand-offs produced; largest 214 of 500 reserved
+  headroom     peak used 58% of a part's ceiling
+  drift        our estimate ran 1.27x the backend's count  (above the real prompt: conservative)
+  convergence  1 part(s) needed a nudge, 0 stopped early
+```
+
+- **Coverage** is the headline: of the files the plan assigned, how many were actually
+  written. A run that touches three of twenty did not succeed, whatever its parts reported.
+- **Continuity** measures the thread between parts. Every part starts from an empty
+  conversation, so the hand-off is the *only* thing carrying context forward — this checks one
+  was produced wherever there was a next part, and that it fitted the reserve held back for
+  it. A hand-off that overran means the next part began with a truncated thread, which is a
+  `handoff_reserve` problem rather than a model failure.
+- **Revisits** are the fingerprint of a part that lost the thread: reaching for a file another
+  part already owned. The scope layer refuses it, so it is recorded rather than damaging.
+  Deliberately *not* the same as a path the model invented — one real run tried to write to a
+  `Data/` folder that has never existed, which is confusion about the repository, not about
+  what has already been done. Those are counted separately as `wandering`.
+- **Headroom** is the highest fraction of any part's ceiling actually used. Near 100% means
+  the next slightly larger file breaks the run.
+- **Drift** is Pharos's own projection against the backend's `prompt_eval_count` — the number
+  this project is least entitled to hide. Above 1.0 is conservative; below 1.0 means the
+  estimate sat under the real prompt, which is the direction that eventually overflows.
+
+`--json` emits the same thing for a script or a CI step, and **the exit code follows coverage,
+not survival**: 0 only when the run wrote everything it was given and no part failed. A run
+whose parts all said "done" while three files were never touched exits 1, because exiting 0
+would flatter precisely the failure this tool exists to expose.
+
+None of this says the code is *correct*. That is outside what Pharos claims; `git diff` is the
+reviewer.
+
 ## Ambiguity, notebooks, and JSON
 
 Three smaller things that decide whether the number is trustworthy:

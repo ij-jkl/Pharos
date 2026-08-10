@@ -67,6 +67,7 @@ class RunOutcome:
     counts_exact: bool = False
     divided: bool = True  # False when --no-split ran the whole task as one conversation
     catalogue_tokens: int = 0
+    handoff_reserve: int = 0  # what each part held back, so the scorecard can judge overruns
     via_proxy: bool = True
     error: str | None = None
 
@@ -249,6 +250,7 @@ async def run_task(
     outcome.plan = plan
     bodies: list[tuple[str, list[PartFile] | None]]
     outcome.divided = divide
+    outcome.handoff_reserve = config.handoff_reserve
     if not divide:
         say("running undivided (--no-split): one conversation, no scope enforcement")
         bodies = [(prompt, None)]

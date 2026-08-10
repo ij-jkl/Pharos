@@ -142,6 +142,13 @@ class PartResult:
     stopped_early: bool  # the budget ceiling cut the loop short
     scope_refusals: list[str] = field(default_factory=list)
     error: str | None = None
+    # Everything below exists so a run can be SCORED rather than just watched. A part that
+    # "finished" tells you nothing on its own; whether it wrote what it owned, handed the
+    # thread on, and had room to breathe is what says the run held together.
+    ceiling: int = 0  # what this part was allowed, so peak means something as a fraction
+    nudged: bool = False  # it answered without editing and had to be asked again
+    scoped: list[str] = field(default_factory=list)  # the files this part owned
+    handoff_tokens: int = 0  # size of the hand-off it produced
 
 
 class AgentSession:
@@ -217,6 +224,7 @@ class AgentSession:
         ]
         nudged = False
         failures = 0
+        scoped = sorted(self._toolbox.scope) if self._toolbox.scope else []
         peak = self._projected()
         reported: int | None = None
         stopped_early = False
@@ -259,6 +267,9 @@ class AgentSession:
                     reported_tokens=reported,
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
+                    ceiling=self._ceiling,
+                    nudged=nudged,
+                    scoped=scoped,
                     error=f"backend call failed: {_describe(exc)}",
                 )
 
@@ -293,6 +304,10 @@ class AgentSession:
                     reported_tokens=reported,
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
+                    ceiling=self._ceiling,
+                    nudged=nudged,
+                    scoped=scoped,
+                    handoff_tokens=self._count(str(message.get("content") or "")),
                 )
 
             steps += 1
@@ -322,6 +337,10 @@ class AgentSession:
             reported_tokens=reported,
             stopped_early=stopped_early,
             scope_refusals=list(self._toolbox.scope_refusals),
+            ceiling=self._ceiling,
+            nudged=nudged,
+            scoped=scoped,
+            handoff_tokens=self._count(text),
         )
 
     def _execute(self, call: dict[str, Any], *, as_user: bool = False) -> bool:

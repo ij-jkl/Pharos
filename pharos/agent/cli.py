@@ -1,8 +1,13 @@
 """`pharos run` — the command line around the runner.
 
-Exit codes match the rest of the toolchain: 0 the task ran and every part completed · 1 a part
-failed or no plan could be built · 2 indeterminate (no model resident, backend unreachable, a
-config error, or a repository too dirty to write to safely).
+Exit codes match the rest of the toolchain: 0 the run covered its scope and no part failed ·
+1 it did not · 2 indeterminate (no model resident, backend unreachable, a config error, or a
+repository too dirty to write to safely).
+
+Zero means the WORK was done, not that the process survived. A run whose parts all report
+"done" while three of twenty files were never written has not succeeded, and exiting 0 on it
+would make the code useless as a gate and would flatter exactly the failure this tool exists
+to expose. It still says nothing about whether the edits are correct — see the scorecard.
 
 The running commentary goes to stderr and the summary to stdout, so `pharos run ... > log`
 keeps the report and still shows progress live.
@@ -12,12 +17,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from pathlib import Path
 
 from rich.console import Console
 
 from pharos.agent.runner import RunOutcome, run_task
+from pharos.agent.scorecard import Scorecard, score, to_dict
 from pharos.agent.tools import workspace_root
 from pharos.agent.workspace import GitGuardError
 from pharos.config import ConfigError, load_config
@@ -51,13 +58,18 @@ def main(argv: list[str] | None = None) -> int:
         "showing what the division actually buys",
     )
     parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the scorecard as JSON on stdout, so a script or CI step can assert on a run",
+    )
+    parser.add_argument(
         "--no-git",
         action="store_true",
         help="skip the clean-tree check and the run branch (you lose the undo)",
     )
     args = parser.parse_args(argv)
 
-    console = Console()
+    console = Console(stderr=args.json)
     progress = Console(stderr=True)
 
     try:
@@ -108,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         console.print("\n[yellow]Interrupted.[/] Files already written are on the run branch.")
         return 1
 
-    return _render(console, outcome, dry_run=args.dry_run)
+    return _render(console, outcome, dry_run=args.dry_run, as_json=args.json)
 
 
 def _ground_truth(reported: int | None) -> str:
@@ -116,7 +128,70 @@ def _ground_truth(reported: int | None) -> str:
     return f"  [dim](backend counted {reported:,})[/]" if reported else ""
 
 
-def _render(console: Console, outcome: RunOutcome, *, dry_run: bool) -> int:
+def _render_scorecard(console: Console, card: Scorecard) -> None:
+    """The five questions, in the order they matter when a run disappoints."""
+    console.print("[bold]Scorecard[/]")
+
+    coverage = card.coverage
+    if coverage is None:
+        console.print(
+            f"  coverage     [dim]not applicable — one unrestricted part, "
+            f"{card.written_files} file(s) written[/]"
+        )
+    else:
+        style = "green" if coverage == 1.0 else ("yellow" if coverage >= 0.5 else "red")
+        console.print(
+            f"  coverage     [{style}]{card.written_files} of {card.scoped_files} "
+            f"scoped files written[/] ({coverage:.0%})"
+        )
+        for path in card.untouched[:6]:
+            console.print(f"                 [dim]untouched: {path}[/]")
+        if len(card.untouched) > 6:
+            console.print(f"                 [dim]... {len(card.untouched) - 6} more[/]")
+
+    if card.handoffs_expected:
+        style = "green" if card.kept_the_thread else "yellow"
+        console.print(
+            f"  continuity   [{style}]{card.handoffs_produced} of {card.handoffs_expected} "
+            f"hand-offs produced[/]; largest {card.largest_handoff:,} of "
+            f"{card.handoff_reserve:,} reserved"
+        )
+        if card.handoff_overruns:
+            console.print(
+                f"                 [yellow]{card.handoff_overruns} overran the reserve[/] — "
+                f"raise handoff_reserve, or the next part starts with a truncated thread"
+            )
+        if card.revisits:
+            console.print(
+                f"                 [yellow]{len(card.revisits)} revisit(s)[/]: a part reached "
+                f"for work another part already owned — {', '.join(card.revisits[:3])}"
+            )
+
+    if card.invented:
+        console.print(
+            f"  wandering    [dim]{len(card.invented)} path(s) in no part's scope "
+            f"({', '.join(card.invented[:3])}) — refused, nothing was touched[/]"
+        )
+
+    console.print(f"  headroom     peak used {card.peak_fraction:.0%} of a part's ceiling")
+    if card.drift is not None:
+        # Over 1.0 means we projected MORE than the backend saw: safe, but wasteful. Under
+        # 1.0 is the direction that eventually overflows, so it is the one flagged.
+        under = card.drift < 1.0
+        console.print(
+            f"  drift        our estimate ran {card.drift:.2f}x the backend's count"
+            + ("  [yellow](below the real prompt — the direction that overflows)[/]"
+               if under else "  [dim](above the real prompt: conservative)[/]")
+        )
+    if card.nudged_parts or card.abandoned_parts:
+        console.print(
+            f"  convergence  [dim]{card.nudged_parts} part(s) needed a nudge, "
+            f"{card.abandoned_parts} stopped early[/]"
+        )
+    console.print()
+
+
+def _render(console: Console, outcome: RunOutcome, *, dry_run: bool, as_json: bool = False) -> int:
     console.print()
     report = outcome.report
     plan = outcome.plan
@@ -175,7 +250,15 @@ def _render(console: Console, outcome: RunOutcome, *, dry_run: bool) -> int:
         if result.error:
             console.print(f"  [red]{result.error}[/]")
 
+    card = score(outcome.parts, handoff_reserve=outcome.handoff_reserve)
+    if as_json:
+        # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.
+        sys.stdout.write(json.dumps(to_dict(card), indent=2) + "\n")
+        return 0 if card.complete else 1
+
     console.print()
+    _render_scorecard(console, card)
+
     if outcome.files_changed:
         console.print(f"[bold]Changed {len(outcome.files_changed)} file(s):[/]")
         for path in outcome.files_changed:
@@ -199,4 +282,4 @@ def _render(console: Console, outcome: RunOutcome, *, dry_run: bool) -> int:
             "ceiling the run held itself to was an estimate, not a measurement."
         )
     console.print()
-    return 0 if outcome.ok else 1
+    return 0 if card.complete else 1

@@ -1,0 +1,181 @@
+"""Did the run actually work? Five questions, all answerable without asking a model.
+
+"Every part completed" is not success. A part completes by replying without calling a tool,
+which is exactly what a model does when it has read its files and described the change instead
+of making it. The per-part lines say what happened; this says whether it added up.
+
+Nothing here interprets the code that was written. Whether the edit is correct is outside what
+Pharos claims — `git diff` is the reviewer, and a scorecard that implied otherwise would be
+the same overclaiming this project refuses everywhere else. What can be measured exactly is
+whether the run covered its scope, kept its thread, stayed inside its window, and whether
+Pharos's own arithmetic held up against the backend's.
+
+The five:
+
+* **Coverage** — of the files the plan assigned, how many were written. The headline. A run
+  that touches three of twenty did not succeed, whatever its parts reported.
+* **Continuity** — the thread between parts is the hand-off and nothing else, since every part
+  starts from an empty conversation. So: was one produced wherever there was a next part, and
+  did it fit the reserve held back for it. A hand-off that overran its reserve was planned
+  against a budget that was too small, which is a config finding, not a model failure.
+* **Revisits** — the fingerprint of a part that lost the thread. A part reaching for a file
+  ANOTHER PART OWNED is redoing work already done; the scope layer refuses it, so it is
+  recorded rather than damaging. Distinguished from a path the model simply invented, which is
+  confusion about the project and not about what has been done — one real run tried to write
+  to a `Data/` folder that has never existed, and counting that as lost continuity would have
+  been wrong.
+* **Headroom** — the highest fraction of any part's ceiling actually used. Near 100% means the
+  next slightly larger file breaks the run; low means the division has room.
+* **Drift** — Pharos's own projection against the backend's ``prompt_eval_count``. The number
+  this project is least entitled to hide. Under 1.0 is over-counting (safe, wasteful); over
+  1.0 means the estimate was below what the backend actually saw, which is the direction that
+  eventually overflows a window.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from pharos.agent.session import PartResult
+from pharos.agent.tools import normalise
+
+
+@dataclass(frozen=True, slots=True)
+class Scorecard:
+    """What a run achieved, in numbers a script can assert on."""
+
+    parts: int
+    parts_that_wrote: int
+    scoped_files: int
+    written_files: int
+    untouched: list[str] = field(default_factory=list)
+
+    handoffs_expected: int = 0
+    handoffs_produced: int = 0
+    handoff_reserve: int = 0
+    largest_handoff: int = 0
+    handoff_overruns: int = 0
+
+    revisits: list[str] = field(default_factory=list)  # files another part already owned
+    invented: list[str] = field(default_factory=list)  # paths in no part's scope at all
+
+    peak_fraction: float = 0.0  # highest part peak / its ceiling
+    drift: float | None = None  # our estimate / the backend's count, worst part
+
+    nudged_parts: int = 0
+    abandoned_parts: int = 0
+    failed_parts: int = 0
+
+    @property
+    def coverage(self) -> float | None:
+        """Written over scoped. None when the run was one unrestricted part: nothing to
+        compare against, and inventing a denominator would be worse than admitting it."""
+        if not self.scoped_files:
+            return None
+        return self.written_files / self.scoped_files
+
+    @property
+    def kept_the_thread(self) -> bool:
+        """Every hand-off that was needed was produced, fitted, and nothing was redone."""
+        return (
+            self.handoffs_produced == self.handoffs_expected
+            and not self.handoff_overruns
+            and not self.revisits
+        )
+
+    @property
+    def complete(self) -> bool:
+        """The whole scope was written and no part failed or was abandoned."""
+        return (
+            self.coverage == 1.0
+            and not self.failed_parts
+            and not self.abandoned_parts
+        )
+
+
+def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
+    """Reduce a finished run to the five questions above."""
+    scoped: list[str] = []
+    for part in parts:
+        for path in part.scoped:
+            if path not in scoped:
+                scoped.append(path)
+    scoped_set = {normalise(path) for path in scoped}
+
+    written: set[str] = set()
+    for part in parts:
+        written.update(normalise(path) for path in part.files_written)
+
+    # A refusal for a file some part owns is a revisit; anything else the model made up.
+    revisits: list[str] = []
+    invented: list[str] = []
+    for part in parts:
+        for raw in part.scope_refusals:
+            path = normalise(raw)
+            bucket = revisits if path in scoped_set else invented
+            if path not in bucket:
+                bucket.append(path)
+
+    # The last part hands off to nobody, so it is not expected to produce one.
+    expects_handoff = parts[:-1] if len(parts) > 1 else []
+    produced = [p for p in expects_handoff if p.text.strip()]
+
+    peak_fraction = max(
+        (p.peak_tokens / p.ceiling for p in parts if p.ceiling > 0),
+        default=0.0,
+    )
+    measured = [
+        p.peak_tokens / p.reported_tokens
+        for p in parts
+        if p.reported_tokens
+    ]
+
+    return Scorecard(
+        parts=len(parts),
+        parts_that_wrote=sum(1 for p in parts if p.files_written),
+        scoped_files=len(scoped_set),
+        written_files=len(written & scoped_set) if scoped_set else len(written),
+        untouched=sorted(scoped_set - written),
+        handoffs_expected=len(expects_handoff),
+        handoffs_produced=len(produced),
+        handoff_reserve=handoff_reserve,
+        largest_handoff=max((p.handoff_tokens for p in parts), default=0),
+        handoff_overruns=sum(
+            1 for p in expects_handoff if handoff_reserve and p.handoff_tokens > handoff_reserve
+        ),
+        revisits=revisits,
+        invented=invented,
+        peak_fraction=peak_fraction,
+        drift=max(measured) if measured else None,
+        nudged_parts=sum(1 for p in parts if p.nudged),
+        abandoned_parts=sum(1 for p in parts if p.stopped_early),
+        failed_parts=sum(1 for p in parts if p.error),
+    )
+
+
+def to_dict(card: Scorecard) -> dict[str, object]:
+    """The scorecard as plain data, so a wrapper or CI step can assert on a run."""
+    return {
+        "complete": card.complete,
+        "kept_the_thread": card.kept_the_thread,
+        "coverage": card.coverage,
+        "parts": card.parts,
+        "parts_that_wrote": card.parts_that_wrote,
+        "scoped_files": card.scoped_files,
+        "written_files": card.written_files,
+        "untouched": card.untouched,
+        "handoffs": {
+            "expected": card.handoffs_expected,
+            "produced": card.handoffs_produced,
+            "reserve": card.handoff_reserve,
+            "largest": card.largest_handoff,
+            "overruns": card.handoff_overruns,
+        },
+        "revisits": card.revisits,
+        "invented_paths": card.invented,
+        "peak_fraction": round(card.peak_fraction, 3),
+        "estimate_over_backend": None if card.drift is None else round(card.drift, 3),
+        "nudged_parts": card.nudged_parts,
+        "abandoned_parts": card.abandoned_parts,
+        "failed_parts": card.failed_parts,
+    }
