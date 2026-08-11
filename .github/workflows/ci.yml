@@ -19,10 +19,13 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to majors that ship a supported Node runtime. Both were on v4/v5, which target
+      # Node 20 and were already being force-run on Node 24 with a deprecation annotation on
+      # every build — a warning today and a broken pipeline on the day it is enforced.
+      - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
 

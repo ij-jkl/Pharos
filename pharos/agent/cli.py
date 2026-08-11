@@ -233,7 +233,10 @@ def _headline(card: Scorecard) -> tuple[str, str, str]:
     if card.coverage is None:
         return "DONE", "bold green", "one unrestricted part; nothing to measure coverage against"
     if card.complete:
-        return "COMPLETE", "bold green", "every file the plan assigned was changed"
+        note = "every file the plan assigned was changed"
+        if card.abandoned_parts:
+            note += f", though {card.abandoned_parts} part(s) stopped early"
+        return "COMPLETE", "bold green", note
     written, total = card.written_files, card.scoped_files
     return "INCOMPLETE", "bold yellow", f"{total - written} of {total} files were never changed"
 

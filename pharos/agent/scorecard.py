@@ -173,12 +173,21 @@ class Scorecard:
 
     @property
     def complete(self) -> bool:
-        """The whole scope was written and no part failed or was abandoned."""
-        return (
-            self.coverage == 1.0
-            and not self.failed_parts
-            and not self.abandoned_parts
-        )
+        """The work the plan assigned was done, and nothing failed.
+
+        A part stopping early does NOT make a run incomplete. It used to, and produced a
+        report reading "INCOMPLETE - 0 of 13 files were never changed" beside a full coverage
+        bar, which is not a stern verdict but a contradiction. A part that reached its ceiling
+        after writing everything it owned did its job; that it ran out of room on the way is
+        worth reporting, and `convergence` reports it.
+        """
+        if self.failed_parts:
+            return False
+        if self.coverage is None:
+            # No scope to measure against, so the only honest test is whether anything at all
+            # was written — a run that touched nothing is not a complete run.
+            return self.written_files > 0
+        return self.coverage == 1.0
 
 
 def score(

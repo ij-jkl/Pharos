@@ -324,3 +324,23 @@ def test_a_run_that_needed_no_repair_reports_the_same_figure_twice() -> None:
     card = score(parts, handoff_reserve=500)
     assert card.coverage == card.plan_coverage == 1.0
     assert card.rescued == 0 and card.repair_parts == 0
+
+
+def test_a_part_stopping_early_does_not_contradict_full_coverage() -> None:
+    """A real report read "INCOMPLETE - 0 of 13 files were never changed" beside a 100% bar.
+
+    That is not a stern verdict, it is a contradiction. A part that reached its ceiling after
+    writing everything it owned did its job; convergence reports the rough ride.
+    """
+    parts = [_part(scoped=["a.py"], wrote=["a.py"], stopped=True)]
+    card = score(parts, handoff_reserve=500)
+    assert card.coverage == 1.0
+    assert card.complete
+    assert card.abandoned_parts == 1
+
+
+def test_an_unrestricted_run_that_wrote_nothing_is_not_complete() -> None:
+    """With no scope there is no coverage to fall short of, so the only honest test left is
+    whether anything happened at all."""
+    card = score([_part(scoped=[], wrote=[])], handoff_reserve=500)
+    assert card.coverage is None and not card.complete
