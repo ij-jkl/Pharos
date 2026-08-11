@@ -1229,3 +1229,55 @@ def test_a_toolless_request_is_not_charged_for_the_catalogue(workspace: Workspac
     without = session._projected(with_tools=False)
 
     assert with_tools - without == session.catalogue_tokens > 0
+
+
+# --- a hand-off must fit the room reserved for it --------------------------------------------
+
+
+def test_an_oversized_handoff_is_cut_to_the_reserve() -> None:
+    """Every part's ceiling was computed with handoff_reserve subtracted for exactly this text.
+
+    A real run produced 1,804 tokens against a 500-token reserve and forwarded it whole, so the
+    next part ran under a projection wrong by 1,300 tokens before it read anything.
+    """
+    from pharos.agent.runner import _cap_handoff
+
+    huge = "Documented the repository classes in detail. " * 200
+    kept, cut = _cap_handoff(huge, 100, _count)
+
+    assert cut
+    assert _count(kept) <= 100 + 60  # the marker itself costs a little
+    assert kept.startswith("Documented the repository")  # the opening survives
+    assert "was cut" in kept  # and the loss is stated in the text, not just the report
+
+
+def test_a_handoff_inside_the_reserve_is_passed_through_untouched() -> None:
+    from pharos.agent.runner import _cap_handoff
+
+    normal = "Added doc comments to NoteRepository.cs and INoteRepository.cs."
+    kept, cut = _cap_handoff(normal, 500, _count)
+    assert kept == normal and not cut
+
+
+async def test_a_part_that_reads_but_does_not_write_is_asked_again(workspace: Workspace) -> None:
+    """It cost a real run two files. Part 1 was reminded, went and READ the second of its two
+    files, wrote nothing, and was never asked again because opening a file it had not seen did
+    not count as movement. It plainly is."""
+    read_a = {
+        "role": "assistant", "content": "",
+        "tool_calls": [{"function": {"name": "read_file",
+                                     "arguments": {"path": "src/alpha.py"}}}],
+    }
+    read_b = {
+        "role": "assistant", "content": "",
+        "tool_calls": [{"function": {"name": "read_file", "arguments": {"path": "src/beta.py"}}}],
+    }
+    stop = {"role": "assistant", "content": "Looks fine.", "tool_calls": []}
+    backend = FakeBackend([read_a, stop, read_b, stop, stop])
+    box = _box(workspace, scope_from_part_files(
+        [_part_file("src/alpha.py"), _part_file("src/beta.py")]
+    ))
+
+    result = await _session(backend, box, budget=100_000).run("document both")
+
+    assert result.nudges >= 2, "reading the second file should have earned another ask"

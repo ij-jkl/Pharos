@@ -278,6 +278,7 @@ class AgentSession:
         self._largest_tooled = 0
         nudges = 0
         written_at_last_nudge = 0
+        read_at_last_nudge = 0
         failures = 0
         scoped = sorted(self._toolbox.scope) if self._toolbox.scope else []
         peak = self._projected()
@@ -353,15 +354,21 @@ class AgentSession:
                 read = {normalise(p) for p in self._toolbox.files_read}
                 unread = [p for p in missing if normalise(p) not in read]
                 declined = "NO CHANGES NEEDED" in text.upper() and not unread
-                # A second ask is only worth making if the first one moved something. A part
-                # that writes one of four files, is reminded, writes a second and stops was
-                # never asked again — the one-shot flag was spent. Asking again while progress
-                # continues is most of the remaining coverage; asking again after a reminder
-                # that achieved nothing is just paying for the same refusal twice.
-                progressed = len(self._toolbox.files_written) > written_at_last_nudge
+                # Progress is a write OR a file newly opened. Counting only writes cost a real
+                # run two files: part 1 was reminded, went and READ the second of its two
+                # files, wrote nothing, and was never asked again — because opening a file it
+                # had not seen did not count as movement. It plainly is movement; a model that
+                # has just read the file is one reminder away from editing it. What must not
+                # earn another ask is a part that did nothing at all, and that is still the
+                # test.
+                progressed = (
+                    len(self._toolbox.files_written) > written_at_last_nudge
+                    or len(self._toolbox.files_read) > read_at_last_nudge
+                )
                 if missing and not declined and (nudges == 0 or progressed):
                     nudges += 1
                     written_at_last_nudge = len(self._toolbox.files_written)
+                    read_at_last_nudge = len(self._toolbox.files_read)
                     self._on_event(
                         f"stopped with {len(missing)} of {len(scoped)} file(s) unchanged — "
                         f"asking again ({nudges} of {_MAX_NUDGES})"

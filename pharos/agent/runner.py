@@ -358,7 +358,17 @@ async def run_task(
                 say(f"  [part {index}] failed: {result.error}")
                 failed = True
                 break
-            handoff = result.text or None
+            carried, cut = (
+                _cap_handoff(result.text, config.handoff_reserve, count)
+                if result.text
+                else ("", False)
+            )
+            if cut:
+                say(
+                    f"  [part {index}] hand-off cut to the "
+                    f"{config.handoff_reserve:,}-token reserve"
+                )
+            handoff = carried or None
 
         # A repair pass over whatever the plan assigned and no part actually changed.
         #
@@ -463,6 +473,33 @@ def _bodies(plan: SplitPlan) -> list[tuple[str, list[PartFile] | None]]:
     return [
         (part.body, part.files if plan.mode is SplitMode.SCOPE else None) for part in plan.parts
     ]
+
+
+def _cap_handoff(handoff: str, reserve: int, count: Callable[[str], int]) -> tuple[str, bool]:
+    """Hold a hand-off to the room the plan reserved for it.
+
+    Every part's ceiling was computed with ``handoff_reserve`` subtracted for exactly this
+    text. A real run produced one of 1,804 tokens against a 500-token reserve and forwarded it
+    whole, so the next part ran under a projection that was wrong by 1,300 tokens before it
+    read anything.
+
+    Cut from the END, and say so in the text. The opening of a hand-off is what it did; the
+    tail is elaboration, so a reader — human or model — loses the least that way. Silently
+    truncating would be the context loss this project refuses, which is why the marker is
+    part of the forwarded text rather than only a line in the report.
+    """
+    if reserve <= 0 or count(handoff) <= reserve:
+        return handoff, False
+    # Cut by characters against a token budget, then walk back until it actually fits.
+    kept = handoff
+    while kept and count(kept) > reserve:
+        kept = kept[: int(len(kept) * 0.8)] if len(kept) > 40 else ""
+    marker = (
+        f"\n[Pharos] The rest of this hand-off was cut: it was {count(handoff):,} tokens "
+        f"against the {reserve:,} reserved for it, and the part below was planned around that "
+        f"reserve. Ask for what is missing if you need it."
+    )
+    return kept.rstrip() + marker, True
 
 
 def _with_handoff(
