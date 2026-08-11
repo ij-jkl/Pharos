@@ -18,11 +18,12 @@ The five:
   starts from an empty conversation. So: was one produced wherever there was a next part, and
   did it fit the reserve held back for it. A hand-off that overran its reserve was planned
   against a budget that was too small, which is a config finding, not a model failure.
-  A hand-off can also be present and still carry nothing. A real run produced three of three
-  hand-offs whose largest was SIX tokens against a 500-token reserve, and the metric called
-  that continuity while coverage sat at 31%. Emptiness is only honest when the part had
-  nothing to report; a part that wrote files and then said six tokens about it has dropped the
-  thread just as surely as one that said nothing at all, so those are counted separately.
+  A hand-off can also be present and carry nothing, so each one is checked for whether it
+  NAMES any file its part changed. That started as a length threshold and length turned out to
+  be the wrong measure: real useful hand-offs run about fifteen tokens ("Added XML doc comments
+  to `INoteRepository.cs` and `NoteRepository.cs`"), while the useless ones are parts that
+  wrote files and then reported "NO CHANGES NEEDED". A threshold flags the first and waves the
+  second through; naming separates them exactly. A part that changed nothing is not held to it.
 * **Revisits** — the fingerprint of a part that lost the thread. A part reaching for a file
   ANOTHER PART OWNED is redoing work already done; the scope layer refuses it, so it is
   recorded rather than damaging. Distinguished from a path the model simply invented, which is
@@ -65,10 +66,23 @@ from dataclasses import dataclass, field
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import normalise
 
-# Below this, a hand-off from a part that changed files is not a summary of anything. Chosen
-# against measured hand-offs: real ones ran 64-328 tokens (see PharosConfig.handoff_reserve),
-# and the degenerate ones observed were single digits. Nothing useful lives in between.
-_THIN_HANDOFF_TOKENS = 20
+
+def _carried_the_work(part: PartResult) -> bool:
+    """Does a part's hand-off mention any of the files it changed?
+
+    This was a length check, and length is a poor proxy. Measured against real hand-offs: the
+    useful ones read "Added XML doc comments to `INoteRepository.cs` and `NoteRepository.cs`"
+    - about fifteen tokens, and everything the next part needs. The useless ones read "NO
+    CHANGES NEEDED" from parts that demonstrably wrote files. A token threshold flags the
+    first and, at the wrong setting, waves the second through; naming separates them exactly.
+
+    A part that changed nothing has nothing to name, and is not held to this.
+    """
+    if not part.files_written:
+        return True
+    lowered = part.text.lower()
+    return any(path.replace(chr(92), "/").rsplit("/", 1)[-1].lower() in lowered
+               for path in part.files_written)
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,11 +243,7 @@ def score(
 
     # A hand-off from a part that CHANGED something has to describe it. From a part that did
     # nothing, brevity is the honest answer, so silence there is not held against continuity.
-    thin = sum(
-        1
-        for p in expects_handoff
-        if p.files_written and p.handoff_tokens < _THIN_HANDOFF_TOKENS
-    )
+    thin = sum(1 for p in expects_handoff if not _carried_the_work(p))
 
     peak_fraction = max(
         (p.peak_tokens / p.ceiling for p in parts if p.ceiling > 0),

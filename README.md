@@ -287,10 +287,12 @@ task, those were exactly the two cases.
   was produced wherever there was a next part, and that it fitted the reserve held back for
   it. A hand-off that overran means the next part began with a truncated thread, which is a
   `handoff_reserve` problem rather than a model failure. A hand-off can also be present and
-  carry nothing: a real run produced three of three whose largest was **six tokens** against a
-  500-token reserve while coverage sat at 31%, and the first version of this metric called
-  that continuity. A part that *changed files* and then reported six tokens has dropped the
-  thread; a part that changed nothing is entitled to be brief. They are counted separately.
+  carry nothing, so each is checked for whether it **names any file its part changed**. That
+  began as a length threshold, and length turned out to be the wrong measure: real useful
+  hand-offs run about fifteen tokens — *"Added XML doc comments to `INoteRepository.cs` and
+  `NoteRepository.cs`"* — while the useless ones are parts that wrote files and then reported
+  *"NO CHANGES NEEDED"*. A threshold flags the first and waves the second through. A part that
+  changed nothing is entitled to say so.
 - **Revisits** are the fingerprint of a part that lost the thread: reaching for a file another
   part already owned. The scope layer refuses it, so it is recorded rather than damaging.
   Deliberately *not* the same as a path the model invented — one real run tried to write to a

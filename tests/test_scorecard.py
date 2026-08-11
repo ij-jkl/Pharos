@@ -16,7 +16,7 @@ def _part(
     *,
     scoped: list[str],
     wrote: list[str] | None = None,
-    handoff: str = "did the thing",
+    handoff: str | None = None,
     handoff_tokens: int = 60,
     refusals: list[str] | None = None,
     peak: int = 100,
@@ -28,7 +28,13 @@ def _part(
     drift_samples: list[tuple[int, int]] | None = None,
 ) -> PartResult:
     return PartResult(
-        text=handoff,
+        # None means "a normal hand-off": one that names what the part changed, which is what
+        # continuity measures. An explicit "" is a part that said nothing, which is different.
+        text=(
+            handoff
+            if handoff is not None
+            else ("changed " + ", ".join(wrote) if wrote else "nothing to do")
+        ),
         steps=1,
         files_written=wrote or [],
         peak_tokens=peak,
@@ -344,3 +350,31 @@ def test_an_unrestricted_run_that_wrote_nothing_is_not_complete() -> None:
     whether anything happened at all."""
     card = score([_part(scoped=[], wrote=[])], handoff_reserve=500)
     assert card.coverage is None and not card.complete
+
+
+def test_a_short_handoff_that_names_its_files_carries_the_thread() -> None:
+    """Measured against real output: the useful ones are about fifteen tokens.
+
+    "Added XML doc comments to `INoteRepository.cs` and `NoteRepository.cs`" is everything the
+    next part needs, and a length threshold called it thin.
+    """
+    parts = [
+        _part(scoped=["src/NoteRepository.cs"], wrote=["src/NoteRepository.cs"],
+              handoff="Added XML doc comments to `NoteRepository.cs`.", handoff_tokens=12),
+        _part(scoped=["src/b.cs"], wrote=["src/b.cs"]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.thin_handoffs == 0 and card.kept_the_thread
+
+
+def test_a_long_handoff_that_names_nothing_does_not() -> None:
+    """And the failure it has to catch: a part that wrote files and reported NO CHANGES
+    NEEDED, which a length threshold at the wrong setting waves straight through."""
+    parts = [
+        _part(scoped=["src/a.cs"], wrote=["src/a.cs"],
+              handoff="NO CHANGES NEEDED. " + "Everything already looked correct. " * 8,
+              handoff_tokens=90),
+        _part(scoped=["src/b.cs"], wrote=["src/b.cs"]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.thin_handoffs == 1 and not card.kept_the_thread
