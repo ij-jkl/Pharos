@@ -19,13 +19,15 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      # Pinned to majors that ship a supported Node runtime. Both were on v4/v5, which target
-      # Node 20 and were already being force-run on Node 24 with a deprecation annotation on
-      # every build — a warning today and a broken pipeline on the day it is enforced.
+      # Pinned to majors that ship a supported Node runtime, checked against each action's
+      # own action.yml rather than assumed from "latest": setup-uv v6 is still node20 and v7
+      # is the first node24 major, while the v9 floating tag does not exist at all despite a
+      # v9.0.0 release. Both actions were being force-run on Node 24 with a deprecation
+      # annotation on every build — a warning today, a broken pipeline once it is enforced.
       - uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
