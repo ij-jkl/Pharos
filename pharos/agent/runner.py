@@ -327,6 +327,7 @@ async def run_task(
                 count=count,
                 usable_budget=usable,
                 handoff_reserve=config.handoff_reserve,
+                num_ctx=config.num_ctx,
                 on_event=_prefixed(say, label),
             )
             text = _with_handoff(body, carried, index, files)

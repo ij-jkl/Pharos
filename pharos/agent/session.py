@@ -172,6 +172,7 @@ class PartResult:
     # Everything below exists so a run can be SCORED rather than just watched. A part that
     # "finished" tells you nothing on its own; whether it wrote what it owned, handed the
     # thread on, and had room to breathe is what says the run held together.
+    truncated: bool = False  # the backend dropped context: its own count fell mid-conversation
     ceiling: int = 0  # what this part was allowed, so peak means something as a fraction
     # (our projection, the backend's prompt_eval_count) for each request, paired at the moment
     # it was sent. Comparing a part's PEAK against whichever count came back last compares two
@@ -198,10 +199,19 @@ class AgentSession:
         count: Callable[[str], int],
         usable_budget: int,
         handoff_reserve: int,
+        num_ctx: int | None = None,
         on_event: Callable[[str], None] | None = None,
     ) -> None:
         self._client = client
         self._model = model
+        # Sent on EVERY request, not just the load. Ollama treats a differing options set as a
+        # different configuration and reloads the model to serve it — so a run that loaded at
+        # 16,384 and then asked for num_predict alone got the model reloaded at the backend's
+        # default 4,096, while the ceiling went on being enforced against 16,384. The backend
+        # then truncated silently. That is the exact failure this project exists to expose,
+        # happening to its own client, and it is only visible because prompt_eval_count starts
+        # falling while the conversation grows.
+        self._num_ctx = num_ctx
         self._toolbox = toolbox
         self._count = count
         self._on_event = on_event or (lambda _message: None)
@@ -223,6 +233,7 @@ class AgentSession:
         self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN
         self._messages: list[dict[str, Any]] = []
         self._drift: list[tuple[int, int]] = []
+        self.truncated_by_backend = False
 
     @property
     def catalogue_tokens(self) -> int:
@@ -313,6 +324,7 @@ class AgentSession:
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
+                    truncated=self.truncated_by_backend,
                     error=f"backend call failed: {_describe(exc)}",
                 )
 
@@ -385,6 +397,7 @@ class AgentSession:
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
+                    truncated=self.truncated_by_backend,
                     handoff_tokens=self._count(str(message.get("content") or "")),
                 )
 
@@ -419,6 +432,7 @@ class AgentSession:
             nudges=nudges,
             scoped=scoped,
             drift_samples=list(self._drift),
+            truncated=self.truncated_by_backend,
             handoff_tokens=self._count(text),
         )
 
@@ -492,7 +506,7 @@ class AgentSession:
             "model": self._model,
             "messages": self._messages,
             "stream": True,
-            "options": {"num_predict": room},
+            "options": _request_options(room, self._num_ctx),
         }
         if tools:
             payload["tools"] = tools
@@ -544,6 +558,23 @@ class AgentSession:
                     )
 
         if prompt_eval:
+            # A conversation only grows, so the backend's count for it can only grow. When it
+            # falls, the backend is no longer evaluating everything it was sent — it is
+            # dropping the oldest tokens to fit a window smaller than the one Pharos measured.
+            # Detected rather than inferred: this is the silent context loss the whole project
+            # is about, and Pharos must not be the last to notice it in its own client.
+            previous = max((theirs for _, theirs in self._drift), default=0)
+            if previous and prompt_eval < previous:
+                self.truncated_by_backend = True
+                self._on_event(
+                    f"BACKEND TRUNCATED: it counted {prompt_eval:,} tokens for a conversation "
+                    f"it counted {previous:,} for earlier — the loaded window is smaller than "
+                    f"the one this run measured, and context is being dropped"
+                )
+                _logger.warning(
+                    "backend truncation: prompt_eval fell %d -> %d while ours rose to %d",
+                    previous, prompt_eval, projected_now,
+                )
             self._drift.append((projected_now, prompt_eval))
         message["content"] = "".join(content)
         if tool_calls:
@@ -616,6 +647,14 @@ def _loggable(arguments: dict[str, Any]) -> dict[str, Any]:
         else:
             trimmed[key] = value
     return trimmed
+
+
+def _request_options(room: int, num_ctx: int | None) -> dict[str, Any]:
+    """Per-request options. ``num_ctx`` has to be repeated or the backend reloads without it."""
+    options: dict[str, Any] = {"num_predict": room}
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
+    return options
 
 
 def _describe(exc: Exception) -> str:

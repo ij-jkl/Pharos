@@ -119,6 +119,10 @@ class Scorecard:
     # 0.96x is 40 tokens on a small prompt and 800 on a large one — and tokens are what the
     # safety margin is denominated in.
     worst_shortfall: int = 0
+    # Parts where the backend's own count FELL mid-conversation: it stopped evaluating
+    # everything it was sent. Not a drift statistic — proof that the window Pharos measured is
+    # not the window in force, and that context was dropped without anybody being told.
+    truncated_parts: int = 0
 
     nudged_parts: int = 0
     abandoned_parts: int = 0
@@ -265,6 +269,7 @@ def score(
         drift_at_peak=(biggest[0] / biggest[1]) if biggest else None,
         drift_samples=len(ratios),
         worst_shortfall=max(shortfall, 0),
+        truncated_parts=sum(1 for p in parts if p.truncated),
         nudged_parts=sum(1 for p in parts if p.nudged),
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
         failed_parts=sum(1 for p in parts if p.error),
@@ -305,6 +310,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             "requests": card.drift_samples,
         },
         "worst_shortfall_tokens": card.worst_shortfall,
+        "truncated_parts": card.truncated_parts,
         "under_counted": card.under_counted,
         "nudged_parts": card.nudged_parts,
         "abandoned_parts": card.abandoned_parts,

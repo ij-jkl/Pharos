@@ -187,6 +187,13 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"  repair       {card.repair_parts} extra part(s) went back over files the plan "
             f"left unchanged, rescuing {card.rescued}{share}"
         )
+    if card.truncated_parts:
+        console.print(
+            f"  [bold red]TRUNCATED[/]    the backend dropped context in "
+            f"{card.truncated_parts} part(s): its own token count fell while the conversation "
+            f"grew, so the loaded window is smaller than the one this run measured. Set "
+            f"num_ctx in pharos.toml, or check what else is reloading the model."
+        )
     console.print(f"  headroom     peak used {card.peak_fraction:.0%} of a part's ceiling")
     if card.drift_high is not None and card.drift_low is not None:
         # A range, not a number: high is wasted room, and anything under 1.0 means a ceiling

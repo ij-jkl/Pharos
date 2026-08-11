@@ -1121,3 +1121,63 @@ def test_file_content_is_not_copied_into_the_log(
     assert "src/alpha.py" in caplog.text
     assert "x = 1" not in caplog.text
     assert "chars>" in caplog.text
+
+
+# --- the window changing underneath a run ----------------------------------------------------
+
+
+def test_num_ctx_is_repeated_on_every_request_not_just_the_load() -> None:
+    """Ollama reloads the model to serve a differing options set. A run that loaded at 16,384
+    and then asked for num_predict alone got it reloaded at the backend's default 4,096, while
+    the ceiling went on being enforced against 16,384 and the backend truncated silently."""
+    from pharos.agent.session import _request_options
+
+    assert _request_options(500, 16384) == {"num_predict": 500, "num_ctx": 16384}
+    assert _request_options(500, None) == {"num_predict": 500}
+
+
+class ShrinkingBackend(FakeBackend):
+    """Reports a falling prompt_eval_count: the shape of a backend dropping context."""
+
+    counts = [1000, 2000, 1400]
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(json.loads(request.content))
+        n = self.counts[min(len(self.requests) - 1, len(self.counts) - 1)]
+        lines = [
+            json.dumps({"message": {"role": "assistant", "content": "ok"}, "done": False}),
+            json.dumps({"done": True, "done_reason": "stop", "prompt_eval_count": n}),
+        ]
+        return httpx.Response(200, content=(("\n".join(lines)) + "\n").encode())
+
+
+async def test_a_falling_backend_count_is_reported_as_truncation(workspace: Workspace) -> None:
+    """A conversation only grows, so the backend's count for it can only grow. When it falls,
+    the backend has stopped evaluating everything it was sent — silent context loss, which is
+    the one thing this project must never be the last to notice in its own client."""
+    backend = ShrinkingBackend([])
+    notes: list[str] = []
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(backend.handler), base_url="http://backend"
+    )
+    session = AgentSession(
+        client=client, model="m", toolbox=_box(workspace, None), count=_count,
+        usable_budget=100_000, handoff_reserve=100, on_event=notes.append,
+    )
+
+    session._messages = [{"role": "user", "content": "one"}]
+    await session._chat(None)
+    session._messages.append({"role": "user", "content": "two"})
+    await session._chat(None)
+    session._messages.append({"role": "user", "content": "three"})
+    await session._chat(None)
+
+    assert session.truncated_by_backend
+    assert any("BACKEND TRUNCATED" in note for note in notes)
+
+
+async def test_a_growing_backend_count_is_not_an_alarm(workspace: Workspace) -> None:
+    backend = FakeBackend([{"role": "assistant", "content": "ok", "tool_calls": []}])
+    session = _session(backend, _box(workspace, None), budget=100_000)
+    await session.run("do a thing")
+    assert not session.truncated_by_backend
