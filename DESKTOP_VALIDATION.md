@@ -711,3 +711,75 @@ if it killed the request, that is the bug) and a streaming client that disconnec
 from `curl` (§10 covers abort handling for `curl`'s shape only).
 
 Record the outcome here the way §12 records its runs: what was measured, not what was hoped.
+
+---
+
+## ☑ 14. `pharos run` — does the work actually get done? (v0.4, live)
+
+Sixteen runs against `C:\Users\<you>\Desktop\Test-Pharos` (a copy of a real .NET + Angular
+project, no git, so the snapshot undo carried it), `qwen2.5-coder:14b`, `num_ctx = 16384`.
+Every run was the same task: add an XML doc comment above every public class and method in
+four directories — **13 files**, 4,245 tokens of C#.
+
+### The headline: a part finishes about two files, whatever it is given
+
+| files per part | coverage |
+|---|---|
+| 4 | 46%, 62%, 46% |
+| 2 | **92%**, 92% |
+
+Files actually completed per part, when parts held four: **1.5, 2.0, 1.5**. The limit is not
+the window — `peak_fraction` sat at 42–51% throughout, so there was always room left. It is
+not persuasion either: stating the target up front, naming the outstanding files in a
+reminder, and asking again while progress continued were each implemented, measured, and each
+moved nothing. A roughly constant limit is an arithmetic problem, and `max_files_per_part = 2`
+is the arithmetic. The 92% was predicted before the run rather than explained after it.
+
+### The repair pass earns its keep, and the headline number hides it
+
+Two consecutive runs both scored 92%. They were not the same run:
+
+| | run 14 | run 15 |
+|---|---|---|
+| plan alone | 12/13 (92%) | 10/13 (77%) |
+| rescued by repair | — | 2 |
+| final | 92% | 92% |
+
+Hence `plan_coverage` and `rescued_by_repair` beside `coverage`. Without the split the only
+available conclusion was that the repair pass did nothing, which was wrong.
+
+### Counting, checked against the backend rather than reasoned about
+
+Three versions of the drift figure were wrong before one was right:
+
+1. **2.56x** — divided a part's *peak* projection by whichever `prompt_eval_count` came back
+   last. Two different requests.
+2. **1.09–2.20x, "conservative"** — honest arithmetic over a projection that charged every
+   request **twice for the system prompt** (353 phantom tokens; it is `messages[0]` and was
+   also folded into the per-request constant).
+3. Measured directly, three conversation sizes: **0.96x, 0.97x, 0.98x**, and a fourth shape
+   at 0.87x. The projection sits tens of tokens *below* the backend — that residue is the chat
+   template's own scaffolding — and `SAFETY_MARGIN` exists to absorb it. Worst shortfall
+   observed on a real run: **60 tokens against a 256-token margin**.
+
+Two candidate explanations for the wide high end were tested directly and both came back
+*under* 1.0 (a large file in a tool result, 0.98x; a large file inside `tool_call` arguments,
+0.87x).
+
+### ☐ Open: the drift outlier
+
+Run 15 part 9 (a repair part, 14 rounds) projected **12,292** tokens for a request the backend
+counted at **2,757** — 4.46x, and the largest request of the run. Most requests in the same run
+sat at ~1.0. Unexplained.
+
+It matters beyond tidiness: the ceiling is enforced against our projection, so if that request
+was really 2,757 tokens then the part was cut off at roughly a fifth of the window it had. The
+`(ours, backend)` pairs are now written to the run log per part, so the next occurrence can be
+read rather than guessed at.
+
+### ☐ Open: continuity degrades as parts multiply
+
+Smaller parts bought coverage and cost continuity: run 15 produced 6 of 6 hand-offs but 4 of
+them came from parts that changed files and reported almost nothing. `kept_the_thread` was
+false in every two-file run. The trade is visible in the scorecard, which is where it belongs,
+but it has not been improved.
