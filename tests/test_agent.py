@@ -1165,12 +1165,13 @@ async def test_a_falling_backend_count_is_reported_as_truncation(workspace: Work
         usable_budget=100_000, handoff_reserve=100, on_event=notes.append,
     )
 
+    tools = ToolBox(workspace=workspace).catalogue()
     session._messages = [{"role": "user", "content": "one"}]
-    await session._chat(None)
+    await session._chat(tools)
     session._messages.append({"role": "user", "content": "two"})
-    await session._chat(None)
+    await session._chat(tools)
     session._messages.append({"role": "user", "content": "three"})
-    await session._chat(None)
+    await session._chat(tools)
 
     assert session.truncated_by_backend
     assert any("BACKEND TRUNCATED" in note for note in notes)
@@ -1181,3 +1182,46 @@ async def test_a_growing_backend_count_is_not_an_alarm(workspace: Workspace) -> 
     session = _session(backend, _box(workspace, None), budget=100_000)
     await session.run("do a thing")
     assert not session.truncated_by_backend
+
+
+async def test_the_toolless_handoff_does_not_look_like_truncation(workspace: Workspace) -> None:
+    """The hand-off goes out with no tool catalogue, so its prompt is legitimately a few
+    hundred tokens smaller than the request before it.
+
+    Read naively that is indistinguishable from the backend dropping context — and it would
+    have fired on every part that ends by handing off, which is most of them. A warning that
+    cries wolf on the common path is worse than no warning.
+    """
+    backend = ShrinkingBackend([])  # 1000, then 2000, then 1400
+    notes: list[str] = []
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(backend.handler), base_url="http://backend"
+    )
+    session = AgentSession(
+        client=client, model="m", toolbox=_box(workspace, None), count=_count,
+        usable_budget=100_000, handoff_reserve=100, on_event=notes.append,
+    )
+    tools = ToolBox(workspace=workspace).catalogue()
+
+    session._messages = [{"role": "user", "content": "one"}]
+    await session._chat(tools)          # 1000, with tools
+    session._messages.append({"role": "user", "content": "two"})
+    await session._chat(tools)          # 2000, with tools
+    session._messages.append({"role": "user", "content": "three"})
+    await session._chat(None)           # 1400, WITHOUT tools — the hand-off
+
+    assert not session.truncated_by_backend
+    assert not any("BACKEND TRUNCATED" in note for note in notes)
+
+
+def test_a_toolless_request_is_not_charged_for_the_catalogue(workspace: Workspace) -> None:
+    """Counting a catalogue that was never sent makes that sample incomparable and inflates
+    the drift figure for every part that ends with a hand-off."""
+    backend = FakeBackend([{"role": "assistant", "content": "ok", "tool_calls": []}])
+    session = _session(backend, _box(workspace, None), budget=100_000)
+    session._messages = [{"role": "user", "content": "hello"}]
+
+    with_tools = session._projected(with_tools=True)
+    without = session._projected(with_tools=False)
+
+    assert with_tools - without == session.catalogue_tokens > 0

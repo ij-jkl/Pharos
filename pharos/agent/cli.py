@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         console.print("\n[yellow]Interrupted.[/] Files already written are on the run branch.")
         return 1
 
-    return _render(console, outcome, dry_run=args.dry_run, as_json=args.json)
+    return _render(console, outcome, dry_run=args.dry_run, as_json=args.json, root=str(root))
 
 
 # Presentation only, and deliberately restrained. A bar makes a fraction legible at a glance;
@@ -466,10 +466,16 @@ def _render_footer(console: Console, outcome: RunOutcome, card: Scorecard) -> No
     console.print()
 
 
-def _render(console: Console, outcome: RunOutcome, *, dry_run: bool, as_json: bool = False) -> int:
+def _render(
+    console: Console,
+    outcome: RunOutcome,
+    *,
+    dry_run: bool,
+    as_json: bool = False,
+    root: str = "",
+) -> int:
     report = outcome.report
-    root = str(workspace_root(None))
-    _render_header(console, outcome, root)
+    _render_header(console, outcome, root or str(workspace_root(None)))
 
     if outcome.error is not None:
         console.print()

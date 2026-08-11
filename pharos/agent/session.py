@@ -233,6 +233,7 @@ class AgentSession:
         self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN
         self._messages: list[dict[str, Any]] = []
         self._drift: list[tuple[int, int]] = []
+        self._largest_tooled = 0
         self.truncated_by_backend = False
 
     @property
@@ -244,7 +245,7 @@ class AgentSession:
     def ceiling(self) -> int:
         return self._ceiling
 
-    def _projected(self) -> int:
+    def _projected(self, with_tools: bool = True) -> int:
         """Tokens the next request would carry: the conversation plus the catalogue.
 
         Counted over the message CONTENT, not over the JSON envelope. Serialising first looked
@@ -257,7 +258,7 @@ class AgentSession:
         adds, which keeps this a floor on what the backend will see rather than a hope.
         Tool-call arguments ARE serialised, because that is genuinely how they travel.
         """
-        total = self._catalogue_tokens
+        total = self._catalogue_tokens if with_tools else 0
         for message in self._messages:
             total += _PER_MESSAGE_TOKENS
             content = message.get("content")
@@ -274,6 +275,7 @@ class AgentSession:
             {"role": "user", "content": part_body},
         ]
         self._drift = []
+        self._largest_tooled = 0
         nudges = 0
         written_at_last_nudge = 0
         failures = 0
@@ -500,6 +502,7 @@ class AgentSession:
         complete — a truncated write_file call is exactly the kind of silent damage this
         project exists to refuse.
         """
+        has_tools = bool(tools)
         room = max(self._ceiling - self._projected(), _MIN_REPLY_ROOM)
         # Paired below with whatever prompt_eval_count comes back for THIS request.
         payload: dict[str, Any] = {
@@ -511,7 +514,10 @@ class AgentSession:
         if tools:
             payload["tools"] = tools
 
-        projected_now = self._projected()
+        # Counted on the same terms as the request being sent. The hand-off goes out with no
+        # tool catalogue, so charging our side for one would make that sample incomparable and
+        # inflate the drift figure for every part that ends that way.
+        projected_now = self._projected(with_tools=has_tools)
         content: list[str] = []
         tool_calls: list[dict[str, Any]] = []
         message: dict[str, Any] = {"role": "assistant"}
@@ -563,7 +569,12 @@ class AgentSession:
             # dropping the oldest tokens to fit a window smaller than the one Pharos measured.
             # Detected rather than inferred: this is the silent context loss the whole project
             # is about, and Pharos must not be the last to notice it in its own client.
-            previous = max((theirs for _, theirs in self._drift), default=0)
+            # Only against requests of the same shape. A tool-less request legitimately
+            # carries a few hundred fewer tokens, and reading that as context loss would make
+            # the one warning that must never cry wolf fire on every part that hands off.
+            previous = self._largest_tooled if has_tools else 0
+            if has_tools:
+                self._largest_tooled = max(self._largest_tooled, prompt_eval)
             if previous and prompt_eval < previous:
                 self.truncated_by_backend = True
                 self._on_event(
