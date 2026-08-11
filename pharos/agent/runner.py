@@ -33,6 +33,7 @@ from pharos.agent.session import SAFETY_MARGIN, AgentSession, PartResult
 from pharos.agent.tools import (
     ToolBox,
     agent_overhead_tokens,
+    normalise,
     scope_from_part_files,
     workspace_root,
 )
@@ -67,6 +68,7 @@ class RunOutcome:
     counts_exact: bool = False
     divided: bool = True  # False when --no-split ran the whole task as one conversation
     catalogue_tokens: int = 0
+    repair_parts: int = 0  # extra parts run over files the plan assigned and nobody changed
     handoff_reserve: int = 0  # what each part held back, so the scorecard can judge overruns
     via_proxy: bool = True
     error: str | None = None
@@ -307,8 +309,12 @@ async def run_task(
 
     handoff: str | None = None
     async with httpx.AsyncClient(base_url=base_url) as client:
-        for index, (body, files) in enumerate(bodies, start=1):
-            say(f"part {index} of {len(bodies)}")
+
+        async def run_part(
+            label: str, body: str, files: list[PartFile] | None, index: int, carried: str | None
+        ) -> PartResult:
+            """One part, start to finish. The repair pass goes through here too, so a repaired
+            file is bounded, scoped and scored on exactly the same terms as a planned one."""
             toolbox = ToolBox(
                 workspace=workspace,
                 scope=scope_from_part_files(files) if files else None,
@@ -321,20 +327,50 @@ async def run_task(
                 count=count,
                 usable_budget=usable,
                 handoff_reserve=config.handoff_reserve,
-                on_event=_prefixed(say, index),
+                on_event=_prefixed(say, label),
             )
-            part_body = _with_handoff(body, handoff, index, files)
-            _logger.info("part %d body: %s", index, part_body)
-            result = await session.run(part_body)
+            text = _with_handoff(body, carried, index, files)
+            _logger.info("%s body: %s", label, text)
+            result = await session.run(text)
             _logger.info(
-                "part %d finished: steps=%d wrote=%s handoff=%r",
-                index, result.steps, result.files_written, result.text,
+                "%s finished: steps=%d wrote=%s handoff=%r",
+                label, result.steps, result.files_written, result.text,
             )
             outcome.parts.append(result)
+            return result
+
+        failed = False
+        for index, (body, files) in enumerate(bodies, start=1):
+            say(f"part {index} of {len(bodies)}")
+            result = await run_part(f"part {index}", body, files, index, handoff)
             if result.error:
-                say(f"  [{index}] failed: {result.error}")
+                say(f"  [part {index}] failed: {result.error}")
+                failed = True
                 break
             handoff = result.text or None
+
+        # A repair pass over whatever the plan assigned and no part actually changed.
+        #
+        # Not persuasion, and not a retry of a failed call: those files were somebody's scope
+        # and were left alone, usually because the part that owned them decided it had
+        # finished. A fresh conversation holding only the leftovers is the same medicine that
+        # took coverage from 46% to 92% — parts finish about two files, so give a part two
+        # files. Deliberately ONE round: a second would be chasing a model that has declined
+        # the same work twice, and an unbounded repair loop is how a run stops having a
+        # knowable cost.
+        if not failed and divide and config.repair_pass:
+            missed = _untouched(outcome.parts)
+            if missed:
+                say(f"{len(missed)} file(s) the plan assigned were never changed - repairing")
+                chunks = _chunks(missed, config.max_files_per_part)
+                for offset, chunk in enumerate(chunks, start=1):
+                    label = f"repair {offset} of {len(chunks)}"
+                    say(label)
+                    outcome.repair_parts += 1
+                    result = await run_part(label, _repair_body(prompt, chunk), chunk, 1, None)
+                    if result.error:
+                        say(f"  [{label}] failed: {result.error}")
+                        break
 
     if undo is not None:
         outcome.files_changed = sorted(undo.saved)
@@ -365,13 +401,50 @@ def _edit_target(config: PharosConfig, usable: int, overhead: int) -> int:
     return max((usable - config.handoff_reserve - SAFETY_MARGIN - overhead) // 2, 1)
 
 
-def _prefixed(say: Callable[[str], None], index: int) -> Callable[[str], None]:
+def _prefixed(say: Callable[[str], None], label: str) -> Callable[[str], None]:
     """Tag a session's commentary with the part it came from."""
 
     def emit(message: str) -> None:
-        say(f"  [{index}] {message}")
+        say(f"  [{label}] {message}")
 
     return emit
+
+
+def _untouched(parts: list[PartResult]) -> list[PartFile]:
+    """Files some part was given and no part changed, in the order they were assigned."""
+    written = {normalise(path) for part in parts for path in part.files_written}
+    missed: dict[str, PartFile] = {}
+    for part in parts:
+        for path in part.scoped:
+            key = normalise(path)
+            if key not in written and key not in missed:
+                missed[key] = PartFile(display=path, tokens=0)
+    return list(missed.values())
+
+
+def _chunks(files: list[PartFile], size: int) -> list[list[PartFile]]:
+    """Split the leftovers into parts of the same size the planner uses."""
+    step = max(size, 1)
+    return [files[i : i + step] for i in range(0, len(files), step)]
+
+
+def _repair_body(prompt: str, files: list[PartFile]) -> str:
+    """A part whose whole job is work an earlier part was given and did not do.
+
+    It says so plainly rather than posing as a fresh assignment. A model told these were
+    missed has a reason to look; one told they are simply "the task" may conclude, exactly as
+    the earlier part did, that the job is already complete.
+    """
+    listed = chr(10).join(f"  - {f.display}" for f in files)
+    return (
+        "[Pharos] REPAIR PASS. An earlier part of this run was given the files below and left "
+        "them unchanged on disk. Nothing else is in scope for you." + chr(10) * 2
+        + listed + chr(10) * 2
+        + "Read each one and apply the task to it. Do not assume it is already done - it is "
+        "not, and that is why you are seeing it. If a file genuinely needs no change, say "
+        "which and why." + chr(10) * 2
+        + "--- TASK ---" + chr(10) + prompt.strip()
+    )
 
 
 def _bodies(plan: SplitPlan) -> list[tuple[str, list[PartFile] | None]]:

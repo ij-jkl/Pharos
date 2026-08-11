@@ -71,6 +71,12 @@ class PharosConfig(BaseModel):
     # 92%. The cost is more parts, which is more hand-offs and more chances to drop the thread
     # — worth watching in the scorecard, and worth raising for a model that finishes more.
     max_files_per_part: int = Field(default=2, ge=1)
+    # After the plan has run, go back over any assigned file that no part actually
+    # changed, in a fresh conversation holding only the leftovers. One round, never more:
+    # a second would be chasing a model that has declined the same work twice, and an
+    # unbounded repair loop is how a run stops having a knowable cost. Turn it off to see
+    # what the plan alone achieves - which is what the coverage figures above measure.
+    repair_pass: bool = True
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

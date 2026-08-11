@@ -268,3 +268,59 @@ def test_a_part_that_changed_nothing_may_be_brief() -> None:
     card = score(parts, handoff_reserve=500)
     assert card.thin_handoffs == 0
     assert card.kept_the_thread
+
+
+# --- the repair pass ------------------------------------------------------------------------
+
+
+def test_a_repaired_file_counts_toward_coverage() -> None:
+    """The file did get changed. Coverage measures the repository, not who changed it."""
+    parts = [
+        _part(scoped=["a.py", "b.py"], wrote=["a.py"]),
+        _part(scoped=["b.py"], wrote=["b.py"]),  # the repair pass
+    ]
+    card = score(parts, handoff_reserve=500, repair_parts=1)
+    assert card.coverage == 1.0 and card.complete
+    assert card.repair_parts == 1
+
+
+def test_a_repair_part_is_not_held_to_the_thread() -> None:
+    """It runs after the plan and hands off to nobody; judging it on continuity would penalise
+    a run for the mechanism that rescued it."""
+    parts = [
+        _part(scoped=["a.py"], wrote=["a.py"]),
+        _part(scoped=["b.py"], wrote=["b.py"], handoff="", handoff_tokens=0),  # repair
+    ]
+    card = score(parts, handoff_reserve=500, repair_parts=1)
+    assert card.handoffs_expected == 0  # the only planned part had nobody to hand to
+    assert card.kept_the_thread
+
+
+def test_repairs_are_reported_rather_than_hidden() -> None:
+    """A run needing several is a plan that is not sized for the model, and the percentage
+    alone would say nothing about that."""
+    parts = [_part(scoped=["a.py"], wrote=["a.py"]), _part(scoped=["b.py"], wrote=["b.py"])]
+    payload = to_dict(score(parts, handoff_reserve=500, repair_parts=1))
+    assert payload["repair_parts"] == 1
+
+
+def test_the_plan_and_the_repair_are_reported_separately() -> None:
+    """A run where the plan did everything and one where a sweep rescued a quarter of it both
+    read 92% otherwise. On consecutive runs of one task those were exactly the two cases."""
+    parts = [
+        _part(scoped=["a.py", "b.py"], wrote=["a.py"]),
+        _part(scoped=["c.py"], wrote=[]),
+        _part(scoped=["b.py", "c.py"], wrote=["b.py", "c.py"]),  # the repair pass
+    ]
+    card = score(parts, handoff_reserve=500, repair_parts=1)
+
+    assert card.coverage == 1.0            # the repository ended up right
+    assert card.plan_coverage == 1 / 3     # the plan on its own did not
+    assert card.rescued == 2
+
+
+def test_a_run_that_needed_no_repair_reports_the_same_figure_twice() -> None:
+    parts = [_part(scoped=["a.py"], wrote=["a.py"])]
+    card = score(parts, handoff_reserve=500)
+    assert card.coverage == card.plan_coverage == 1.0
+    assert card.rescued == 0 and card.repair_parts == 0

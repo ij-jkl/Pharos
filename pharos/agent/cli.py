@@ -180,6 +180,13 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"({', '.join(card.invented[:3])}) — refused, nothing was touched[/]"
         )
 
+    if card.repair_parts:
+        plan = card.plan_coverage
+        share = f" — the plan alone reached {plan:.0%}" if plan is not None else ""
+        console.print(
+            f"  repair       {card.repair_parts} extra part(s) went back over files the plan "
+            f"left unchanged, rescuing {card.rescued}{share}"
+        )
     console.print(f"  headroom     peak used {card.peak_fraction:.0%} of a part's ceiling")
     if card.drift_high is not None and card.drift_low is not None:
         # A range, not a number: high is wasted room, and anything under 1.0 means a ceiling
@@ -272,7 +279,11 @@ def _render(console: Console, outcome: RunOutcome, *, dry_run: bool, as_json: bo
         if result.error:
             console.print(f"  [red]{result.error}[/]")
 
-    card = score(outcome.parts, handoff_reserve=outcome.handoff_reserve)
+    card = score(
+        outcome.parts,
+        handoff_reserve=outcome.handoff_reserve,
+        repair_parts=outcome.repair_parts,
+    )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.
         sys.stdout.write(json.dumps(to_dict(card), indent=2) + "\n")

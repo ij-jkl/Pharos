@@ -81,6 +81,17 @@ class Scorecard:
     written_files: int
     untouched: list[str] = field(default_factory=list)
 
+    # Parts that existed only because the plan's own parts left work undone. Coverage counts
+    # what they wrote, because the file did get changed — but a run needing many of them is a
+    # plan that is not sized for this model, and that belongs on the report rather than
+    # smoothed into a single percentage.
+    repair_parts: int = 0
+    # Files written by the planned parts alone, before any repair. Without it the two numbers
+    # that matter are indistinguishable: a run where the plan did everything and a run where
+    # the plan did three quarters and the sweep rescued the rest both read 92%. Measured on
+    # consecutive runs of one task, those were exactly the two cases.
+    written_before_repair: int = 0
+
     handoffs_expected: int = 0
     handoffs_produced: int = 0
     handoff_reserve: int = 0
@@ -112,6 +123,18 @@ class Scorecard:
     nudged_parts: int = 0
     abandoned_parts: int = 0
     failed_parts: int = 0
+
+    @property
+    def plan_coverage(self) -> float | None:
+        """What the plan achieved on its own, before the repair pass went back over it."""
+        if not self.scoped_files:
+            return None
+        return self.written_before_repair / self.scoped_files
+
+    @property
+    def rescued(self) -> int:
+        """Files the repair pass changed that the plan had left alone."""
+        return max(self.written_files - self.written_before_repair, 0)
 
     @property
     def coverage(self) -> float | None:
@@ -154,7 +177,9 @@ class Scorecard:
         )
 
 
-def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
+def score(
+    parts: list[PartResult], *, handoff_reserve: int, repair_parts: int = 0
+) -> Scorecard:
     """Reduce a finished run to the five questions above."""
     scoped: list[str] = []
     for part in parts:
@@ -167,6 +192,11 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
     for part in parts:
         written.update(normalise(path) for path in part.files_written)
 
+    planned_parts = parts[: len(parts) - repair_parts] if repair_parts else parts
+    written_by_plan: set[str] = set()
+    for part in planned_parts:
+        written_by_plan.update(normalise(path) for path in part.files_written)
+
     # A refusal for a file some part owns is a revisit; anything else the model made up.
     revisits: list[str] = []
     invented: list[str] = []
@@ -177,17 +207,20 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
             if path not in bucket:
                 bucket.append(path)
 
+    # The last part hands off to nobody, so it is not expected to produce one. Repair parts
+    # run AFTER the plan and hand off to nobody either — they are a sweep, not a continuation,
+    # so holding them to the thread would penalise a run for the mechanism that rescued it.
+    planned = parts[: len(parts) - repair_parts] if repair_parts else parts
+    expects_handoff = planned[:-1] if len(planned) > 1 else []
+    produced = [p for p in expects_handoff if p.text.strip()]
+
     # A hand-off from a part that CHANGED something has to describe it. From a part that did
     # nothing, brevity is the honest answer, so silence there is not held against continuity.
     thin = sum(
         1
-        for p in parts[:-1]
+        for p in expects_handoff
         if p.files_written and p.handoff_tokens < _THIN_HANDOFF_TOKENS
     )
-
-    # The last part hands off to nobody, so it is not expected to produce one.
-    expects_handoff = parts[:-1] if len(parts) > 1 else []
-    produced = [p for p in expects_handoff if p.text.strip()]
 
     peak_fraction = max(
         (p.peak_tokens / p.ceiling for p in parts if p.ceiling > 0),
@@ -209,6 +242,10 @@ def score(parts: list[PartResult], *, handoff_reserve: int) -> Scorecard:
     return Scorecard(
         parts=len(parts),
         parts_that_wrote=sum(1 for p in parts if p.files_written),
+        repair_parts=repair_parts,
+        written_before_repair=(
+            len(written_by_plan & scoped_set) if scoped_set else len(written_by_plan)
+        ),
         scoped_files=len(scoped_set),
         written_files=len(written & scoped_set) if scoped_set else len(written),
         untouched=sorted(scoped_set - written),
@@ -242,6 +279,9 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "coverage": card.coverage,
         "parts": card.parts,
         "parts_that_wrote": card.parts_that_wrote,
+        "repair_parts": card.repair_parts,
+        "plan_coverage": card.plan_coverage,
+        "rescued_by_repair": card.rescued,
         "scoped_files": card.scoped_files,
         "written_files": card.written_files,
         "untouched": card.untouched,
