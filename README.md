@@ -253,13 +253,22 @@ making it. So every run ends with five numbers, none of which require asking a m
 
 ```
 Scorecard
-  coverage     14 of 20 scoped files written (70%)
-                 untouched: Repositories/NoteRepository.cs
-  continuity   3 of 3 hand-offs produced; largest 214 of 500 reserved
-  headroom     peak used 58% of a part's ceiling
-  drift        our estimate ran 1.27x the backend's count  (above the real prompt: conservative)
-  convergence  1 part(s) needed a nudge, 0 stopped early
+  coverage     12 of 13 scoped files written (92%)
+                 untouched: Controllers/NotesController.cs
+  continuity   6 of 6 hand-offs produced; largest 108 of 500 reserved
+                 4 part(s) changed files and reported almost nothing
+  repair       2 extra part(s) went back over files the plan left unchanged,
+               rescuing 2 - the plan alone reached 77%
+  headroom     peak used 81% of a part's ceiling
+  drift        our estimate ran 0.94-4.70x the backend's count over 72 request(s),
+               4.46x on the largest  (worst shortfall 60 tokens, inside the 256-token margin)
+  convergence  6 part(s) needed a nudge, 0 stopped early
 ```
+
+That is a real run, not an illustration. Two of its lines are worth reading together: the
+plan alone reached 77% and the repair pass took it to 92%. A single coverage figure cannot
+tell that apart from a run where the plan did everything — and on consecutive runs of the same
+task, those were exactly the two cases.
 
 - **Coverage** is the headline: of the files the plan assigned, how many were actually
   written. A run that touches three of twenty did not succeed, whatever its parts reported.
@@ -277,6 +286,11 @@ Scorecard
   Deliberately *not* the same as a path the model invented — one real run tried to write to a
   `Data/` folder that has never existed, which is confusion about the repository, not about
   what has already been done. Those are counted separately as `wandering`.
+- **Repair** counts parts that existed only because the plan's own parts left work undone.
+  Any assigned file still unchanged at the end goes back through a fresh conversation holding
+  only the leftovers — one round, never more. Coverage counts what it wrote, because the file
+  did get changed, but the plan's own figure is reported beside it: a run needing several
+  repairs is a plan that is not sized for this model, and one percentage would hide that.
 - **Headroom** is the highest fraction of any part's ceiling actually used. Near 100% means
   the next slightly larger file breaks the run.
 - **Drift** is Pharos's own projection against the backend's `prompt_eval_count`, paired per

@@ -336,6 +336,16 @@ async def run_task(
                 "%s finished: steps=%d wrote=%s handoff=%r",
                 label, result.steps, result.files_written, result.text,
             )
+            # The pairs behind the drift figure, so an outlier can be identified instead of
+            # theorised about. The scorecard reduces these to a range and a shortfall; when
+            # the range is wide the only useful question is which request did it, and that
+            # needs the absolute numbers, not the ratio.
+            if result.drift_samples:
+                _logger.info(
+                    "%s drift (ours, backend): %s",
+                    label,
+                    ", ".join(f"({a}, {b})" for a, b in result.drift_samples),
+                )
             outcome.parts.append(result)
             return result
 
