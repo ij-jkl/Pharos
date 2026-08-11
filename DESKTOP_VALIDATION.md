@@ -766,16 +766,25 @@ Two candidate explanations for the wide high end were tested directly and both c
 *under* 1.0 (a large file in a tool result, 0.98x; a large file inside `tool_call` arguments,
 0.87x).
 
-### ☐ Open: the drift outlier
+### ☑ Closed: the drift outlier was the backend silently truncating
 
-Run 15 part 9 (a repair part, 14 rounds) projected **12,292** tokens for a request the backend
-counted at **2,757** — 4.46x, and the largest request of the run. Most requests in the same run
-sat at ~1.0. Unexplained.
+Logging the raw `(ours, backend)` pairs answered it in one run. Our count rose monotonically,
+as it must; the backend's **fell** — 4,014 then 3,374 — while the conversation only grew. A
+backend reporting fewer tokens for a longer prompt has stopped evaluating all of it.
 
-It matters beyond tidiness: the ceiling is enforced against our projection, so if that request
-was really 2,757 tokens then the part was cut off at roughly a fifth of the window it had. The
-`(ours, backend)` pairs are now written to the run log per part, so the next occurrence can be
-read rather than guessed at.
+The cause was ours. The model is loaded with `num_ctx` from `pharos.toml`, and then every
+agent request sent `options` carrying `num_predict` and nothing else. Ollama treats a differing
+options set as a different configuration and **reloads the model to serve it**, at its own
+default of 4,096 on this card. So the run enforced a ceiling computed for 16,384 against a
+window of 4,096, and the backend quietly discarded the oldest tokens to fit.
+
+That is the exact failure this project exists to expose, occurring inside its own client, and
+it hid for sixteen runs because the only symptom was a drift ratio that looked like rounding.
+`num_ctx` now travels on every request, and a falling `prompt_eval_count` on a growing
+conversation is treated as proof of truncation and reported per part.
+
+Confirmed by the fix: drift across a full run went from **0.94–4.70x** to **0.96–1.03x**, and
+coverage on the standard task reached **100% (13/13)**.
 
 ### ☐ Open: continuity degrades as parts multiply
 
@@ -783,3 +792,30 @@ Smaller parts bought coverage and cost continuity: run 15 produced 6 of 6 hand-o
 them came from parts that changed files and reported almost nothing. `kept_the_thread` was
 false in every two-file run. The trade is visible in the scorecard, which is where it belongs,
 but it has not been improved.
+
+### ☑ Closed: continuity, measured by naming rather than length
+
+The thin-hand-off check counted tokens. Reading what real hand-offs said settled it: the
+useful ones are ~15 tokens (*"Added XML doc comments to `INoteRepository.cs` and
+`NoteRepository.cs`"*) and the useless ones are parts that wrote files and reported *"NO
+CHANGES NEEDED"*. A length threshold flags the first and waves the second through. Whether the
+hand-off **names a file the part changed** separates them exactly and needs no model to judge.
+
+### ☑ Closed: CI, red on Linux since v0.4 landed
+
+One test of 314, Linux only. On Windows `\` is the path separator; on POSIX it is a legal
+character in a file name, so a Windows-spelled path is a different file that does not exist:
+the same read_file call succeeded on one runner and came back "not found" on the other. The
+test asserted the Windows reading and passed on the development machine every time.
+
+Fixed in the workspace rather than the assertion: the literal path is tried first, and the
+separator reading is used only when it lands on something that exists — a fallback that cannot
+shadow a real backslash-named file, only rescue a request that would otherwise dead-end.
+Containment is still checked against whichever path wins.
+
+### ☑ Closed: a run appears in the dashboard
+
+Asserted in the README since v0.4 and never demonstrated, because every measured run had
+printed *"proxy not running"*. Run with the proxy up: the run reports `routing through the
+Pharos proxy`, and the calibration store grew by one record — `agent_shaped: true`, counts
+only, no text. `pharos run` is observed on exactly the same terms as Continue or Cursor.
