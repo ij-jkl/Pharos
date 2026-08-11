@@ -109,8 +109,7 @@ class Workspace:
         ``strict=False``: a write to a file that does not exist yet is legitimate, and the
         containment check is about where the path POINTS, not whether it is there already.
         """
-        asked = Path(raw)
-        candidate = (asked if asked.is_absolute() else self.root / asked).resolve()
+        candidate = self._locate(raw)
         if candidate != self.root and self.root not in candidate.parents:
             raise WorkspaceError(
                 f"{raw!r} is outside the workspace ({self.root}). A run may only touch files "
@@ -121,6 +120,29 @@ class Workspace:
         if denied:
             raise WorkspaceError(f"{raw!r} is off limits ({', '.join(sorted(denied))}).")
         return candidate
+
+    def _locate(self, raw: str) -> Path:
+        """Resolve a path, treating a backslash as a separator only when that finds something.
+
+        On Windows a backslash IS the separator. On POSIX it is a legal character in a file
+        name, so "src\alpha.py" is a different file that does not exist — and a model that has
+        seen Windows-style paths in a prompt will emit them anywhere. CI found this: the same
+        call succeeded on one runner and came back "not found" on the other.
+
+        Rewriting every backslash unconditionally would be wrong on POSIX, where a file really
+        can be called that. So the literal path is tried first and the separator reading is
+        only used when it lands on something that actually exists — a fallback that cannot
+        shadow a real file, only rescue a request that would otherwise dead-end.
+        """
+        first = self._as_path(raw)
+        if chr(92) not in raw or first.exists():
+            return first
+        alternative = self._as_path(raw.replace(chr(92), "/"))
+        return alternative if alternative.exists() else first
+
+    def _as_path(self, raw: str) -> Path:
+        asked = Path(raw)
+        return (asked if asked.is_absolute() else self.root / asked).resolve()
 
     def display(self, path: Path) -> str:
         """The path as the report should show it: relative to the root, forward slashes."""

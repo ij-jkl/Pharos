@@ -376,6 +376,10 @@ def test_scope_matches_whatever_separator_the_splitter_used(workspace: Workspace
 
     A real 9-part run refused every part access to its own files because of this, and the
     symptom was indistinguishable from a model ignoring its scope.
+
+    Both spellings have to work on both platforms. On POSIX a backslash is a legal character
+    in a file name rather than a separator, so this passed on Windows and failed on Linux CI
+    until the workspace learned to fall back to the separator reading.
     """
     box = ToolBox(
         workspace=workspace, scope=scope_from_part_files([_part_file(WINDOWS_STYLE)])
