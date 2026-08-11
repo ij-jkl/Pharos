@@ -55,7 +55,15 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM"]
+# ARG earns its place here: a parameter that stopped being used when a function was
+# refactored is invisible in review, and one survived a commit in exactly that way.
+select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "ARG", "RET", "C4", "PIE"]
+
+[tool.ruff.lint.per-file-ignores]
+# Requesting a fixture for its side effect is how pytest is written - `tmp_path` to get a
+# scratch directory, an autouse-style fixture named to activate it - and a mock's signature is
+# fixed by the thing it impersonates. Enforcing ARG here would buy nothing but noqa noise.
+"tests/*" = ["ARG"]
 
 [tool.mypy]
 python_version = "3.12"

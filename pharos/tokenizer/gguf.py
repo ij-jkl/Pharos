@@ -128,7 +128,8 @@ def _install_log_sink(llama_cpp: Any) -> None:
         if _log_sink is not None:
             return
 
-        def sink(level: int, text: bytes, user_data: Any) -> None:
+        # Signature fixed by llama_log_callback; only `text` is ever wanted here.
+        def sink(_level: int, text: bytes, _user_data: Any) -> None:
             # try/except rather than contextlib.suppress: this body has to work while the
             # interpreter is tearing modules down, and it should reach for as little as
             # possible on the way. Broad on purpose — see the docstring.

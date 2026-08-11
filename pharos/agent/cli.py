@@ -434,7 +434,7 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
     )
 
 
-def _render_footer(console: Console, outcome: RunOutcome, card: Scorecard) -> None:
+def _render_footer(console: Console, outcome: RunOutcome) -> None:
     """What to do next, which is always the same two things: look at it, or undo it."""
     lines: list[str] = []
     if outcome.files_changed:
@@ -522,7 +522,7 @@ def _render(
 
     _render_parts(console, outcome)
     _render_scorecard(console, card)
-    _render_footer(console, outcome, card)
+    _render_footer(console, outcome)
     return 0 if card.complete else 1
 
     console.print()
