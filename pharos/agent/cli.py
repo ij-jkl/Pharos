@@ -20,13 +20,18 @@ import asyncio
 import json
 import re
 import sys
+import time
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
-from rich.console import Console
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.live import Live
 from rich.markup import escape
 from rich.padding import Padding
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.table import Table
+from rich.text import Text
 
 from pharos.agent.runner import RunOutcome, run_task
 from pharos.agent.scorecard import Scorecard, score, to_dict
@@ -108,17 +113,36 @@ def main(argv: list[str] | None = None) -> int:
     log_path = configure_logging(config.log_file)
     progress.print(f"[dim]workspace {root} · log {log_path}[/]")
 
+    status = RunStatus()
+
+    def report(message: str) -> None:
+        line = status.event(message)
+        if line is not None:
+            progress.print(line)
+
+    # The live line is a terminal affordance. Redirected to a file it would be thousands of
+    # cursor moves, so there it degrades to the printed events alone, which is what a log
+    # wants anyway.
+    animate = progress.is_terminal and not args.dry_run
+
+    live: AbstractContextManager[object] = (
+        Live(status, console=progress, refresh_per_second=10, transient=True)
+        if animate
+        else nullcontext()
+    )
+
     try:
-        outcome = asyncio.run(
-            run_task(
-                config,
-                prompt,
-                dry_run=args.dry_run,
-                use_git=not args.no_git,
-                divide=not args.no_split,
-                on_event=lambda message: progress.print(_live(message)),
+        with live:
+            outcome = asyncio.run(
+                run_task(
+                    config,
+                    prompt,
+                    dry_run=args.dry_run,
+                    use_git=not args.no_git,
+                    divide=not args.no_split,
+                    on_event=report,
+                )
             )
-        )
     except GitGuardError as exc:
         console.print(f"[bold red]Refusing to run:[/] {exc}")
         return 2
@@ -245,6 +269,101 @@ def _scope_label(file: object) -> str:
     start = getattr(file, "line_start", None)
     end = getattr(file, "line_end", None)
     return f"{display}  [dim]lines {start}-{end}[/]" if start else display
+
+
+class RunStatus:
+    """A single line that keeps moving while a run works.
+
+    A run is minutes of near-silence punctuated by events. Printed events alone cannot tell a
+    user whether the gap between two of them is a model thinking or a process wedged, and that
+    was the honest complaint: there is no way to tell a slow run from a dead one. A spinner
+    that keeps turning answers it without anybody having to ask, and the elapsed clock makes
+    "slow" measurable rather than a feeling.
+
+    Everything it shows is real. The phase is the last thing that actually happened, the
+    counters are actual writes and actual tool calls, and the clocks are wall time. A progress
+    BAR would be the obvious thing here and would be a lie: the number of tool calls a part
+    needs is not knowable in advance, so the only honest shapes are a spinner and a count.
+    """
+
+    def __init__(self) -> None:
+        self.part = ""
+        self.phase = "starting"
+        self.started = time.monotonic()
+        self.part_started = time.monotonic()
+        self.files_written = 0
+        self.tool_calls = 0
+        self.trouble = ""
+        self._spinner = Spinner("dots", style="cyan")
+
+    def event(self, message: str) -> str | None:
+        """Fold one event into the status. Returns a line to scroll, or None to stay quiet."""
+        stripped = message.strip()
+        match = _LABELLED.match(message)
+        body = match.group(2).strip() if match else stripped
+
+        if stripped.startswith(("part ", "repair ")) and " of " in stripped:
+            self.part = stripped
+            self.part_started = time.monotonic()
+            self.phase = "starting"
+            return _live(message)
+
+        if body.startswith("generating"):
+            # Already once every few seconds and identical each time; the spinner is saying
+            # the same thing more cheaply, so it stays out of the scrollback.
+            self.phase = body.replace(chr(8230), "").replace("...", "").strip()
+            return None
+
+        if body.startswith("ok "):
+            self.tool_calls += 1
+            action = body[3:]
+            if action.startswith(("write_file", "replace_lines")):
+                self.files_written += 1
+            self.phase = action
+            return _live(message)
+
+        if body.startswith("!! ") or "REFUSED" in body:
+            self.tool_calls += 1
+            self.phase = body.removeprefix("!! ")
+            self.trouble = self.phase
+            return _live(message)
+
+        if "TRUNCATED" in body or "in a row failed" in body or "ceiling reached" in body:
+            self.trouble = body
+            self.phase = body
+            return _live(message)
+
+        self.phase = body or self.phase
+        return _live(message)
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        """Render to fit, whatever the terminal is.
+
+        Exactly one line, always. A status that wraps becomes a jumping two- or three-line
+        block on a narrow terminal, which is worse than no status at all — and `no_wrap` on the
+        Text is not enough, because the spinner re-renders it. Truncating against the real
+        width is, so the width has to come from the console rather than be assumed.
+        """
+        looks_like_path = "/" in self.phase or chr(92) in self.phase
+        phase = _shorten([self.phase], limit=1) if looks_like_path else self.phase
+        head = (self.part or "working").replace(" of ", "/")
+
+        text = Text.from_markup(
+            f"[bold cyan]{escape(head)}[/] [dim]{chr(183)}[/] {escape(phase)} "
+            f"[dim]{chr(183)} {_clock(time.monotonic() - self.part_started)} in part "
+            f"{chr(183)} {_clock(time.monotonic() - self.started)} total "
+            f"{chr(183)} {self.files_written} written {chr(183)} {self.tool_calls} calls[/]"
+        )
+        # Two columns for the spinner and its space.
+        text.truncate(max(options.max_width - 2, 12), overflow="ellipsis")
+        self._spinner.style = "yellow" if self.trouble else "cyan"
+        self._spinner.update(text=text)
+        yield self._spinner
+
+
+def _clock(seconds: float) -> str:
+    minutes, rest = divmod(int(seconds), 60)
+    return f"{minutes}m{rest:02d}s" if minutes else f"{rest}s"
 
 
 def _render_header(console: Console, outcome: RunOutcome, root: str) -> None:
