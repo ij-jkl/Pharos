@@ -71,8 +71,18 @@ FLOOR   ≥ 5,007 tokens
 CEILING ≤ 14,615 tokens if every named directory is read in full
 ```
 
-Type a prompt to pre-flight it, `s <prompt>` to cut one that does not fit into parts that do,
-`d` for the live dashboard, `q` to quit.
+Four things you can type there:
+
+| | |
+|---|---|
+| `<prompt>` | pre-flight it — what will this cost, and does it fit? |
+| `s <prompt>` | cut one that does not fit into parts that do |
+| `r <prompt>` | **carry it out** — this writes files |
+| `d` | the live dashboard |
+
+`q` quits. `r` is the only one that changes anything on disk, and it will not start without a
+way back: a clean git tree and its own branch, or a snapshot of every original if the folder is
+not a repository.
 
 Setup is re-detected rather than remembered, so a half-finished first run is repaired by a
 second one, and a `git pull` that moves dependencies re-syncs on its own. `--reinstall` forces
