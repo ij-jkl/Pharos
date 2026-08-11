@@ -138,10 +138,12 @@ def _incomplete_nudge(missing: list[str], unread: list[str]) -> str:
 
 _HANDOFF_REQUEST = (
     "Stop here. Do not call any more tools. In at most 10 lines, write the hand-off for the "
-    "next part: what you changed, what you did not get to, and anything it needs to know. "
-    "Write only about the files YOU were given. Do not say the overall task is complete — "
-    "later parts cover files you have never seen, and a hand-off that claims completion "
-    "stops them from doing their half."
+    "next part: NAME each file you changed and say what you did to it, then anything the next "
+    "part needs to know. Write only about the files YOU were given. Do not say the overall "
+    "task is complete — later parts cover files you have never seen, and a hand-off that "
+    "claims completion stops them from doing their half. Do NOT write 'NO CHANGES NEEDED' "
+    "here: that phrase is for declining work you were asked to do, and this is a report on "
+    "work you have already done."
 )
 
 

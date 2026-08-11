@@ -1281,3 +1281,16 @@ async def test_a_part_that_reads_but_does_not_write_is_asked_again(workspace: Wo
     result = await _session(backend, box, budget=100_000).run("document both")
 
     assert result.nudges >= 2, "reading the second file should have earned another ask"
+
+
+def test_the_handoff_request_forbids_the_decline_phrase() -> None:
+    """Parts that WROTE files opened their hand-off with "NO CHANGES NEEDED", sometimes then
+    contradicting themselves with a correct summary underneath.
+
+    The system prompt defines that phrase as the way to decline work, and it bled into the
+    hand-off, where it tells the next part the opposite of what happened.
+    """
+    from pharos.agent.session import _HANDOFF_REQUEST
+
+    assert "NAME each file you changed" in _HANDOFF_REQUEST
+    assert "Do NOT write 'NO CHANGES NEEDED' here" in _HANDOFF_REQUEST
