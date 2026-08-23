@@ -488,7 +488,9 @@ def _add_verification_row(body: Table, verification: Verification | None) -> Non
         lines = [f"[green]{chr(10003)}[/] [dim]{passed}[/]"]
 
     for check in verification.already_failing:
-        lines.append(f"[dim]{check.name} was already failing before the run[/]")
+        moved = " and its output has changed" if check.changed_while_failing else ""
+        style = "yellow" if check.changed_while_failing else "dim"
+        lines.append(f"[{style}]{check.name} was already failing before the run{moved}[/]")
     for check in verification.unattributable:
         lines.append(
             f"[yellow]{check.name} is failing, but its baseline never ran - "

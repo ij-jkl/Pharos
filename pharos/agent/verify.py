@@ -69,6 +69,10 @@ class CheckOutcome:
     # -- so there is no "before" to compare against. Failing now might be the run's doing or
     # might not, and blaming it on the strength of one measurement would be a guess.
     unattributable: bool = False
+    # It failed before and after, but not with the same output. A pass/fail baseline cannot
+    # tell "unchanged" from "made worse" on a repository that arrived red, and the honest
+    # answer is to say the output moved rather than to claim either.
+    changed_while_failing: bool = False
 
     @property
     def newly_broken(self) -> bool:
@@ -95,6 +99,12 @@ class Verification:
     @property
     def already_failing(self) -> list[CheckOutcome]:
         return [c for c in self.checks if not c.ok and c.pre_existing and c.skipped is None]
+
+    @property
+    def worsened(self) -> list[CheckOutcome]:
+        """Failing before and after, but not identically. Not charged to the run -- a coarse
+        pass/fail baseline cannot prove the run caused the difference -- but not hidden."""
+        return [c for c in self.checks if c.pre_existing and c.changed_while_failing]
 
     @property
     def compared(self) -> bool:
@@ -340,13 +350,17 @@ def verify(
             checks.append(outcome)
             continue
         before = command_baseline.get(command)
+        was_failing = before is not None and not before.ok and before.skipped is None
         checks.append(
             CheckOutcome(
                 name=outcome.name,
                 ok=False,
                 detail=outcome.detail,
-                pre_existing=before is not None and not before.ok,
+                pre_existing=was_failing,
                 unattributable=before is None or before.skipped is not None,
+                changed_while_failing=(
+                    was_failing and before is not None and before.detail != outcome.detail
+                ),
             )
         )
     return Verification(checks=tuple(checks), unchecked_files=unchecked)

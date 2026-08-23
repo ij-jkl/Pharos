@@ -230,6 +230,41 @@ def test_commands_are_skipped_when_the_run_wrote_nothing(tmp_path: Path) -> None
     assert [c.skipped for c in result.checks if c.name == command] == ["the run wrote no files"]
 
 
+def test_a_red_repository_getting_redder_is_reported_not_hidden(tmp_path: Path) -> None:
+    """A pass/fail baseline cannot tell "unchanged" from "made worse" once a check is already
+    failing, so a run that adds an error to an already-red lint gate would otherwise be
+    invisible. It is not charged to the run -- attribution needs a measurement nobody has --
+    but the output moving is said out loud."""
+    command = _py("import sys; print('two errors'); sys.exit(1)")
+    (tmp_path / "a.py").write_text(GOOD_PY, encoding="utf-8")
+    result = verify(
+        tmp_path,
+        written=["a.py"],
+        commands=[command],
+        command_baseline={
+            command: CheckOutcome(name=command, ok=False, detail="one error")
+        },
+        syntax_baseline={},
+        timeout=60,
+    )
+    assert result.ok  # still not blamed on the run
+    assert [c.name for c in result.worsened] == [command]
+
+
+def test_an_unchanged_failure_is_not_reported_as_worsened(tmp_path: Path) -> None:
+    command = _py("import sys; print('same'); sys.exit(1)")
+    (tmp_path / "a.py").write_text(GOOD_PY, encoding="utf-8")
+    result = verify(
+        tmp_path,
+        written=["a.py"],
+        commands=[command],
+        command_baseline={command: CheckOutcome(name=command, ok=False, detail="same")},
+        syntax_baseline={},
+        timeout=60,
+    )
+    assert result.ok and not result.worsened
+
+
 def test_ran_separates_nothing_broken_from_nothing_checked(tmp_path: Path) -> None:
     """A CI step has to be able to tell those apart; ``ok`` alone cannot."""
     nothing = verify(
