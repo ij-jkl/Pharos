@@ -876,3 +876,39 @@ async def test_a_nested_tree_groups_end_to_end(
     assert plan.ok
     grouped = [normalise_display(f.display) for part in plan.parts for f in part.files]
     assert sorted(grouped) == sorted(names)
+
+
+@pytest.mark.anyio
+async def test_a_proposal_that_decided_nothing_says_so(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One group covering everything is accepted, and is position packing in a hat.
+
+    Repair cuts it in the order it arrived, which is the order the prompt named things, which
+    is exactly what first-fit does. The provenance is genuinely semantic -- this is what the
+    model proposed -- but calling it "grouped by meaning" and stopping there would credit a
+    decision nobody made.
+    """
+    monkeypatch.setattr(split, "ask", _answers(_reply([("Everything", list(_FILES))]))[0])
+    plan = await _plan(tree)
+    baseline = await _plan(tree, semantic_on=False)
+
+    assert plan.grouping is Grouping.SEMANTIC
+    assert plan.grouping_note is not None
+    assert "identical to position packing, so the model changed nothing" in plan.grouping_note
+    assert [[f.display for f in p.files] for p in plan.parts] == [
+        [f.display for f in p.files] for p in baseline.parts
+    ]
+
+
+@pytest.mark.anyio
+async def test_a_real_regrouping_does_not_claim_it_changed_nothing(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    groups = [("one", ["zeta.py", "alpha.py"]), ("two", ["epsilon.py", "beta.py"])]
+    groups.append(("three", ["delta.py", "gamma.py"]))
+    monkeypatch.setattr(split, "ask", _answers(_reply(groups))[0])
+    plan = await _plan(tree)
+    assert plan.grouping is Grouping.SEMANTIC
+    assert plan.grouping_note is not None
+    assert "changed nothing" not in plan.grouping_note

@@ -328,6 +328,11 @@ Some specifics worth knowing before you turn it on:
 - **It does not fire every time, and a rejection costs one backend call and nothing else.** On
   a six-file task at a tight budget, two of three models produced a usable grouping and the
   third dropped a file.
+- **A proposal can be accepted and have decided nothing.** Asked to group six files, a model
+  may hand back one group containing all six; the oversized-group repair then cuts it in
+  order, and the result is position packing wearing the model's title. That is detected and
+  said — *"the partition is identical to position packing, so the model changed nothing"* —
+  because the alternative is crediting a decision nobody made.
 - **Nothing here measures whether a grouping is *good*.** The checks establish that a plan is
   valid — every file present, every part fitting, the order the model asked for. Whether
   "Migrations, Clients, Routes, Errors" is a sensible part is not something any of them can

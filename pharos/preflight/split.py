@@ -521,17 +521,33 @@ def _semantic_bins(
         repaired = f" {split_count} groups were too big for one part and were split in order."
     else:
         repaired = ""
+    # A proposal can be accepted and still have decided nothing. Asked to group six files, a
+    # model may return them as one group; repair then cuts that group in order, and the result
+    # is position packing wearing the model's title. The provenance is still semantic — this
+    # IS what it proposed — but calling it "grouped by meaning" and leaving it there would
+    # credit a decision that was not made. Cheap to detect, so it is said.
+    same_as_position = _partition(bins) == _partition(position_bins)
+    identical = (
+        " The partition is identical to position packing, so the model changed nothing."
+        if same_as_position
+        else ""
+    )
     # Not "grouped by X": every renderer prints that as a label beside this, and the JSON has
     # it as its own field, so leading with it gave "grouped by meaning - grouped by qwen..."
     # on every accepted plan.
     return _Grouped(
         note=(
-            f"{model} chose {shape}.{repaired} The grouping and the part order are its own; "
-            f"every projection below is not"
+            f"{model} chose {shape}.{repaired}{identical} The grouping and the part order are "
+            f"its own; every projection below is not"
         ),
         bins=bins,
         titles=titles,
     )
+
+
+def _partition(bins: list[list[PartFile]]) -> list[list[str]]:
+    """A grouping reduced to what it actually decided: which labels sit together, in order."""
+    return [[unit.label() for unit in group] for group in bins]
 
 
 def _repair(
