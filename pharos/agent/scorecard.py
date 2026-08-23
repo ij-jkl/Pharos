@@ -1,16 +1,18 @@
-"""Did the run actually work? Five questions, all answerable without asking a model.
+"""Did the run actually work? Six questions, all answerable without asking a model.
 
 "Every part completed" is not success. A part completes by replying without calling a tool,
 which is exactly what a model does when it has read its files and described the change instead
 of making it. The per-part lines say what happened; this says whether it added up.
 
-Nothing here interprets the code that was written. Whether the edit is correct is outside what
-Pharos claims — `git diff` is the reviewer, and a scorecard that implied otherwise would be
-the same overclaiming this project refuses everywhere else. What can be measured exactly is
-whether the run covered its scope, kept its thread, stayed inside its window, and whether
-Pharos's own arithmetic held up against the backend's.
+Nothing here interprets the code that was written, and no model is asked to. Whether an edit
+is *right* remains outside what Pharos claims — `git diff` is still the reviewer. What can be
+measured exactly is whether the run covered its scope, kept its thread, stayed inside its
+window, whether Pharos's own arithmetic held up against the backend's, and whether the
+project's own checks still pass. That last one is an exit code from a tool the repository
+already had, which is a fact rather than an opinion; a scorecard that offered an opinion would
+be the overclaiming this project refuses everywhere else.
 
-The five:
+The six:
 
 * **Coverage** — of the files the plan assigned, how many were written. The headline. A run
   that touches three of twenty did not succeed, whatever its parts reported.
@@ -32,6 +34,12 @@ The five:
   been wrong.
 * **Headroom** — the highest fraction of any part's ceiling actually used. Near 100% means the
   next slightly larger file breaks the run; low means the division has room.
+* **Verification** — the project's own checks, re-run afterwards. Coverage says every
+  assigned file was written; it cannot say the result still parses. A measured run scored 100%
+  coverage and shipped `sorted(total.items(), ...)` where the variable is `totals` - COMPLETE,
+  and a NameError. Every check also runs BEFORE the first part, so a repository that arrived
+  red is reported as such and never charged to the run, and only a check that PASSED before
+  and fails after counts against it.
 * **Drift** — Pharos's own projection against the backend's ``prompt_eval_count``, paired per
   REQUEST. The number this project is least entitled to hide, and the one it has been most
   wrong about.
@@ -65,6 +73,7 @@ from dataclasses import dataclass, field
 
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import normalise
+from pharos.agent.verify import Verification
 
 
 def _carried_the_work(part: PartResult) -> bool:
@@ -133,6 +142,10 @@ class Scorecard:
     # 0.96x is 40 tokens on a small prompt and 800 on a large one — and tokens are what the
     # safety margin is denominated in.
     worst_shortfall: int = 0
+
+    # What the project's own checks said afterwards, discounting whatever was already failing
+    # when the run started. None when verification was switched off or never ran.
+    verification: Verification | None = None
     # Parts where the backend's own count FELL mid-conversation: it stopped evaluating
     # everything it was sent. Not a drift statistic — proof that the window Pharos measured is
     # not the window in force, and that context was dropped without anybody being told.
@@ -202,6 +215,11 @@ class Scorecard:
         """
         if self.failed_parts:
             return False
+        if self.verification is not None and not self.verification.ok:
+            # Writing every assigned file is not success if the project stopped building on
+            # the way. Only checks that PASSED before the run count here, so this cannot be
+            # tripped by a repository that arrived red.
+            return False
         if self.coverage is None:
             # No scope to measure against, so the only honest test is whether anything at all
             # was written — a run that touched nothing is not a complete run.
@@ -210,7 +228,11 @@ class Scorecard:
 
 
 def score(
-    parts: list[PartResult], *, handoff_reserve: int, repair_parts: int = 0
+    parts: list[PartResult],
+    *,
+    handoff_reserve: int,
+    repair_parts: int = 0,
+    verification: Verification | None = None,
 ) -> Scorecard:
     """Reduce a finished run to the five questions above."""
     scoped: list[str] = []
@@ -297,6 +319,7 @@ def score(
         nudged_parts=sum(1 for p in parts if p.nudged),
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
         failed_parts=sum(1 for p in parts if p.error),
+        verification=verification,
     )
 
 
@@ -339,4 +362,25 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "nudged_parts": card.nudged_parts,
         "abandoned_parts": card.abandoned_parts,
         "failed_parts": card.failed_parts,
+        "verification": _verification_dict(card.verification),
+    }
+
+
+def _verification_dict(verification: Verification | None) -> dict[str, object] | None:
+    """The checks as plain data. `ran` matters as much as `ok`: a CI step must be able to tell
+    "nothing was broken" from "nothing was checked"."""
+    if verification is None:
+        return None
+    return {
+        "ok": verification.ok,
+        "ran": verification.ran,
+        "newly_broken": [
+            {"name": c.name, "detail": c.detail} for c in verification.newly_broken
+        ],
+        "already_failing": [c.name for c in verification.already_failing],
+        "passed": [c.name for c in verification.passing],
+        "skipped": [
+            {"name": c.name, "reason": c.skipped} for c in verification.skipped
+        ],
+        "unchecked_files": list(verification.unchecked_files),
     }

@@ -77,6 +77,18 @@ class PharosConfig(BaseModel):
     # unbounded repair loop is how a run stops having a knowable cost. Turn it off to see
     # what the plan alone achieves - which is what the coverage figures above measure.
     repair_pass: bool = True
+    # After the run, re-run the project's own checks and report what the run broke. Mechanical
+    # only: exit codes from tools the repository already configures, never a model's opinion of
+    # the code. Every check is also run BEFORE the first part, so a suite that was already red
+    # is reported as such and never charged to the run.
+    verify: bool = True
+    # The checks to run. Unset, Pharos detects the ones this repository configures and that are
+    # installed (ruff, pytest). Set it and the list is used verbatim -- which is how any other
+    # ecosystem gets checked, since detection deliberately invents nothing.
+    verify_commands: list[str] | None = None
+    # Per-command ceiling. A check that outruns it is reported as skipped, never as passing: a
+    # run must not be able to turn a slow suite into a green tick by waiting.
+    verify_timeout_seconds: float = Field(default=300.0, gt=0.0)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

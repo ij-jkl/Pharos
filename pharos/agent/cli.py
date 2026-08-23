@@ -37,6 +37,7 @@ from pharos.agent.runner import RunOutcome, run_task
 from pharos.agent.scorecard import Scorecard, score, to_dict
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import workspace_root
+from pharos.agent.verify import Verification
 from pharos.agent.workspace import GitGuardError
 from pharos.config import ConfigError, load_config
 from pharos.console import force_utf8
@@ -77,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-git",
         action="store_true",
         help="skip the clean-tree check and the run branch (you lose the undo)",
+    )
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip the project's own checks afterwards (they run twice, so a slow suite costs)",
     )
     args = parser.parse_args(argv)
 
@@ -139,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
                     prompt,
                     dry_run=args.dry_run,
                     use_git=not args.no_git,
+                    verify_work=not args.no_verify,
                     divide=not args.no_split,
                     on_event=report,
                 )
@@ -238,6 +245,12 @@ def _headline(card: Scorecard) -> tuple[str, str, str]:
             note += f", though {card.abandoned_parts} part(s) stopped early"
         return "COMPLETE", "bold green", note
     written, total = card.written_files, card.scoped_files
+    if written >= total and card.verification is not None and not card.verification.ok:
+        # Coverage is full, so "N of M files were never changed" would read "0 of 6" beside a
+        # 100% bar. The run is not incomplete for want of writing; it is broken for what it
+        # wrote, and the verdict has to say which.
+        names = ", ".join(check.name for check in card.verification.newly_broken)
+        return "BROKEN", "bold red", f"every file was changed, but {names} now fails"
     return "INCOMPLETE", "bold yellow", f"{total - written} of {total} files were never changed"
 
 
@@ -445,6 +458,45 @@ def _render_parts(console: Console, outcome: RunOutcome) -> None:
     console.print(table)
 
 
+def _add_verification_row(body: Table, verification: Verification | None) -> None:
+    """What the project's own checks said, and which of them this run actually broke.
+
+    Three states are kept apart on purpose. A check that never ran is not a pass, a check that
+    was already failing is not this run's doing, and only the difference between the two
+    sweeps is charged to the model.
+    """
+    if verification is None:
+        return
+    if not verification.ran:
+        reasons = {check.skipped for check in verification.skipped if check.skipped}
+        detail = "; ".join(sorted(reasons)) or "nothing to check"
+        body.add_row("verification", f"[dim]not run {chr(183)} {detail}[/]")
+        return
+
+    broken = verification.newly_broken
+    if broken:
+        lines = [
+            f"[red]{len(broken)} check(s) this run broke[/]  "
+            f"[dim]passed before, failing now[/]"
+        ]
+        for check in broken:
+            lines.append(f"[red]{chr(10007)}[/] {check.name}")
+            for line in check.detail.splitlines()[:3]:
+                lines.append(f"    [dim]{line.strip()}[/]")
+    else:
+        passed = ", ".join(check.name for check in verification.passing) or "none"
+        lines = [f"[green]{chr(10003)}[/] [dim]{passed}[/]"]
+
+    for check in verification.already_failing:
+        lines.append(f"[dim]{check.name} was already failing before the run[/]")
+    for check in verification.skipped:
+        lines.append(f"[dim]{check.name} skipped {chr(183)} {check.skipped}[/]")
+    if verification.unchecked_files:
+        count = len(verification.unchecked_files)
+        lines.append(f"[dim]{count} written file(s) in no format this can parse[/]")
+    body.add_row("verification", chr(10).join(lines))
+
+
 def _render_scorecard(console: Console, card: Scorecard) -> None:
     """The five questions, in the order they matter when a run disappoints."""
     word, style, qualifier = _headline(card)
@@ -542,6 +594,7 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"[dim]{card.nudged_parts} part(s) needed a reminder, "
             f"{card.abandoned_parts} stopped early[/]",
         )
+    _add_verification_row(body, card.verification)
 
     console.print()
     console.print(
@@ -640,6 +693,7 @@ def _render(
         outcome.parts,
         handoff_reserve=outcome.handoff_reserve,
         repair_parts=outcome.repair_parts,
+        verification=outcome.verification,
     )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.

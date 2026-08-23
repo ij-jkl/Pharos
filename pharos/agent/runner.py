@@ -20,6 +20,7 @@ between this and an agent that simply runs until it dies.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -36,6 +37,13 @@ from pharos.agent.tools import (
     normalise,
     scope_from_part_files,
     workspace_root,
+)
+from pharos.agent.verify import (
+    Verification,
+    baseline,
+    detect_commands,
+    syntax_state,
+    verify,
 )
 from pharos.agent.workspace import (
     NotARepository,
@@ -73,6 +81,9 @@ class RunOutcome:
     repair_parts: int = 0  # extra parts run over files the plan assigned and nobody changed
     handoff_reserve: int = 0  # what each part held back, so the scorecard can judge overruns
     via_proxy: bool = True
+    # What the project's own checks said afterwards. None when verification was off or
+    # the run never got as far as executing anything.
+    verification: Verification | None = None
     error: str | None = None
 
     @property
@@ -196,6 +207,7 @@ async def run_task(
     *,
     dry_run: bool = False,
     use_git: bool = True,
+    verify_work: bool = True,
     divide: bool = True,
     on_event: Callable[[str], None] | None = None,
 ) -> RunOutcome:
@@ -292,6 +304,29 @@ async def run_task(
             undo = Undo(root, root / ".pharos" / f"undo-{stamp}")
             outcome.undo = undo
             say(f"no git here — originals will be copied to {undo.directory} before any write")
+
+    # The checks, and their answers BEFORE anything is written. Taken here because a moment
+    # later the model starts editing, and a baseline captured after that measures nothing.
+    checks: list[str] = []
+    was_passing: dict[str, bool] = {}
+    parses_now: dict[str, str | None] = {}
+    if config.verify and verify_work:
+        checks = (
+            list(config.verify_commands)
+            if config.verify_commands is not None
+            else detect_commands(root)
+        )
+        parses_now = syntax_state(
+            root, [f.display for _, files in bodies if files for f in files]
+        )
+        if checks:
+            say(f"baseline: {', '.join(checks)}")
+            was_passing = await asyncio.to_thread(
+                baseline, root, checks, timeout=config.verify_timeout_seconds
+            )
+            for command, ok in was_passing.items():
+                if not ok:
+                    say(f"  {command} was already failing - it will not be charged to this run")
 
     proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"
 
@@ -400,6 +435,20 @@ async def run_task(
         outcome.files_changed = sorted(undo.saved)
     else:
         outcome.files_changed = changed_files(root) if use_git else []
+
+    if config.verify and verify_work:
+        say("verifying")
+        outcome.verification = await asyncio.to_thread(
+            verify,
+            root,
+            written=outcome.files_changed,
+            commands=checks,
+            command_baseline=was_passing,
+            syntax_baseline=parses_now,
+            timeout=config.verify_timeout_seconds,
+        )
+        for check in outcome.verification.newly_broken:
+            say(f"  {check.name} FAILED - it passed before this run")
     return outcome
 
 
