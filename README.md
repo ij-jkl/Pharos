@@ -357,6 +357,12 @@ verification  1 check(s) this run broke  passed before, failing now
 The model annotated `customer: "Customer"` and `List["LineItem"]` without importing either
 name. Exit code 1. Before this line existed the same run exited 0 and reported COMPLETE.
 
+That was not an unlucky sample. Three consecutive runs of that task wrote **every** assigned
+file and broke the build every time — `Customer`, `LineItem`, `Any`, each a name used without
+importing it, which is what annotating types looks like when the model is not tracking imports.
+Coverage read 100% on all three. It was not merely an incomplete measure of success; it was
+systematically flattering one.
+
 #### How verification stays honest
 
 Running the project's checks is easy; making the answer trustworthy is the work. Three rules:

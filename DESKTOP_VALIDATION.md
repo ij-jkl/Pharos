@@ -929,15 +929,25 @@ The fix is mechanical, so it stays on the same footing as coverage and drift: re
 the repository already configures, report their exit codes, and let the run's exit code follow.
 No model is asked what the code means.
 
-### Measured, three live runs against the 6-file fixture
+### Measured, four live runs against the 6-file fixture
 
 | run | fixture state | coverage | verification | verdict | exit |
 |---|---|---|---|---|---|
-| 1 | clean, ruff configured | 100% | `ruff check .` broke — F821 undefined `Customer`, `LineItem` | BROKEN | **1** |
-| 2 | clean, ruff configured | 100% | `ruff check .` broke — F401 unused `typing.Union` | BROKEN | **1** |
+| 1 | clean, ruff configured | 100% | broke — F821 undefined `Customer`, `LineItem` | BROKEN | **1** |
+| 2 | clean, ruff configured | 100% | broke — F401 unused `typing.Union` | BROKEN | **1** |
 | 3 | ruff **already failing** | 100% | already failing, not charged to the run | COMPLETE | **0** |
+| 4 | clean, ruff configured | 100% | broke — F821 undefined `Any` | BROKEN | **1** |
 
-Run 3 is the one that makes the other two usable. Without a baseline, verification would fail
+**Three of three clean runs wrote every assigned file and broke the build.** Not one, not an
+unlucky sample: every time, on the same task, with the model that won §16 on coverage. Each
+failure is a name used without importing it — `Customer`, `LineItem`, `Any` — which is what
+annotating types looks like when the model is not tracking imports.
+
+That is the measurement that justifies the whole line. Coverage was not merely incomplete as a
+success measure, it was systematically flattering: it read 100% on every one of those runs, and
+the exit code was 0 before this existed.
+
+Run 3 is the one that makes the other three usable. Without a baseline, verification would fail
 every run on any repository with a pre-existing lint error, and would be switched off within a
 day. The run announces it up front — `ruff check . was already failing - it will not be charged
 to this run` — and the verdict is unaffected.
