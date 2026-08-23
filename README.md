@@ -11,7 +11,8 @@ budget in real time and never hit a silent context overflow or OOM again.
 **Status: v0.4 "Do"** — the proxy stays observe-only and a pure passthrough (Pharos never
 mutates a request or a response). Alongside it, three tools outside the request path: what a
 prompt will cost before you paste it (`pharos check`), how to cut it up when it will not fit
-(`pharos split`), and carrying those parts out against your local model (`pharos run`).
+(`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
+finishes by re-running your project's own checks and failing the run if it broke them.
 
 ![The Pharos dashboard: a context-mismatch banner reading "advertised 262,144, loaded 32,768 (12.5% of capacity)", context and VRAM gauges, and a request event log showing input counts labelled (exact) and (estimate - gguf)](docs/pharos-dashboard.svg)
 
@@ -275,7 +276,7 @@ that happens, per part, rather than letting the totals absorb it. `git diff` is 
 
 "Every part completed" is not success. A part completes by replying without calling a tool —
 exactly what a model does when it has read its files and *described* the change instead of
-making it. So every run ends with five numbers, none of which require asking a model anything:
+making it. So every run ends with six numbers, none of which require asking a model anything:
 
 ```
 Scorecard
@@ -289,6 +290,10 @@ Scorecard
   drift        our estimate ran 0.94-4.70x the backend's count over 72 request(s),
                4.46x on the largest  (worst shortfall 60 tokens, inside the 256-token margin)
   convergence  6 part(s) needed a nudge, 0 stopped early
+  verification 1 check(s) this run broke  passed before, failing now
+                 x ruff check .
+                     F821 Undefined name `Customer`
+                     --> src/orders.py:5:56
 ```
 
 That is a real run, not an illustration. Two of its lines are worth reading together: the
@@ -333,13 +338,53 @@ task, those were exactly the two cases.
   reports the worst shortfall in **tokens** against the safety margin that absorbs it —
   measured at 60 tokens against a 256-token margin.
 
-`--json` emits the same thing for a script or a CI step, and **the exit code follows coverage,
-not survival**: 0 only when the run wrote everything it was given and no part failed. A run
-whose parts all said "done" while three files were never touched exits 1, because exiting 0
-would flatter precisely the failure this tool exists to expose.
+- **Verification** is the project's own checks, re-run afterwards. Coverage says every
+  assigned file was written; it cannot say the result still works. A measured run wrote all six
+  of its files, scored 100%, and left `sorted(total.items(), ...)` where the variable is
+  `totals` — COMPLETE, and a `NameError`. Ruff calls that F821 in milliseconds, so this
+  runs the tools the repository already has and reports their exit codes. No model is asked
+  what the code means; the rule the splitter is built on still holds.
 
-None of this says the code is *correct*. That is outside what Pharos claims; `git diff` is the
-reviewer.
+#### How verification stays honest
+
+Running the project's checks is easy; making the answer trustworthy is the work. Three rules:
+
+**A baseline first.** Every check also runs *before* the first part. A suite that was already
+red is reported as such and never charged to the run — without that, verification would fail
+every run on any repository with a failing test in it, and you would switch it off within a
+day. Only a check that **passed before and fails after** can fail the run.
+
+**A check that could not run is skipped by name**, never counted as a pass: no tool on PATH, an
+unparseable command, a timeout. A run must not be able to turn a slow suite green by outwaiting
+it. A failure whose baseline never completed is reported as unattributable rather than blamed
+on the run, and a check that was failing before and now fails *differently* is called out — a
+pass/fail baseline cannot prove the run made an already-red repository worse, but it should not
+hide it either.
+
+**Only your own tools.** Detection fires solely where the repository configures a tool *and* it
+is installed — currently `ruff` and `pytest`. Pharos does not decide what your build is. Any
+other ecosystem is one config line, and takes the same code path:
+
+```toml
+verify_commands = ["dotnet build --nologo", "npm test"]
+verify_timeout_seconds = 300
+verify = true            # false, or `--no-verify`, to skip it
+```
+
+A syntax parse of everything written needs no tooling at all and runs everywhere. Formats it
+cannot parse (`.cs`, `.ts`, `.md`) are **counted and reported**, not waved through — a green
+tick over a language nothing parsed would be exactly the overclaiming this project avoids.
+
+`--json` emits the same thing for a script or a CI step, and **the exit code follows coverage
+and verification, not survival**: 0 only when the run wrote everything it was given, no part
+failed, and nothing that was working before the run is broken after it. A run whose parts all
+said "done" while three files were never touched exits 1, and so does one that wrote every file
+and stopped the project building — because exiting 0 would flatter precisely the failures this
+tool exists to expose.
+
+Pharos still does not tell you the code is *right*. `git diff` remains the reviewer. What it
+now tells you is whether the code still **builds**, which is a different question with an exact
+answer.
 
 ## Ambiguity, notebooks, and JSON
 
@@ -404,8 +449,9 @@ re-encoding or re-chunking.
 - **No semantic decomposition.** `pharos split` cuts by scope and by position, never by
   meaning, and no model is ever asked what your task means. `pharos run` executes those same
   mechanically-derived parts — it divides by files and by position, never by intent.
-- **No verification of the work.** `pharos run` proves a task fit and ran; it does not build,
-  test or review what the model wrote.
+- **No review of the work.** `pharos run` re-runs the checks your project already has and
+  reports what broke (see below), but nothing reads the diff and judges it. Whether the code is
+  *right* is still yours; whether it still *builds* is now measured.
 - **No change auditing / filesystem watching.**
 
 Those belong to later tiers. The contract is simple: what your agent sends is what the
@@ -422,8 +468,9 @@ uv run pytest
 ```
 
 Tokenizer tests against a real GGUF auto-skip unless a model file is present under
-`tests/models/` (gitignored). See `DESKTOP_VALIDATION.md` for the checklist of assumptions
-to confirm against a live GPU + Ollama machine.
+`tests/models/` (gitignored). `CHANGELOG.md` is the tier-by-tier history;
+`DESKTOP_VALIDATION.md` is the working record of every assumption confirmed against a live
+GPU + Ollama machine, including the ones that turned out to be wrong.
 
 `tests/test_end_to_end.py` runs the whole loop against a mocked backend — a coding-agent-shaped
 request through the proxy, the observation it records, the overhead the pre-flight learns from

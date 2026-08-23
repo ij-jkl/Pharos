@@ -74,6 +74,34 @@ log_file = "pharos.log"
 # agent at). Unset: the current directory is used, with a warning.
 # target_folder = "."
 
+# --- verification (v0.4.2) ----------------------------------------------------------------------
+
+# After a run, re-run the checks this project already has and report what the run broke. The
+# exit code follows it: a run that wrote every file and stopped the project building exits 1.
+#
+# Mechanical only -- exit codes from your own tools, never a model's opinion of the code. Every
+# check ALSO runs before the first part, so a suite that was already failing is reported as
+# such and never charged to the run.
+verify = true
+
+# The checks to run. Left unset, Pharos detects the ones this repository configures AND that
+# are installed (ruff, pytest) -- it never invents a build command for a project that did not
+# ask for one. Set this and the list is used verbatim, which is how any other ecosystem is
+# checked:
+#
+#   verify_commands = ["dotnet build --nologo"]
+#   verify_commands = ["npm test", "npx tsc --noEmit"]
+#   verify_commands = ["ruff check .", "mypy src", "pytest -q"]
+#
+# A tool that is not on PATH is reported as skipped, never as passing.
+# verify_commands = []
+
+# Per-command ceiling, in seconds. A check that outruns it is reported as skipped rather than
+# passed: a run must not be able to turn a slow suite green by outwaiting it. Note that checks
+# run twice (once for the baseline), so a slow suite costs double -- `pharos run --no-verify`
+# skips both.
+verify_timeout_seconds = 300
+
 # --- pre-flight calibration (v0.2 "Warn") -------------------------------------------------------
 
 # Tokens your coding agent adds on top of a pasted prompt: system prompt, tool catalogue,

@@ -918,3 +918,65 @@ margin stays as the first-request guess, before any response exists to learn fro
 
 Re-run after the change: coverage held at 100%, headroom 8%. Tightening the ceiling cost
 nothing.
+
+## ☑ 17. Verification — does the run leave the project building? (v0.4.2, live)
+
+Coverage answers "was every assigned file written". It cannot answer "does the result still
+work", and §16 showed the difference is not academic: a run scored 100% coverage and shipped
+`sorted(total.items(), ...)` where the variable is `totals`. COMPLETE, and a `NameError`.
+
+The fix is mechanical, so it stays on the same footing as coverage and drift: re-run the checks
+the repository already configures, report their exit codes, and let the run's exit code follow.
+No model is asked what the code means.
+
+### Measured, three live runs against the 6-file fixture
+
+| run | fixture state | coverage | verification | verdict | exit |
+|---|---|---|---|---|---|
+| 1 | clean, ruff configured | 100% | `ruff check .` broke — F821 undefined `Customer`, `LineItem` | BROKEN | **1** |
+| 2 | clean, ruff configured | 100% | `ruff check .` broke — F401 unused `typing.Union` | BROKEN | **1** |
+| 3 | ruff **already failing** | 100% | already failing, not charged to the run | COMPLETE | **0** |
+
+Run 3 is the one that makes the other two usable. Without a baseline, verification would fail
+every run on any repository with a pre-existing lint error, and would be switched off within a
+day. The run announces it up front — `ruff check . was already failing - it will not be charged
+to this run` — and the verdict is unaffected.
+
+Both failures are real defects a human reviewer would have caught and the scorecard previously
+could not: the model annotated `customer: "Customer"` and `List["LineItem"]` without importing
+either name.
+
+### Finding: the verdict contradicted itself (fixed)
+
+The first run printed `INCOMPLETE — 0 of 6 files were never changed` beside a full coverage
+bar. Incompleteness was assumed to mean missing writes. Full coverage with a broken build now
+reads `BROKEN — every file was changed, but ruff check . now fails`.
+
+### Finding: the failure excerpt showed the wrong end (fixed)
+
+Keeping the last six lines of a failing tool's output was calibrated for pytest, which puts its
+summary last. Ruff leads with the diagnostic, so the report showed three lines of source
+context and no rule code. Both ends are kept now, with a marker for what was dropped.
+
+### Finding: a skipped baseline posed as a passing one (fixed)
+
+`run_command` returns `ok=True` for a check it could not run — no tool on PATH, or a timeout —
+because a check that did not run must never read as a failure. The baseline stored only that
+boolean, so a check whose *baseline* timed out and which then failed afterwards was charged to
+the run on the strength of one measurement. The whole outcome is kept now; a failure with no
+usable "before" is reported as unattributable.
+
+### Known limit: a coarse baseline on an already-red repository
+
+The comparison is pass-against-fail. On a repository whose lint gate was already failing, a run
+that adds an error to it fails before and after and is not charged. That is not silently
+accepted — when the output differs, the report says the check was already failing *and its
+output has changed* — but attribution needs a per-error comparison no generic tool output
+supports, so no verdict is claimed either way.
+
+### Known limit: detection is Python-only
+
+`ruff` and `pytest` are detected when the repository configures them and they are installed.
+Nothing else is auto-detected, deliberately: inventing a `dotnet build` for a project that
+never asked would be Pharos deciding what your build is, and build commands write artifacts.
+Every other ecosystem goes through `verify_commands`, which is the same code path.
