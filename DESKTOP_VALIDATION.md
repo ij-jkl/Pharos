@@ -1185,6 +1185,40 @@ and one extra hand-off.
 One of three to two of three. The remaining failure is a coverage failure, which repair cannot
 fix and should not: a grouping missing a file is not a grouping of your task.
 
+### The bug every fixture above was blind to
+
+Everything measured so far used files in one flat directory — `alpha.py`, `db_models.py`,
+`sprite_batch.py`. The first run against a project with a `src/` directory failed on all three
+groupers, with this:
+
+```
+the proposal was rejected - its file list did not match the scope - it dropped
+src\clock_ticks.py, src\clock_timers.py, src\store_index.py and 3 more, invented
+src/clock_ticks.py, src/clock_timers.py, src/store_index.py and 3 more
+```
+
+Every file reported as **dropped and invented at once**. The report spells paths with the
+platform separator; the model answers in posix, whatever spelling it was shown. So the
+comparison missed on punctuation and semantic grouping could never succeed on Windows outside
+a flat directory — which is to say, on any real project.
+
+The same bug, with a different symptom, had already been found and fixed once in the tool
+dispatcher, where it refused every part access to its own files and looked exactly like a model
+ignoring its scope. There were two implementations of the same rule and the second one grew the
+same defect. There is one now, in `pharos/paths.py`, and both layers call it.
+
+Same task, same three groupers, after:
+
+| grouper | before | after |
+|---|---|---|
+| `gemma3:12b` | rejected | accepted, 2 parts |
+| `qwen2.5-coder:7b` | rejected | accepted, **Storage / Wire / Clock**, exactly right |
+| `qwen3.5:9b` | rejected | accepted, 2 parts |
+
+Nought of three to three of three. The question is also asked in posix now, so the model is
+answering in the spelling it was shown rather than translating; matching still normalises, since
+the translation was never the model's fault to begin with.
+
 ### Known limit: acceptance is not quality
 
 Worth being blunt about, because this change made it more true. What the checks establish is

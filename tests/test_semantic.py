@@ -20,6 +20,7 @@ import pytest
 
 from pharos.accountant import Accountant
 from pharos.config import PharosConfig
+from pharos.paths import normalise_display
 from pharos.preflight import semantic, split
 from pharos.preflight.check import run_check
 from pharos.preflight.cli import main as check_main
@@ -37,6 +38,7 @@ from pharos.preflight.semantic import (
 from pharos.preflight.split import Grouping, SplitMode, build_plan
 from pharos.profiler.types import BackendInfo, EnvironmentProfile, GpuInfo
 
+BS = chr(92)  # a literal backslash, kept out of every string below
 _FILES = ("alpha.py", "beta.py", "gamma.py", "delta.py", "epsilon.py", "zeta.py")
 _TARGET = 3000
 
@@ -812,3 +814,62 @@ def test_semantic_is_accepted_alongside_split(
     monkeypatch.setattr(split, "ask", _answers(None, "offline")[0])
     # No files named, so there is nothing to split and no grouping call -- the flag just parses.
     assert check_main(["--split", "--semantic", "--target", "4000", "hello"]) in (0, 1, 2)
+
+# ------------------------------------------------------------------- path spellings
+
+
+def test_validate_matches_across_separators() -> None:
+    """The scope holds Windows separators; the model answers posix. Same files."""
+    files = tuple(FileBrief(n, 100) for n in ("src\\a.py", "src\\b.py"))
+    request = _request(files=files)
+    assert validate(_proposal(["src/a.py"], ["src/b.py"]), request) is None
+    assert validate(_proposal(["./src/a.py", "src\\b.py"]), request) is None
+
+
+def test_validate_matches_case_insensitively_when_unambiguous() -> None:
+    request = _request(files=(FileBrief("src/Store.py", 100),))
+    assert validate(_proposal(["src/store.py"]), request) is None
+
+
+def test_validate_still_catches_a_genuinely_invented_path() -> None:
+    request = _request(
+        files=(FileBrief("src\\a.py", 100), FileBrief("src\\b.py", 100))
+    )
+    reason = validate(_proposal(["src/a.py"], ["src/ghost.py"]), request)
+    assert reason is not None
+    assert "invented" in reason and "src/ghost.py" in reason
+    assert "dropped" in reason and "src\\b.py" in reason
+
+
+def test_the_question_asks_in_posix(tmp_path: Path) -> None:
+    request = _request(files=(FileBrief("src\\deep\\a.py", 100),))
+    body = request_payload(_config(tmp_path), request, "m")["messages"][0]["content"]
+    assert "- src/deep/a.py (100 tokens)" in body
+    assert "\\" not in body
+
+
+@pytest.mark.anyio
+async def test_a_nested_tree_groups_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bug this block exists to prevent: every file dropped AND invented, on Windows only.
+
+    Every other fixture in this file is flat, so "alpha.py" has no separator to disagree about
+    and the whole feature looked healthy while being unusable on any real project.
+    """
+    (tmp_path / "src").mkdir()
+    names = [f"src/mod{i}.py" for i in range(6)]
+    for name in names:
+        (tmp_path / name).write_text("x" * 4000, encoding="utf-8")
+
+    # The model answers in posix, which is NOT how the report spells them on Windows.
+    monkeypatch.setattr(split, "ask", _answers(_reply([("a", names[:3]), ("b", names[3:])]))[0])
+    config = _config(tmp_path)
+    prompt = "Refactor " + ", ".join(names) + " to share one settings object."
+    report = await run_check(config, prompt, profile=_profile(tmp_path))
+    plan = build_plan(config, prompt, report, target=_TARGET, semantic=True)
+
+    assert plan.grouping is Grouping.SEMANTIC, plan.grouping_note
+    assert plan.ok
+    grouped = [normalise_display(f.display) for part in plan.parts for f in part.files]
+    assert sorted(grouped) == sorted(names)

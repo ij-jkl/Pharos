@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from pharos.agent.workspace import Undo, Workspace, WorkspaceError
+from pharos.paths import normalise_display
 from pharos.preflight.content import BinaryFile, read_countable
 from pharos.preflight.split import PartFile
 
@@ -504,13 +505,11 @@ def _existing_newline(path: Path) -> str:
 def normalise(display: str) -> str:
     """One spelling for a path, so scope lookups cannot miss on separators alone.
 
-    ``PartFile.display`` comes from the splitter using the platform's own separator (a
-    backslash on Windows), ``Workspace.display`` returns posix, and a model asks for
-    whichever it feels like — all three turned up in one real run. Comparing them raw refused
-    every part access to its own files, and the symptom was indistinguishable from a model
-    that simply will not respect its scope.
+    Kept as a name here because the scope machinery reads better for it; the rule itself lives
+    in ``pharos.paths``, which is also where the semantic grouper gets it. It had been
+    reimplemented there, and promptly grew the same bug this function exists to fix.
     """
-    return display.replace("\\", "/")
+    return normalise_display(display)
 
 
 def scope_from_part_files(files: list[PartFile]) -> dict[str, ScopeEntry]:

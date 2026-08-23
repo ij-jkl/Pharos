@@ -38,6 +38,7 @@ from enum import Enum
 from pathlib import Path
 
 from pharos.config import PharosConfig
+from pharos.paths import normalise_display, resolve_display
 from pharos.preflight.check import CheckReport, CountedFile, build_counter
 from pharos.preflight.content import BinaryFile, read_countable
 from pharos.preflight.semantic import FileBrief, GroupRequest, ask, brief, parse, validate
@@ -477,8 +478,14 @@ def _semantic_bins(
     if rejection is not None:
         return _declined(f"the proposal was rejected — {rejection}")
 
-    by_name = {u.display: u for u in units}
-    proposed = [[by_name[name] for name in group.files] for group in proposal.groups]
+    # Keyed on the canonical spelling for the same reason validate() compares on it: the model
+    # answers in posix whatever it was shown, and a raw dict lookup would KeyError on Windows.
+    by_name = {normalise_display(u.display): u for u in units}
+    known = {key: key for key in by_name}
+    proposed = [
+        [by_name[key] for name in group.files if (key := resolve_display(name, known)) is not None]
+        for group in proposal.groups
+    ]
     bins, titles, split_count = _repair(
         proposed, [g.title for g in proposal.groups], per_part_content, max_files
     )

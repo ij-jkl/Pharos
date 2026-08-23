@@ -59,6 +59,7 @@ from typing import Any
 import httpx
 
 from pharos.config import PharosConfig
+from pharos.paths import normalise_display, resolve_display
 
 _TIMEOUT = httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0)
 
@@ -265,7 +266,10 @@ def _listing(files: tuple[FileBrief, ...]) -> str:
     show = spend <= _EXCERPT_TOTAL_CHARS
     rows: list[str] = []
     for f in files:
-        row = f"- {f.display} ({f.tokens:,} tokens)"
+        # Posix, always. Shown a Windows path the model writes a posix one back regardless,
+        # so asking in the spelling it will answer in removes a whole class of mismatch at
+        # the source. resolve_display still maps whatever arrives onto the real name.
+        row = f"- {normalise_display(f.display)} ({f.tokens:,} tokens)"
         if show and f.excerpt:
             row += f"\n    {f.excerpt}"
         rows.append(row)
@@ -354,17 +358,23 @@ def validate(proposal: Proposal, request: GroupRequest) -> str | None:
     answer over the arithmetic. The packer splits those instead — see ``pharos.preflight.split``
     — and the part count is re-checked afterwards, once it is known.
     """
-    expected = request.names
-    proposed = proposal.names
     if any(not group.files for group in proposal.groups):
         return "it proposed an empty part"
     if len(proposal.groups) > request.max_parts:
         return (
             f"it proposed {len(proposal.groups)} parts against a ceiling of {request.max_parts}"
         )
-    if sorted(proposed) != sorted(expected):
+    # Compared on the canonical spelling, or every file on Windows reads as dropped AND
+    # invented at once: the scope holds src\store.py and the model answers src/store.py.
+    known = {normalise_display(name): name for name in request.names}
+    resolved = [resolve_display(name, known) for name in proposal.names]
+    proposed = [name for name in resolved if name is not None]
+    invented = sorted(
+        {raw for raw, hit in zip(proposal.names, resolved, strict=True) if hit is None}
+    )
+    expected = request.names
+    if invented or sorted(proposed) != sorted(expected):
         missing = sorted(set(expected) - set(proposed))
-        invented = sorted(set(proposed) - set(expected))
         repeated = sorted({n for n in proposed if proposed.count(n) > 1})
         return _coverage_reason(missing, invented, repeated)
     return None
