@@ -1413,3 +1413,30 @@ def test_a_tool_is_offered_only_the_room_that_really_remains(workspace: Workspac
     assert session._ceiling - session._projected_for_ceiling() < (
         session._ceiling - session._projected()
     )
+
+
+def test_no_git_reports_what_it_wrote_rather_than_nothing() -> None:
+    """--no-git has no diff to ask and no snapshot to list, and used to answer "nothing".
+
+    That was not "we do not know" but a positive claim, printed as "Nothing was written" under
+    a run that had just correctly edited both its files. It also went to the verifier as the
+    set of written files, so --no-git quietly turned the syntax check off: a run could break
+    every file in the tree and be told there was nothing in a format it could parse.
+    """
+    from pharos.agent.runner import written_by_parts
+
+    def part(*written: str) -> PartResult:
+        return PartResult(
+            text="",
+            steps=1,
+            files_written=list(written),
+            peak_tokens=0,
+            reported_tokens=None,
+            stopped_early=False,
+        )
+
+    assert written_by_parts([]) == []
+    assert written_by_parts([part()]) == []
+    # Deduplicated across parts, and one spelling: a repair part rewrites what a plan part did.
+    got = written_by_parts([part(r"src\a.py", "src/b.py"), part("src/a.py")])
+    assert got == ["src/a.py", "src/b.py"]

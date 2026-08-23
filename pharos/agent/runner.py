@@ -202,6 +202,16 @@ async def _load_and_recheck(
     return await run_check(config, prompt)
 
 
+def written_by_parts(parts: list[PartResult]) -> list[str]:
+    """Every path the dispatcher recorded itself writing, deduplicated.
+
+    Pharos's own account of what it did, not the model's: ``ToolBox.files_written`` is appended
+    after a write succeeds. Weaker than a diff — a write that restored a file's original bytes
+    still counts — and the only answer available when there is no git and no snapshot.
+    """
+    return sorted({normalise(path) for part in parts for path in part.files_written})
+
+
 async def run_task(
     config: PharosConfig,
     prompt: str,
@@ -441,8 +451,20 @@ async def run_task(
 
     if undo is not None:
         outcome.files_changed = sorted(undo.saved)
+    elif use_git:
+        outcome.files_changed = changed_files(root)
     else:
-        outcome.files_changed = changed_files(root) if use_git else []
+        # --no-git, so there is no diff to ask and no snapshot to list. This used to be an
+        # empty list, which was not "we do not know" but a positive claim that nothing was
+        # written — printed as "Nothing was written" under a run that had just correctly
+        # edited both its files. Worse, it went to the verifier as the set of written files,
+        # so --no-git quietly turned the syntax check off: a run could break every file in
+        # the tree and be told there was nothing in a format it could parse.
+        #
+        # The dispatcher records each path as it writes it, so this is Pharos's own account
+        # of what it did rather than the model's. Weaker than a diff — a write that restored
+        # a file's original bytes still counts here — and much better than silence.
+        outcome.files_changed = written_by_parts(outcome.parts)
 
     if config.verify and verify_work:
         say("verifying")
