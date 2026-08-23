@@ -668,6 +668,39 @@ def _render_footer(console: Console, outcome: RunOutcome) -> None:
     console.print()
 
 
+def _plan_summary(outcome: RunOutcome) -> dict[str, object] | None:
+    """How the parts were arranged, for a reader that is a script.
+
+    The human output says whether a model grouped the parts and why, on every run. The JSON
+    said nothing at all, so a CI step consuming it could not tell a model-arranged plan from a
+    position-packed one -- which is the single outcome --semantic is not allowed to have, and
+    it had it in the only format a machine reads.
+
+    Part bodies are left out on purpose: they can run to several KB each and, unlike in
+    `pharos check --json`, they have already been executed by the time anyone reads this.
+    """
+    plan = outcome.plan
+    if plan is None:
+        return None
+    return {
+        "mode": plan.mode.value,
+        "divided": outcome.divided,
+        "grouping": plan.grouping.value,
+        "grouping_note": plan.grouping_note,
+        "target_per_part": plan.target_per_part,
+        "handoff_reserve": plan.handoff_reserve,
+        "parts": [
+            {
+                "index": part.index,
+                "title": part.title,
+                "projected_tokens": part.projected_tokens,
+                "files": [f.display for f in part.files],
+            }
+            for part in plan.parts
+        ],
+    }
+
+
 def _render(
     console: Console,
     outcome: RunOutcome,
@@ -721,42 +754,12 @@ def _render(
     )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.
-        sys.stdout.write(json.dumps(to_dict(card), indent=2) + "\n")
+        payload: dict[str, object] = dict(to_dict(card))
+        payload["plan"] = _plan_summary(outcome)
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return 0 if card.complete else 1
 
     _render_parts(console, outcome)
     _render_scorecard(console, card)
     _render_footer(console, outcome)
-    return 0 if card.complete else 1
-
-    console.print()
-    _render_scorecard(console, card)
-
-    if outcome.files_changed:
-        console.print(f"[bold]Changed {len(outcome.files_changed)} file(s):[/]")
-        for path in outcome.files_changed:
-            console.print(f"  {path}")
-    else:
-        console.print("[yellow]No files changed.[/]")
-
-    if outcome.branch:
-        # The ref the run actually branched from. Naming a branch the repository may not
-        # have is advice that fails when it is followed, at the one moment it is needed;
-        # "-" is git's own name for wherever we came from, for a detached HEAD.
-        base = outcome.base_branch or "-"
-        console.print(
-            f"\n[dim]On branch {outcome.branch} — review with `git diff {base}`, "
-            f"bin it with `git checkout {base} && git branch -D {outcome.branch}`.[/]"
-        )
-    elif outcome.undo is not None:
-        console.print()
-        console.print(f"[dim]{outcome.undo.restore_hint()}[/]")
-    if not outcome.via_proxy:
-        console.print("[dim]Ran without the proxy, so nothing was recorded in the dashboard.[/]")
-    if not outcome.counts_exact:
-        console.print(
-            "[yellow]Counts were heuristic[/] — no GGUF resolved for this model, so the "
-            "ceiling the run held itself to was an estimate, not a measurement."
-        )
-    console.print()
     return 0 if card.complete else 1

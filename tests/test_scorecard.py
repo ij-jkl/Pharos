@@ -378,3 +378,55 @@ def test_a_long_handoff_that_names_nothing_does_not() -> None:
     ]
     card = score(parts, handoff_reserve=500)
     assert card.thin_handoffs == 1 and not card.kept_the_thread
+
+
+def test_the_run_json_says_how_the_parts_were_grouped() -> None:
+    """The human output says it on every run; the JSON said nothing at all.
+
+    A CI step consuming `pharos run --json` could not tell a model-arranged plan from a
+    position-packed one -- which is the single outcome --semantic is not allowed to have, in
+    the one format a machine reads.
+    """
+    from pharos.agent.cli import _plan_summary
+    from pharos.agent.runner import RunOutcome
+    from pharos.preflight.split import Grouping, Part, PartFile, SplitMode, SplitPlan
+
+    assert _plan_summary(RunOutcome()) is None  # a run that never planned says so
+
+    part = Part(
+        index=1,
+        total=1,
+        body="...",
+        files=[PartFile(display="src/a.py", tokens=10)],
+        projected_tokens=1234,
+        fits=True,
+        over_by=0,
+        title="the storage layer",
+    )
+    outcome = RunOutcome(
+        plan=SplitPlan(
+            mode=SplitMode.SCOPE,
+            target_per_part=8000,
+            target_label="warn threshold",
+            parts=[part],
+            handoff_reserve=500,
+            grouping=Grouping.SEMANTIC,
+            grouping_note="grouped by some-model into 1 part",
+        )
+    )
+    summary = _plan_summary(outcome)
+    assert summary is not None
+    assert summary["grouping"] == "semantic"
+    assert summary["grouping_note"] == "grouped by some-model into 1 part"
+    assert summary["mode"] == "scope"
+    assert summary["divided"] is True
+    assert summary["parts"] == [
+        {
+            "index": 1,
+            "title": "the storage layer",
+            "projected_tokens": 1234,
+            "files": ["src/a.py"],
+        }
+    ]
+    # Bodies are deliberately absent: several KB each, and already executed by now.
+    assert "body" not in summary["parts"][0]
