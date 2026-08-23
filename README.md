@@ -167,6 +167,10 @@ silent about whatever the agent decides to read on its own. Ambiguous, missing, 
 directory references are listed rather than silently dropped. Exit codes: `0` fits, `1`
 exceeds, `2` no verdict (backend unreachable or no model loaded) — scriptable.
 
+`--target N` judges against N tokens instead of the live budget and skips the backend probe
+entirely, so *"would this fit in a 32K window?"* is answerable with nothing running. Without
+it, no backend still means no verdict: standing in a default would be a guess.
+
 File references are resolved against `target_folder` from `pharos.toml`. The check runs
 entirely locally and sends nothing to the backend.
 

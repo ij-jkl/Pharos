@@ -15,8 +15,8 @@ time one is allowed to decide something *about the plan*, and it is opt-in for t
 - **The model's job is one partition, and nothing else.** It never writes a part, picks a
   budget, or decides whether one fits — the same renderer, tokenizer and thresholds produce all
   of that either way. Its answer is checked in code for coverage (nothing dropped, invented or
-  repeated), empty parts, the file cap, the part-count ceiling, and, last, whether every group
-  still fits when re-measured.
+  repeated), for empty parts, and for the part-count ceiling. Anything to do with size is
+  repaired rather than rejected; see below.
 - **Any failure falls back to position packing and names the check it failed.** A refused
   connection, prose instead of JSON, a hallucinated filename, a group over budget — all land in
   the same place, and the plan says so in one line whichever way it went.
@@ -38,6 +38,51 @@ time one is allowed to decide something *about the plan*, and it is opt-in for t
   is the one Pharos command that sends anything anywhere; without the flag, nothing leaves.
 - Config: `semantic_model`, `semantic_max_extra_parts`; CLI: `--semantic` on both commands, and
   `s!` in the launcher.
+
+### Fixed, by an end-to-end pass on a project shaped like a project
+
+Every fixture used to build the above had its files in one flat directory. Driving the whole
+CLI against a small but ordinary project — `src/` package, `tests/`, a `pyproject.toml`
+configuring ruff and pytest — turned up four bugs that no test above could see. Three of them
+predate v0.5.
+
+- **Semantic grouping never worked on a nested project.** The report spells paths with the
+  platform separator, a model answers in posix, and the comparison missed on punctuation — so
+  every file came back reported as *dropped and invented at once* and the grouping fell back on
+  all three groupers. It had never worked outside a flat directory. The same bug, with a
+  different symptom, had already been fixed once in the tool dispatcher; there were two
+  implementations of one rule and the second grew the same defect. There is one now
+  (`pharos/paths.py`), and nought of three groupers became three of three.
+- **`--no-git` reported that a run which wrote files wrote nothing.** `files_changed` was an
+  empty list rather than "unknown", printed as `Nothing was written.` under a run that had just
+  done the work. That same list is handed to the verifier as the set of written files, so
+  `--no-git` also silently turned the syntax check off: a run could break every file in the tree
+  and be told there was nothing in a format it could parse. The flag costs you the undo, which
+  is documented; it was also costing the change report and the verification, which is not.
+- **`pharos run --json` never said how the parts were grouped.** The human output says it on
+  every run — that note is the whole safety story for `--semantic` — and the machine-readable
+  form was silent, so a CI step could not tell a model-arranged plan from a position-packed one.
+  It now carries the mode, the grouping, the note, the per-part budget and each part's title,
+  projection and files.
+- **`pharos check --target` was accepted and ignored.** A 500-token budget and a million-token
+  budget returned the same verdict. It works now, and skips the backend probe entirely when
+  given, so a verdict is available with nothing running.
+- **A proposal can be accepted and have decided nothing.** One group containing every file
+  passes every check, and the oversized-group repair then cuts it in the order it arrived —
+  which is position packing wearing the model's title. Detected and said outright.
+- Smaller: `--semantic` without `--split` is an error rather than a silent no-op; a group with
+  no title is no longer numbered into `" (1 of 2)"`; the grouping note stopped saying which
+  grouping won twice; and 31 lines of unreachable code came out of the run renderer.
+
+### Measured, not claimed
+
+Seven real agentic runs of one task, tree reset between each, recorded in
+`DESKTOP_VALIDATION.md` §19. **Coverage read 100% every single time and four of the seven
+shipped a broken build** — every one caught by verification, with the reported syntax errors
+matching the damage line for line. The passthrough guarantee was checked against a live backend
+rather than a mock: same request direct and proxied gives identical content, an identical
+response key set, and an identical `prompt_eval_count` — the backend's own count of what it
+received, which would move if the proxy had injected anything.
 
 ## v0.4.2 — verification
 
