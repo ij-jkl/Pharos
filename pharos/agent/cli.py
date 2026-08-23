@@ -42,7 +42,7 @@ from pharos.agent.workspace import GitGuardError
 from pharos.config import ConfigError, load_config
 from pharos.console import force_utf8
 from pharos.log import configure_logging
-from pharos.preflight.split import SplitMode
+from pharos.preflight.split import Grouping, SplitMode
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +78,12 @@ def main(argv: list[str] | None = None) -> int:
         "--no-git",
         action="store_true",
         help="skip the clean-tree check and the run branch (you lose the undo)",
+    )
+    parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help="let the model group the files into parts instead of packing them in the order "
+        "they were named; the projections and refusals are unchanged either way",
     )
     parser.add_argument(
         "--no-verify",
@@ -147,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                     use_git=not args.no_git,
                     verify_work=not args.no_verify,
                     divide=not args.no_split,
+                    semantic=args.semantic,
                     on_event=report,
                 )
             )
@@ -415,6 +422,15 @@ def _render_plan(console: Console, outcome: RunOutcome) -> None:
         )
     elif plan.already_fits:
         console.print("[dim]  fits in one window[/]")
+    if plan.grouping_note is not None:
+        # A run whose parts a model chose is a different run. It says so, whichever way the
+        # proposal went, because the note is the only place the fallback is visible.
+        by_model = plan.grouping is Grouping.SEMANTIC
+        console.print(
+            f"[{'cyan' if by_model else 'yellow'}]  "
+            f"{'grouped by meaning' if by_model else 'grouped by position'}[/] "
+            f"[dim]{chr(183)} {plan.grouping_note}[/]"
+        )
 
 
 def _render_parts(console: Console, outcome: RunOutcome) -> None:
@@ -684,7 +700,8 @@ def _render(
                 files = part.files or []
                 table.add_row(
                     "",
-                    f"part {part.index}/{part.total}",
+                    f"part {part.index}/{part.total}"
+                    + (f" {chr(183)} {part.title}" if part.title else ""),
                     f"{chr(8805)} {part.projected_tokens:,}",
                     _scope_label(files[0]) if files else "text segment",
                 )

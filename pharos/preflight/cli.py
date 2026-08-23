@@ -3,7 +3,9 @@
 Exit codes for `check`: 0 the floor fits the usable budget · 1 it exceeds · 2 indeterminate
 (backend unreachable, no model resident, or a config error). For `split` (and `check --split`):
 0 a plan was produced whose every part fits · 1 no plan, or a part that still does not fit ·
-2 indeterminate. Advisory only: nothing is sent anywhere.
+2 indeterminate. Advisory only: neither command changes a file, and nothing is sent
+anywhere unless you pass --semantic, which asks the configured backend to group the
+files and sends it the task, the filenames and the first five lines of each.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from pharos.config import ConfigError, load_config
 from pharos.console import force_utf8
 from pharos.preflight.check import CheckReport, CountedFile, Verdict, run_check
 from pharos.preflight.extract import ALL_CANDIDATES, DIRECTORY_FILE_CAP
-from pharos.preflight.split import SplitMode, SplitPlan, build_plan
+from pharos.preflight.split import Grouping, SplitMode, SplitPlan, build_plan
 
 _EXIT_BY_VERDICT = {Verdict.FITS: 0, Verdict.EXCEEDS: 1, Verdict.INDETERMINATE: 2}
 # Bumped when a field is removed or its meaning changes, so a wrapper can refuse politely
@@ -86,6 +88,13 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
         "--pick",
         action="store_true",
         help="choose interactively between the candidates of each ambiguous reference",
+    )
+    parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help="ask the backend which files belong together instead of packing them in the "
+        "order they were named; falls back to position packing and says so if the proposal "
+        "fails any check",
     )
     parser.add_argument(
         "--json",
@@ -159,7 +168,7 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
             )
         return _EXIT_BY_VERDICT[report.verdict]
 
-    plan = build_plan(config, prompt, report, target=args.target)
+    plan = build_plan(config, prompt, report, target=args.target, semantic=args.semantic)
     if args.json:
         _emit_json({**report_to_dict(report), "plan": plan_to_dict(plan)})
     elif args.quiet:
@@ -352,10 +361,13 @@ def plan_to_dict(plan: SplitPlan) -> dict[str, object]:
         "target_per_part": plan.target_per_part,
         "target_label": plan.target_label,
         "handoff_reserve": plan.handoff_reserve,
+        "grouping": plan.grouping.value,
+        "grouping_note": plan.grouping_note,
         "parts": [
             {
                 "index": part.index,
                 "total": part.total,
+                "title": part.title,
                 "projected_tokens": part.projected_tokens,
                 "fits": part.fits,
                 "over_by": part.over_by,
@@ -522,6 +534,13 @@ def _render_plan(console: Console, plan: SplitPlan) -> None:
         f"≤ {plan.target_per_part:,} tokens each [dim]({plan.target_label})[/]"
     )
     console.print(f"[dim]{_MODE_HEADLINE[plan.mode]}[/]")
+    if plan.grouping_note is not None:
+        # Whichever way it went. A plan that quietly used a model, or quietly did not, is the
+        # one outcome --semantic is not allowed to have.
+        by_model = plan.grouping is Grouping.SEMANTIC
+        marker = "grouped by meaning" if by_model else "grouped by position"
+        style = "cyan" if by_model else "yellow"
+        console.print(f"[{style}]{marker}[/] [dim]— {plan.grouping_note}[/]")
     if plan.handoff_reserve:
         console.print(
             f"[dim]Each part holds back {plan.handoff_reserve:,} tokens for the hand-off "
@@ -561,7 +580,10 @@ def _render_plan(console: Console, plan: SplitPlan) -> None:
         console.print(
             Panel(
                 Text(part.body),
-                title=f"part {part.index} of {part.total}",
+                title=(
+                    f"part {part.index} of {part.total}"
+                    + (f" - {part.title}" if part.title else "")
+                ),
                 title_align="left",
                 border_style="green" if part.fits else "red",
             )

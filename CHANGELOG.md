@@ -6,6 +6,33 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v0.5 — "Divide by meaning"
+
+`pharos split --semantic` and `pharos run --semantic` let a model choose which files belong in
+a part together. It is the only place Pharos asks a model anything, and it is opt-in.
+
+- **The model's job is one partition, and nothing else.** It never writes a part, picks a
+  budget, or decides whether one fits — the same renderer, tokenizer and thresholds produce all
+  of that either way. Its answer is checked in code for coverage (nothing dropped, invented or
+  repeated), empty parts, the file cap, the part-count ceiling, and, last, whether every group
+  still fits when re-measured.
+- **Any failure falls back to position packing and names the check it failed.** A refused
+  connection, prose instead of JSON, a hallucinated filename, a group over budget — all land in
+  the same place, and the plan says so in one line whichever way it went.
+- **It works, and it is honest about how often.** On a task across three subsystems whose
+  filenames carry no hint of them, `qwen3.5:9b` returned the ideal render/physics/audio split in
+  the same three parts position packing used — a free improvement. On a tighter budget, two of
+  three models were rejected and the plan was identical to not passing the flag.
+- **Thinking is disabled for the call, and that is a measurement.** Asked to partition six
+  filenames, one model spent 4,096 tokens and 81 seconds reasoning and returned nothing. With
+  thinking off the same question costs 66 tokens.
+- **Five lines of each file travel with the question.** On names alone a model returns the files
+  in listed order under invented titles, which is position packing wearing a hat. Sending heads
+  made two of three models produce the clean grouping and every one of them twice as fast. This
+  is the one Pharos command that sends anything anywhere; without the flag, nothing leaves.
+- Config: `semantic_model`, `semantic_max_extra_parts`; CLI: `--semantic` on both commands, and
+  `s!` in the launcher.
+
 ## v0.4.2 — verification
 
 `pharos run` now finishes by re-running the checks your project already has, and the exit code

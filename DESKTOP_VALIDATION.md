@@ -990,3 +990,173 @@ supports, so no verdict is claimed either way.
 Nothing else is auto-detected, deliberately: inventing a `dotnet build` for a project that
 never asked would be Pharos deciding what your build is, and build commands write artifacts.
 Every other ecosystem goes through `verify_commands`, which is the same code path.
+
+## ☑ 18. Semantic grouping — can a model be trusted with the split? (v0.5, live)
+
+Everything above this section is arithmetic. This one asks a model a question, so the record is
+mostly about the ways the answer was wrong and what the checks did about it.
+
+The question is deliberately the smallest one in the split: given the task, the filenames, their
+token counts and the first five lines of each, **which files belong in a part together, and in
+what order do the parts run?** The model never sees a budget it can change, never writes a
+part, and never decides whether one fits. Its whole output is a partition of a list of strings,
+which is why every claim in it can be checked without trusting it.
+
+Two fixtures, both six-to-eight files with an obvious right answer and a deliberately
+interleaved naming order, so position packing and meaning packing cannot accidentally agree:
+
+* **shop** — `db_models` / `http_routes` / `db_migrations` / `http_client` / `db_session` /
+  `http_errors`. The concern is *in the filename*.
+* **game** — `sprite_batch` / `collision` / `mixer` / `shader_cache` / `rigid_body` /
+  `sound_bank` / `framebuffer` / `broadphase`: render, physics and audio, three concerns and
+  **no shared prefixes**. The concern is only in the file.
+
+### Thinking has to be off, and that is not a preference
+
+Asked to partition six filenames, `qwen3.5:9b` spent all 1,024 tokens of its reply budget
+thinking and returned an empty answer — `done_reason: length`, `eval_count` exactly the cap.
+Raising the budget did not help; it is not a budget that was slightly too small:
+
+| `num_predict` | wall time | `done_reason` | answer |
+|---|---|---|---|
+| 1,024 | 30s | `length` | none |
+| 2,048 | 40s | `length` | none |
+| 4,096 | 81s | `length` | none |
+
+With `think: false` the same question costs 66 tokens and answers. There is nothing here to
+reason about — the grouping *is* the answer — and the chain of thought is the one part of it
+nobody will read. Measured identical on a model with no thinking mode (`qwen2.5-coder:7b`), so
+the flag is sent unconditionally.
+
+The first version of this reported the failure as "the backend returned an empty reply", which
+sent me looking at the transport for twenty minutes. `done_reason: length` with no content now
+reports as *hit its length limit after N tokens*, and a truncated reply mid-answer reports as
+cut off rather than as malformed JSON. Two different actions; two different messages.
+
+### The models drop files, and one sentence stops them
+
+Names only, no excerpts, first prompt:
+
+| model | wall | coverage | grouping |
+|---|---|---|---|
+| `qwen2.5-coder:7b` | 4.2s | exact | **clean** db/http |
+| `qwen2.5-coder:14b` | 14.1s | exact | incoherent |
+| `gemma3:12b` | 20.9s | exact | incoherent |
+| `qwen3.5:9b` | 13.3s | **dropped 1 of 6** | rejected |
+| `llama3.2:1b` | 10.2s | **dropped 4 of 6** | rejected |
+
+The drops were legible rather than random. The model wrote a *title*, then filled the group to
+match the title and let the rest go: `"Database Models and Sessions"` duly excluded
+`db_migrations.py`. The obvious fix is to make it choose files before writing the title. That
+was measured, and it is the wrong fix:
+
+| variant | `qwen2.5-coder:7b` | `qwen3.5:9b` | `gemma3:12b` |
+|---|---|---|---|
+| title first (original) | miss 4/6 | miss 5/6 | exact, incoherent |
+| **files first** | exact, incoherent | exact, incoherent | exact, incoherent |
+| **title first + stated total** | **exact, clean** | **exact, clean** | exact, incoherent |
+| files first + stated total | exact, incoherent | exact, incoherent | exact, incoherent |
+
+Committing to a concept first is what makes the groups coherent; the failure was only that the
+model then under-filled it. Adding *"There are 6 files. The `files` arrays must hold 6 entries
+in total"* keeps the title first and gives it something it can check as it writes. Coverage
+went exact on every model, the grouping stayed clean, and the call got about three times
+faster.
+
+### Names are not enough, and five lines fix it
+
+On **game**, where no filename carries its concern, names-only grouping collapsed on every
+model. `qwen2.5-coder:7b` returned the files in the order they were listed, cut into chunks,
+under invented titles — `"Profiling Timer Definitions"`, `"Profiling Timer Implementations"`.
+That is position packing with labels on it, which is *worse* than position packing, because it
+looks like a decision.
+
+Sending the first five lines of each file (stripped, 90 chars each, whole-request cap):
+
+| model | names only | with five lines | wall |
+|---|---|---|---|
+| `qwen2.5-coder:7b` | mixed | mixed (titles improved) | 4.6s → **2.0s** |
+| `qwen3.5:9b` | mixed | **clean render/physics/audio** | 7.4s → **3.6s** |
+| `gemma3:12b` | mixed | **clean render/physics/audio** | 7.4s → **3.5s** |
+
+Every model got roughly twice as fast, having stopped guessing. Note the reversal against the
+names-only table: with names alone this is a guessing game and the small coding model wins;
+with content it is a comprehension task and the larger models win. That is why the grouper is
+`semantic_model` in config rather than always the model doing the work.
+
+The excerpts are all-or-nothing past the cap. Truncating the last few files' heads would make
+the grouping depend on where in the list a file happened to sit, and a plan that changes
+because a file was named earlier is not a plan.
+
+### The end-to-end result, and how often it fires
+
+**game**, `qwen3.5:9b`, target 6,000 — position packing against semantic:
+
+```
+position   part 1  sprite_batch.py, collision.py, mixer.py          (one of each)
+           part 2  shader_cache.py, rigid_body.py, sound_bank.py    (one of each)
+           part 3  framebuffer.py, broadphase.py
+
+semantic   part 1  "Render Subsystem Files"    sprite_batch, shader_cache, framebuffer
+           part 2  "Physics Subsystem Files"   collision, rigid_body, broadphase
+           part 3  "Audio Subsystem File"      mixer, sound_bank
+```
+
+The ideal grouping, in the same three parts — so no extra hand-off, and the improvement is free.
+
+**shop**, target 5,600, all three groupers, is the honest other half:
+
+| grouper | outcome |
+|---|---|
+| `qwen3.5:9b` | rejected — part 2 would not fit in 4,786 tokens |
+| `qwen2.5-coder:7b` | rejected — its file list did not match the scope |
+| `gemma3:12b` | accepted — 3 coherent parts where position packed 2 |
+
+So it fires perhaps half the time on a tight budget. The models are noticeably bad at the
+*packing* constraint specifically: they group by concern and ignore the token ceiling they were
+given, which is exactly why that ceiling is re-checked in code rather than requested in the
+prompt. Every rejection above fell back to position packing, produced an identical plan to the
+one `--semantic` was never passed for, and said in one line which check it failed.
+
+### Through `pharos run`, end to end
+
+A six-file fixture in a git repository — `render_sprites` / `physics_step` / `audio_mix` /
+`render_shaders` / `physics_hits` / `audio_bank`, interleaved — run with `--semantic` against
+`qwen3.5:9b` and `max_files_per_part = 2`:
+
+```
+grouped by meaning - grouped by qwen3.5:9b into the same 3 parts position packing gave
+
+  part 1/3 - Physics and Collision Logic   physics_step.py, physics_hits.py
+  part 2/3 - Audio Processing Functions    audio_mix.py, audio_bank.py
+  part 3/3 - Rendering and Shaders         render_sprites.py, render_shaders.py
+
+  COMPLETE      every file the plan assigned was changed
+  coverage      100%  6 of 6 files
+  verification  OK syntax
+```
+
+Exit 0, three parts, each writing both of its files, every file parsing afterwards, and the
+diff is six real docstrings. The grouping is correct — each part holds one subsystem — and it
+cost no extra part over position packing. Position packing would have given
+`render_sprites + physics_step`, `audio_mix + render_shaders`, `physics_hits + audio_bank`:
+three parts, each spanning two unrelated subsystems.
+
+Worth noting what did *not* change: coverage, drift (0.81-0.88x over 14 requests, ceiling
+corrected from request 2), continuity (1 of 2 hand-offs, the familiar §14 weakness) and
+verification all behave exactly as they do without the flag. `--semantic` moves files between
+parts; it does not touch a single number.
+
+### Known limit: it is only as good as the first five lines
+
+A file whose opening lines are a licence header, a long import block, or nothing at all tells
+the model no more than its name does. There is no fallback for that — the grouping is simply
+back to guessing, and a guess that survives the checks will be shipped as a coherent-looking
+plan. `--semantic` is off by default partly for this reason.
+
+### Known limit: sliced files decline outright
+
+When a file is too large for one part it is cut into line ranges, and the order of those ranges
+is fixed by the file. There is nothing for a model to contribute and a real chance of it
+proposing lines 3879-4000 before lines 1-1939, so the grouping declines and says so rather than
+asking. Same for a text split, where the parts are segments of one pasted blob.

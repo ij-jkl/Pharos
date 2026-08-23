@@ -407,11 +407,12 @@ if ($haveBackend -and -not $loadedModel -and -not [Console]::IsInputRedirected) 
 $script:LastCheckCode = 0
 
 function Invoke-Check {
-    param([string] $Prompt, [switch] $Split)
+    param([string] $Prompt, [switch] $Split, [switch] $Semantic)
 
     $verb = if ($Split) { 'split' } else { 'check' }
     $cliArgs = @($verb, $Prompt)
     if (-not $loadedModel) { $cliArgs += @('--target', $FallbackTarget) }
+    if ($Semantic) { $cliArgs += '--semantic' }
 
     Write-Host ''
     uv run pharos @cliArgs
@@ -437,6 +438,7 @@ Write-Host '  Type a prompt to pre-flight it. Name files and folders in backtick
 Write-Host '  e.g.  Refactor everything in `pharos/proxy/` following `README.md`' -ForegroundColor DarkGray
 Write-Host ''
 Write-Host '    s <prompt>   cut it into parts that fit        d   live dashboard' -ForegroundColor DarkGray
+Write-Host '    s! <prompt>  the same, grouped by meaning         q   quit' -ForegroundColor DarkGray
 Write-Host '    r <prompt>   carry it out (writes files)        q   quit' -ForegroundColor DarkGray
 
 if ([Console]::IsInputRedirected) {
@@ -470,6 +472,12 @@ while ($true) {
     if ($line -in @('d', 'dash', 'dashboard')) {
         Write-Info 'starting the dashboard and proxy - press q in the dashboard to come back'
         uv run pharos
+        continue
+    }
+
+    # Matched before plain 's ', or "s! foo" would split a prompt literally called "! foo".
+    if ($line -match '^s!\s+(.+)$') {
+        Invoke-Check -Prompt $Matches[1] -Split -Semantic
         continue
     }
 

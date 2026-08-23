@@ -1,7 +1,7 @@
 """Turn a prompt that EXCEEDS the budget into an ordered set of sub-prompts that fit.
 
-The split is mechanical and entirely local — no model is asked what the task "means", nothing
-leaves the machine. Two shapes, chosen by what actually blows the budget:
+The split is mechanical, and by default entirely local. Two shapes, chosen by what actually
+blows the budget:
 
 * **scope** — the task text fits in a part, but the files it names do not. Every part repeats
   the task verbatim and narrows the *scope* to a subset of the files (large files are cut into
@@ -18,18 +18,29 @@ Honesty rules, same as the rest of Pharos:
   alone is reported as such rather than quietly shipped.
 * Nothing is dropped silently. A file too large for even an empty part, a segment that cannot
   be cut small enough — both surface in the plan.
+
+One thing here is neither mechanical nor local, and is opt-in for both reasons.
+``semantic=True`` asks the configured backend which files belong together — sending the task,
+the filenames, their counts and the first five lines of each — and uses the answer *only* to
+decide which part each file lands in. It cannot change a budget, a projection, a refusal or a
+part's text, and a proposal that fails any check in ``pharos.preflight.semantic`` is thrown
+away for the packer's own answer. The plan always states which grouping produced it and why.
+
+Position packing remains the default, and not only for privacy: a plan you can reproduce on a
+machine with no GPU, and get the same parts from twice, is worth more than a tidy one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 
 from pharos.config import PharosConfig
 from pharos.preflight.check import CheckReport, CountedFile, build_counter
 from pharos.preflight.content import BinaryFile, read_countable
+from pharos.preflight.semantic import FileBrief, GroupRequest, ask, brief, parse, validate
 
 # Coarse room for the per-part scaffold, used only for the "can any split work at all?"
 # pre-check. Each mode then MEASURES its own scaffold before packing (see _scaffold_cost):
@@ -56,6 +67,19 @@ class SplitMode(Enum):
     SCOPE = "scope"  # parts narrow which files are in scope; the task text repeats
     TEXT = "text"  # parts are ordered segments of the pasted text
     NONE = "none"  # no plan: unnecessary, or impossible
+
+
+class Grouping(Enum):
+    """How the files ended up in the parts they did — always reported, never inferred.
+
+    POSITION is the default and the fallback: first-fit in the order the prompt named things.
+    SEMANTIC means a model proposed the grouping and that proposal passed every mechanical
+    check in ``pharos.preflight.semantic``. The distinction is published because the two are
+    not equally trustworthy, and a reader deserves to know which one they are looking at.
+    """
+
+    POSITION = "position"
+    SEMANTIC = "semantic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +116,7 @@ class Part:
     projected_tokens: int  # overhead + body + scoped file content, same ruler as the verdict
     fits: bool
     over_by: int  # 0 when it fits
+    title: str = ""  # a model's name for this group, empty under position grouping
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +130,8 @@ class SplitPlan:
     handoff_reserve: int = 0  # tokens held back per part for the previous part's hand-off
     already_fits: bool = False  # no plan because none was needed — not a failure
     indeterminate: bool = False  # no plan because there was no budget to plan against
+    grouping: Grouping = Grouping.POSITION  # which one produced these parts
+    grouping_note: str | None = None  # why, whenever a model was asked — accepted or not
 
     @property
     def ok(self) -> bool:
@@ -120,6 +147,7 @@ def build_plan(
     *,
     target: int | None = None,
     max_files: int | None = None,
+    semantic: bool = False,
 ) -> SplitPlan:
     """Plan a split of ``prompt`` given its pre-flight ``report``.
 
@@ -132,6 +160,12 @@ def build_plan(
     then describe the work instead of doing it. That ceiling belongs to the model, not the
     hardware, so nothing here can measure it — the cap is a stated preference, and callers
     that only want the token split leave it None and get exactly the previous behaviour.
+
+    ``semantic`` asks the backend to propose which files belong together instead of packing
+    them in the order they were named. It changes the grouping and nothing else: the budget,
+    the projections and the refusals are identical either way, and a proposal that fails any
+    check in ``pharos.preflight.semantic`` is discarded for the mechanical one. Turning it on
+    can therefore change how a plan reads, never whether it is honest.
     """
     ceiling, label = _ceiling(report, target)
     if ceiling is None:
@@ -189,9 +223,29 @@ def build_plan(
 
     if report.prompt_tokens + fixed <= ceiling:
         return _plan_scope(
-            prompt, report, count, ceiling, label, config.handoff_reserve, max_files
+            prompt,
+            report,
+            count,
+            ceiling,
+            label,
+            config.handoff_reserve,
+            max_files,
+            config=config if semantic else None,
+        )
+    if semantic:
+        # A text split cuts a pasted blob on paragraph boundaries. There is no set of files to
+        # group, so there is nothing for a proposal to be about — said plainly rather than
+        # letting --semantic look like it did something.
+        return _with_note(
+            _plan_text(prompt, report, count, ceiling, label),
+            "semantic grouping does not apply to a text split: the parts are ordered segments "
+            "of one oversized input, and their order is the input's own",
         )
     return _plan_text(prompt, report, count, ceiling, label)
+
+
+def _with_note(plan: SplitPlan, note: str) -> SplitPlan:
+    return replace(plan, grouping_note=note)
 
 
 # --------------------------------------------------------------------------- scope mode
@@ -205,8 +259,13 @@ def _plan_scope(
     label: str,
     handoff_reserve: int,
     max_files: int | None = None,
+    config: PharosConfig | None = None,
 ) -> SplitPlan:
-    """Repeat the task in every part; bin-pack the named files across the parts."""
+    """Repeat the task in every part; bin-pack the named files across the parts.
+
+    ``config`` is passed only when a semantic grouping was asked for; it carries the backend
+    to ask and the ceilings to hold the answer to.
+    """
     overhead = report.overhead.tokens if report.overhead is not None else 0
     notes: list[str] = []
 
@@ -260,38 +319,23 @@ def _plan_scope(
             notes=notes,
         )
 
-    # First-fit in the order the prompt named things: locality is a feature, a bin-packed
-    # optimum that scatters related files across parts is worse for the human reading it.
-    #
-    # One constraint on top: the slices of a single file may only move FORWARD through the
-    # parts. Plain first-fit will happily backfill lines 3879-4000 into part 1 next to lines
-    # 1-1939, which packs marginally tighter and asks a reader to hold two disjoint windows of
-    # one file at once. Reading order is worth more than the odd saved part.
-    bins: list[list[PartFile]] = []
-    room: list[int] = []
-    last_bin: dict[str, int] = {}  # display -> the bin its previous slice landed in
-    for unit in units:
-        floor_bin = last_bin.get(unit.display, -1) + 1 if unit.is_slice else 0
-        for i in range(floor_bin, len(room)):
-            if max_files is not None and len(bins[i]) >= max_files:
-                continue
-            if unit.tokens <= room[i]:
-                bins[i].append(unit)
-                room[i] -= unit.tokens
-                break
-        else:
-            i = len(bins)
-            bins.append([unit])
-            room.append(per_part_content - unit.tokens)
-        if unit.is_slice:
-            last_bin[unit.display] = i
+    bins = _position_bins(units, per_part_content, max_files)
+    grouping = Grouping.POSITION
+    titles = [""] * len(bins)
+    grouping_note: str | None = None
+    if config is not None:
+        proposed, titles_or_none, grouping_note = _semantic_bins(
+            config, prompt, report, units, bins, per_part_content, max_files
+        )
+        if proposed is not None and titles_or_none is not None:
+            bins, titles, grouping = proposed, titles_or_none, Grouping.SEMANTIC
 
     all_labels = [u.label() for u in units]
     parts: list[Part] = []
     for i, group in enumerate(bins, start=1):
         scoped = {u.label() for u in group}
         deferred = [lbl for lbl in all_labels if lbl not in scoped]
-        body = _render_scope_part(prompt, i, len(bins), group, deferred)
+        body = _render_scope_part(prompt, i, len(bins), group, deferred, title=titles[i - 1])
         parts.append(
             _finalise(
                 i,
@@ -303,6 +347,7 @@ def _plan_scope(
                 report,
                 # Part 1 has nothing pasted above it; every later part does.
                 carried=handoff_reserve if i > 1 else 0,
+                title=titles[i - 1],
             ),
         )
     sliced = {u.display: u for u in units if u.is_slice}
@@ -324,7 +369,142 @@ def _plan_scope(
         parts=parts,
         notes=notes,
         handoff_reserve=handoff_reserve,
+        grouping=grouping,
+        grouping_note=grouping_note,
     )
+
+
+def _position_bins(
+    units: list[PartFile], per_part_content: int, max_files: int | None
+) -> list[list[PartFile]]:
+    """First-fit in the order the prompt named things.
+
+    Locality is a feature: a bin-packed optimum that scatters related files across parts is
+    worse for the human reading it.
+
+    One constraint on top: the slices of a single file may only move FORWARD through the
+    parts. Plain first-fit will happily backfill lines 3879-4000 into part 1 next to lines
+    1-1939, which packs marginally tighter and asks a reader to hold two disjoint windows of
+    one file at once. Reading order is worth more than the odd saved part.
+    """
+    bins: list[list[PartFile]] = []
+    room: list[int] = []
+    last_bin: dict[str, int] = {}  # display -> the bin its previous slice landed in
+    for unit in units:
+        floor_bin = last_bin.get(unit.display, -1) + 1 if unit.is_slice else 0
+        for i in range(floor_bin, len(room)):
+            if max_files is not None and len(bins[i]) >= max_files:
+                continue
+            if unit.tokens <= room[i]:
+                bins[i].append(unit)
+                room[i] -= unit.tokens
+                break
+        else:
+            i = len(bins)
+            bins.append([unit])
+            room.append(per_part_content - unit.tokens)
+        if unit.is_slice:
+            last_bin[unit.display] = i
+    return bins
+
+
+def _semantic_bins(
+    config: PharosConfig,
+    prompt: str,
+    report: CheckReport,
+    units: list[PartFile],
+    position_bins: list[list[PartFile]],
+    per_part_content: int,
+    max_files: int | None,
+) -> tuple[list[list[PartFile]] | None, list[str] | None, str]:
+    """Ask the backend to group ``units``, then refuse the answer unless it survives everything.
+
+    Returns ``(bins, titles, note)``. ``bins`` is None whenever the mechanical grouping should
+    stand — which is most of the interesting cases, and each of them names itself in the note.
+    The note is never None: asking a model and not saying so would be the one thing this
+    feature is not allowed to do.
+    """
+    # Not necessarily the model doing the work: grouping is a different job and wants a
+    # different model. See PharosConfig.semantic_model for what was measured.
+    model = config.semantic_model or config.model
+    if model is None:
+        return None, None, "semantic grouping needs a model in pharos.toml; grouped by position"
+    sliced = [u for u in units if u.is_slice]
+    if sliced:
+        # A group of line ranges is not a group of ideas. "lines 1940-3878 of forward.py"
+        # belongs where the previous slice left off and nowhere else, so the ordering is
+        # already determined and a model has nothing to add but risk.
+        return (
+            None,
+            None,
+            f"{len(sliced)} file(s) had to be cut into line ranges, whose order is fixed by "
+            f"the file itself — grouped by position",
+        )
+
+    request = GroupRequest(
+        task=prompt,
+        files=tuple(_briefs(report, units)),
+        target_parts=len(position_bins),
+        max_parts=len(position_bins) + config.semantic_max_extra_parts,
+        max_files=max_files,
+        per_part_budget=per_part_content,
+    )
+    reply, error = ask(config, request, model)
+    if reply is None:
+        return None, None, f"the backend could not be asked ({error}); grouped by position"
+    proposal, error = parse(reply)
+    if proposal is None:
+        return None, None, f"the proposal was rejected — {error}; grouped by position"
+    rejection = validate(proposal, request)
+    if rejection is not None:
+        return None, None, f"the proposal was rejected — {rejection}; grouped by position"
+
+    by_name = {u.display: u for u in units}
+    bins = [[by_name[name] for name in group.files] for group in proposal.groups]
+    # The last check, and the one that matters: a coherent grouping that does not fit is not a
+    # plan. Measured against the same per-part room the packer used, before any of it is shown.
+    over = [i for i, group in enumerate(bins, start=1) if _content(group) > per_part_content]
+    if over:
+        return (
+            None,
+            None,
+            f"the proposal was rejected — part(s) {', '.join(map(str, over))} would not fit in "
+            f"{per_part_content:,} tokens; grouped by position",
+        )
+    shape = (
+        f"the same {len(bins)} parts position packing gave"
+        if len(bins) == len(position_bins)
+        else f"{len(bins)} parts where position packing gave {len(position_bins)}"
+    )
+    return bins, [group.title for group in proposal.groups], (
+        f"grouped by {model} into {shape}. The grouping is the model's; "
+        f"every projection below is not"
+    )
+
+
+def _content(group: list[PartFile]) -> int:
+    return sum(f.tokens for f in group)
+
+
+def _briefs(report: CheckReport, units: list[PartFile]) -> list[FileBrief]:
+    """Each unit as a name, a cost and its opening lines — for the ones that can be re-read.
+
+    A file whose head cannot be recovered still goes in the question, name only. Dropping it
+    would be a coverage failure of our own making, and the checks would then blame the model
+    for a file it was never shown.
+    """
+    paths = {entry.display: entry.path for entry, _ in _scope_entries(report)}
+    out: list[FileBrief] = []
+    for unit in units:
+        text: str | None = None
+        path = paths.get(unit.display)
+        if path is not None:
+            try:
+                text = read_countable(path).text
+            except (OSError, BinaryFile):
+                text = None
+        out.append(brief(unit.display, unit.tokens, text))
+    return out
 
 
 def _scope_scaffold(prompt: str, labels: list[str], count: Callable[[str], int]) -> int:
@@ -441,10 +621,19 @@ def _slice_file(
 
 
 def _render_scope_part(
-    prompt: str, index: int, total: int, files: list[PartFile], deferred: list[str]
+    prompt: str,
+    index: int,
+    total: int,
+    files: list[PartFile],
+    deferred: list[str],
+    *,
+    title: str = "",
 ) -> str:
+    heading = f"Part {index} of {total}"
+    if title:
+        heading += f" — {title}"
     lines = [
-        f"[Pharos] Part {index} of {total} — this task was split to fit the context window.",
+        f"[Pharos] {heading} — this task was split to fit the context window.",
         "",
         "IN SCOPE for this part — read and change only these:",
     ]
@@ -658,6 +847,7 @@ def _finalise(
     report: CheckReport,
     *,
     carried: int = 0,
+    title: str = "",
 ) -> Part:
     """Cost the rendered part for real: overhead + the text as written + the scoped content.
 
@@ -675,6 +865,7 @@ def _finalise(
         projected_tokens=projected,
         fits=over == 0,
         over_by=over,
+        title=title,
     )
 
 

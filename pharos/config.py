@@ -71,6 +71,34 @@ class PharosConfig(BaseModel):
     # 92%. The cost is more parts, which is more hand-offs and more chances to drop the thread
     # — worth watching in the scorecard, and worth raising for a model that finishes more.
     max_files_per_part: int = Field(default=2, ge=1)
+    # How many parts beyond the mechanical count a semantic grouping may spend to keep related
+    # files together. Grouping by meaning packs worse than first-fit almost by definition —
+    # coherence and density want different answers — so some slack has to be allowed or the
+    # feature can never do anything. Unbounded slack is the failure mode though: a model that
+    # returns one file per part has "grouped" nothing and bought a hand-off for each one.
+    #
+    # This is a stated preference, not a measurement, exactly like max_files_per_part's
+    # existence is (its VALUE was measured; this one's has not been). Two extra parts is enough
+    # for a 6-file task to split 3/3 where position packed 2/2/2, and not enough to degenerate.
+    semantic_max_extra_parts: int = Field(default=2, ge=0)
+    # Which model answers the grouping question. Unset, it is the model doing the work.
+    #
+    # Worth setting, because the two jobs want different models and the obvious default is not
+    # the best one. Grouping is small and structured — partition six filenames, name each
+    # group — and on the same task, measured on this machine (see DESKTOP_VALIDATION.md §18):
+    #
+    #   qwen2.5-coder:7b    4.2s   exact coverage, and the only clean db/http split
+    #   qwen2.5-coder:14b  14.1s   exact coverage, incoherent groups
+    #   gemma3:12b         20.9s   exact coverage, incoherent groups
+    #   qwen3.5:9b         13.3s   DROPPED a file — rejected, fell back to position
+    #   llama3.2:1b        10.2s   dropped four files — rejected
+    #
+    # The smallest coding model won outright and was three times faster than the model that
+    # would otherwise have been asked. Bigger did not mean better here; it meant slower and,
+    # for the run's own model, wrong. Nothing is lost when it is wrong — the proposal is
+    # rejected and the mechanical grouping stands — but a call that always fails is a call
+    # not worth making.
+    semantic_model: str | None = None
     # After the plan has run, go back over any assigned file that no part actually
     # changed, in a fresh conversation holding only the leftovers. One round, never more:
     # a second would be chasing a model that has declined the same work twice, and an

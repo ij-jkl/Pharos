@@ -112,3 +112,22 @@ verify_timeout_seconds = 300
 # Where the proxy records per-request token counts for that calibration. Counts only — no
 # prompt text, file names or any reconstructable content is ever written.
 observations_file = "pharos_observations.json"
+
+# --- Semantic grouping (pharos split --semantic / pharos run --semantic) -----------------
+# Off unless you pass the flag. With it, the backend is asked which files belong in a part
+# together; the proposal is then checked in code (coverage, the file cap, the part ceiling,
+# and whether every group still fits) and discarded for position packing if it fails any of
+# them. This is the only Pharos command that sends anything anywhere: with --semantic it
+# sends the task, the filenames, their token counts and the first five lines of each file.
+
+# Which model answers the grouping question. Unset, it is the model doing the work. Worth
+# setting: grouping is a small structured job and the best model for it is not the best model
+# for writing code — measured, the ranking between them reverses depending on whether the
+# file excerpts are sent. See DESKTOP_VALIDATION.md section 18.
+# semantic_model = "qwen2.5-coder:7b"
+
+# How many parts beyond the mechanical count a semantic grouping may spend to keep related
+# files together. Grouping by meaning packs worse than first-fit almost by definition, so some
+# slack has to be allowed; unbounded slack lets a model "group" one file per part and buy a
+# hand-off for each one. A stated preference, not a measurement.
+# semantic_max_extra_parts = 2

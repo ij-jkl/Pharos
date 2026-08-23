@@ -210,6 +210,7 @@ async def run_task(
     use_git: bool = True,
     verify_work: bool = True,
     divide: bool = True,
+    semantic: bool = False,
     on_event: Callable[[str], None] | None = None,
 ) -> RunOutcome:
     """Pre-flight, divide and execute ``prompt`` in the configured workspace.
@@ -263,6 +264,7 @@ async def run_task(
         # Two limits, one plan: the window, and how many files a model gets through in one
         # sitting. Only the first is measurable; see PharosConfig.max_files_per_part.
         max_files=config.max_files_per_part,
+        semantic=semantic,
     )
     outcome.plan = plan
     bodies: list[tuple[str, list[PartFile] | None]]

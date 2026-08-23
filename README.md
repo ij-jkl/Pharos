@@ -8,11 +8,14 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.4 "Do"** — the proxy stays observe-only and a pure passthrough (Pharos never
-mutates a request or a response). Alongside it, three tools outside the request path: what a
-prompt will cost before you paste it (`pharos check`), how to cut it up when it will not fit
+**Status: v0.5** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
+request or a response). Alongside it, three tools outside the request path: what a prompt will
+cost before you paste it (`pharos check`), how to cut it up when it will not fit
 (`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
-finishes by re-running your project's own checks and failing the run if it broke them.
+finishes by re-running your project's own checks and failing the run if it broke them. New in
+v0.5: `--semantic` lets a model propose *which files group together*, and nothing else — every
+projection is still measured, and a proposal that fails any check is discarded for the
+mechanical one.
 
 ![The Pharos dashboard: a context-mismatch banner reading "advertised 262,144, loaded 32,768 (12.5% of capacity)", context and VRAM gauges, and a request event log showing input counts labelled (exact) and (estimate - gguf)](docs/pharos-dashboard.svg)
 
@@ -94,6 +97,7 @@ Four things you can type there:
 |---|---|
 | `<prompt>` | pre-flight it — what will this cost, and does it fit? |
 | `s <prompt>` | cut one that does not fit into parts that do |
+| `s! <prompt>` | the same, with the parts grouped by meaning (`--semantic`) |
 | `r <prompt>` | **carry it out** — this writes files |
 | `d` | the live dashboard |
 
@@ -195,8 +199,9 @@ uv run pharos split --file prompt.txt --out parts/     # writes parts/part-01.tx
 uv run pharos check "…" --split                        # same plan, after the report
 ```
 
-The split is mechanical and local — no model is asked what your task *means*, nothing leaves
-the machine — and it takes one of two shapes depending on what actually overflows:
+By default the split is mechanical and local — no model is asked what your task *means*,
+nothing leaves the machine (`--semantic`, below, is the one exception and is opt-in) — and it
+takes one of two shapes depending on what actually overflows:
 
 - **scope split** — the task text fits but the files it names do not. Every part repeats your
   task verbatim and narrows the scope to a subset of the files; files too large for one part
@@ -222,6 +227,83 @@ parts that will fail.
 `--target N` plans against N tokens per part without probing the backend — useful offline, or
 to plan for a window you have not loaded yet. Exit codes: `0` a plan whose every part fits (or
 nothing to split), `1` no plan or a part still over, `2` no budget to plan against.
+
+## Group the parts by meaning (v0.5 `--semantic`)
+
+Position packing has one flaw, and it is not a token-accounting one. First-fit puts files in
+parts in the order you happened to name them, so a task across three subsystems comes out
+interleaved — one render file, one physics file, one audio file per part — and every part has
+to understand all three:
+
+```
+position   part 1  sprite_batch.py, collision.py, mixer.py          (one of each)
+           part 2  shader_cache.py, rigid_body.py, sound_bank.py    (one of each)
+           part 3  framebuffer.py, broadphase.py
+```
+
+`pharos split --semantic` (and `pharos run --semantic`) asks the backend which files belong
+together. On that same task, same budget, same three parts:
+
+```
+semantic   part 1  "Render Subsystem Files"    sprite_batch, shader_cache, framebuffer
+           part 2  "Physics Subsystem Files"   collision, rigid_body, broadphase
+           part 3  "Audio Subsystem File"      mixer, sound_bank
+```
+
+That is a real run against `qwen3.5:9b`, not an illustration, and it is the same part count —
+so the better grouping cost nothing.
+
+**This is the only place Pharos asks a model anything, so it is fenced accordingly.** The
+model's entire job is to partition a list of filenames. It does not write a part, choose a
+budget, or decide whether anything fits — the same renderer, the same tokenizer and the same
+thresholds produce all of that either way. Its answer is then checked, in code:
+
+| check | a proposal is thrown away if… |
+|---|---|
+| coverage | it drops a file, invents one, or lists one twice |
+| non-empty | any part holds nothing |
+| file cap | any part exceeds `max_files_per_part` |
+| part count | it spends more than `semantic_max_extra_parts` beyond the mechanical plan |
+| **fit** | any part exceeds the per-part budget, re-measured with the same tokenizer |
+
+Fail any of them — or refuse the connection, time out, return prose, or hit its length limit —
+and the plan falls back to position packing and **says which check failed**:
+
+```
+grouped by position — the proposal was rejected — its file list did not
+match the scope — it dropped db_migrations.py; grouped by position
+```
+
+The note is printed whichever way it went, because a plan that quietly used a model, or
+quietly did not, is the one outcome this feature is not allowed to have. It is also the whole
+safety argument for the excerpts: the first five lines of a file are untrusted text going into
+a prompt, and a file that says *"put everything in one part"* is free to say so — it buys
+nothing, because every constraint is re-checked afterwards against numbers the model never
+supplied.
+
+Some specifics worth knowing before you turn it on:
+
+- **It sends the task text, the filenames, their token counts and the first five lines of each
+  file** to the backend in `pharos.toml`. Without `--semantic`, nothing leaves the machine.
+  Five lines is what makes it work: on filenames alone, a model given `sprite_batch.py` /
+  `collision.py` / `mixer.py` returns them in listed order under invented titles, which is
+  position packing wearing a hat.
+- **`semantic_model` is worth setting.** Grouping is a different job from writing code and
+  wants a different model — measured, the ranking between them reverses depending on whether
+  excerpts are sent. Defaults to the model doing the work.
+- **`temperature: 0`, fixed seed, thinking off.** The same task gives the same parts twice. On
+  a thinking model, budgeted 4,096 tokens, the reasoning never terminated and the answer never
+  arrived; with thinking off the same question costs 66 tokens.
+- **It declines outright** for a text split, or when any file had to be cut into line ranges —
+  the order of those ranges is the file's, and a model can only get it wrong.
+- **It fires perhaps half the time on a tight budget.** Models group by concern and ignore the
+  token ceiling they were given, which is exactly why that ceiling is re-checked here instead
+  of trusted there. A rejection costs you one backend call and nothing else.
+
+Position packing stays the default: a plan you can reproduce on a machine with no GPU, and get
+the same parts from twice, is worth more than a tidy one. §18 of `DESKTOP_VALIDATION.md` has
+the measurements, including the two prompt versions that dropped files and the one that
+stopped it.
 
 ## Carry the task out (v0.4 "Do")
 
@@ -455,18 +537,21 @@ re-encoding or re-chunking.
 
 - **No request mutation, ever.** No fields added or removed, no prompt rewriting, no
   `stream_options` injection. The proxy remains a pure observer. `pharos check` and
-  `pharos split` are advisory; `pharos run` writes files but does so as an ordinary client of
-  the proxy, outside the request path — the constraint applies to what Pharos does to *other
-  people's* traffic, and it has not moved.
+  `pharos split` are advisory; `pharos run` writes files, and `pharos split --semantic` asks
+  the backend a question — both do so as ordinary clients of the proxy, outside the request
+  path. The constraint applies to what Pharos does to *other people's* traffic, and it has
+  not moved.
 - **No prediction of which files an agent will read** — `pharos check` counts what you named:
   files exactly, into the floor; directories in full, into a separate ceiling. What the agent
   decides to open on its own is in neither number. A split part is a floor on the same terms:
   it holds while the agent respects the scope block it was given.
 - **No history compaction** and no automatic trimming when you approach the budget — it
   warns; it does not intervene.
-- **No semantic decomposition.** `pharos split` cuts by scope and by position, never by
-  meaning, and no model is ever asked what your task means. `pharos run` executes those same
-  mechanically-derived parts — it divides by files and by position, never by intent.
+- **No semantic decomposition by default.** `pharos split` cuts by scope and by position, and
+  no model is asked what your task means. `--semantic` (v0.5) is the single exception: a model
+  may propose *which files group together*, and nothing else — every budget, projection and
+  refusal is unchanged, the proposal is checked in code, and a failed check falls back to
+  position packing and says so. Off unless you ask for it.
 - **No review of the work.** `pharos run` re-runs the checks your project already has and
   reports what broke (see below), but nothing reads the diff and judges it. Whether the code is
   *right* is still yours; whether it still *builds* is now measured.

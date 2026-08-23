@@ -291,14 +291,17 @@ fi
 # --- the CLI ----------------------------------------------------------------------------------
 
 run_pharos() {
+    # Anything after the prompt is forwarded verbatim (--semantic, today). Dropping it
+    # would make `s!` silently run a plain split, the one failure this feature must not have.
     local verb="$1" prompt="$2"
+    shift 2
     printf '\n'
     if [ -z "$LOADED_MODEL" ]; then
-        uv run pharos "$verb" "$prompt" --target "$FALLBACK_TARGET" || true
+        uv run pharos "$verb" "$prompt" --target "$FALLBACK_TARGET" "$@" || true
         printf '\n'
         info "(no model resident — planned against a stand-in $FALLBACK_TARGET-token window)"
     else
-        uv run pharos "$verb" "$prompt" || true
+        uv run pharos "$verb" "$prompt" "$@" || true
         printf '\n'
     fi
 }
@@ -314,7 +317,7 @@ fi
 printf '\n  Type a prompt to pre-flight it. Name files and folders in backticks,\n'
 printf '  %se.g.  Refactor everything in `pharos/proxy/` following `README.md`%s\n\n' "$C_GREY" "$C_OFF"
 printf '    %ss <prompt>   cut it into parts that fit        d   live dashboard%s\n' "$C_GREY" "$C_OFF"
-printf '    %sq            quit%s\n' "$C_GREY" "$C_OFF"
+printf '    %ss! <prompt>  the same, grouped by meaning         q   quit%s\n' "$C_GREY" "$C_OFF"
 
 if [ ! -t 0 ]; then
     printf '\n'
@@ -336,6 +339,8 @@ while true; do
             info "starting the dashboard and proxy — press q in the dashboard to come back"
             uv run pharos || true
             continue ;;
+        # Checked before plain `s `, or "s! foo" would split a prompt literally called "! foo".
+        s!\ *) run_pharos split "${line#s! }" --semantic; continue ;;
         s\ *) run_pharos split "${line#s }"; continue ;;
         # The only command here that writes to disk, so it says so first. Not routed through
         # run_pharos: a run owns the terminal for minutes and streams its own progress, and
