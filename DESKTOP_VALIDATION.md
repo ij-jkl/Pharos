@@ -1372,6 +1372,24 @@ on stdin and one read with `--file` both produced correct verdicts. `--no-verify
 verification line and nothing else; `--no-split` ran undivided and said so, declining the plan
 it had built. `--dry-run` planned and touched nothing.
 
+### Edge cases swept on the same pass
+
+* **A directory reference.** `Refactor everything in src/` expands and groups. Two of three
+  groupers accepted it; the third dropped `src/__init__.py` — an empty file, which a model has
+  nothing to say about and will forget. That is ordinary coverage variance and the fallback
+  handled it, so it was left alone. Placing a dropped file automatically was considered and
+  rejected: splitting an oversized group preserves the model's decision exactly, but *placing*
+  a file it never placed invents one, and coverage is the only check that guarantees the
+  grouping is of your task.
+* **A file named explicitly and also inside a named directory.** No duplication: seven files in
+  the plan, none twice. The check layer already dedupes and the grouper inherits it.
+* **A malformed config.** An unknown key names the key (`extra="forbid"`); broken TOML names
+  the line and column. Both exit 2 without a traceback.
+* **`--semantic` with the backend unreachable.** Falls back, names the transport error, and
+  still emits a complete three-part plan. That is the guarantee the feature rests on — it can
+  make a plan nicer, and it can never be the reason there is not one — verified against a
+  genuinely dead port rather than a mock.
+
 ### Known cost: a separate grouper evicts the run's model
 
 Not a bug, but it was not measured when `semantic_model` was recommended. This card holds one
