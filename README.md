@@ -224,8 +224,9 @@ plan that cannot work is refused rather than faked. If the client overhead alone
 window, or a single line is wider than a part, `pharos split` says so instead of shipping
 parts that will fail.
 
-`--target N` plans against N tokens per part without probing the backend — useful offline, or
-to plan for a window you have not loaded yet. Exit codes: `0` a plan whose every part fits (or
+`--target N` judges against N tokens without probing the backend at all — the whole prompt for
+`pharos check`, each part for `pharos split`. Useful offline, or to answer "would this fit in a
+32K window?" for a window you have not loaded yet. Exit codes: `0` a plan whose every part fits (or
 nothing to split), `1` no plan or a part still over, `2` no budget to plan against.
 
 ## Group the parts by meaning (v0.5 `--semantic`)

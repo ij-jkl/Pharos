@@ -113,10 +113,14 @@ async def run_check(
     profile: EnvironmentProfile | None = None,
     skip_profile: bool = False,
     resolve: dict[str, str] | None = None,
+    target: int | None = None,
 ) -> CheckReport:
     """Run the pre-flight for ``prompt``. ``profile`` injects a probe result (tests).
 
     ``resolve`` answers AMBIGUOUS references (raw text -> chosen path); see ``extract``.
+
+    ``target`` judges the floor against that many tokens instead of the loaded window, so a
+    verdict can be had with no backend running at all.
     """
     root_is_fallback = config.target_folder is None
     # Resolved so "not found under ." never appears — the absolute root is the useful message.
@@ -162,7 +166,7 @@ async def run_check(
     overhead = _overhead(config, observations, model)
     floor = prompt_tokens + sum(f.tokens for f in files) + (overhead.tokens if overhead else 0)
 
-    verdict, detail = _verdict(floor, profile)
+    verdict, detail = _verdict(floor, profile, target)
     reserve_warning = _reserve_warning(config, observations, model)
     directory_warning = _directory_warning(floor, directories, profile)
 
@@ -276,7 +280,26 @@ def _overhead(
     return estimate_client_overhead(observations, model)
 
 
-def _verdict(floor: int, profile: EnvironmentProfile | None) -> tuple[Verdict, str]:
+def _verdict(
+    floor: int, profile: EnvironmentProfile | None, target: int | None = None
+) -> tuple[Verdict, str]:
+    """Judge ``floor`` against the live budget, or against ``target`` when one was asked for.
+
+    ``target`` is the same escape hatch the splitter has, and for the same reason: answering
+    "would this fit in a 32K window?" should not require owning a machine that can load one.
+    It had been accepted by `pharos check` and silently ignored, so a 500-token budget and a
+    million-token budget returned the same verdict.
+    """
+    if target is not None:
+        if floor > target:
+            return Verdict.EXCEEDS, (
+                f"the floor alone is {floor - target:,} over the requested target "
+                f"({target:,}); anything the agent reads on its own makes it worse"
+            )
+        return Verdict.FITS, (
+            f"floor leaves {target - floor:,} of the requested target ({target:,}) — "
+            f"measured against that number, not against a loaded window"
+        )
     if profile is None or not profile.backend.reachable:
         return Verdict.INDETERMINATE, "backend unreachable — floor printed, no budget to compare"
     budget = profile.budget

@@ -63,8 +63,8 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
     parser.add_argument(
         "--target",
         type=int,
-        help="plan against this many tokens per part instead of the live budget "
-        "(lets you split with no backend running)",
+        help="judge against this many tokens instead of the live budget — the whole prompt "
+        "for a check, each part for a split (lets you work with no backend running)",
     )
     parser.add_argument(
         "--out",
@@ -138,9 +138,11 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
         return 2
 
     from_stdin = args.file is None and args.prompt is None
-    skip_profile = want_split and args.target is not None
+    skip_profile = args.target is not None
     report = asyncio.run(
-        run_check(config, prompt, skip_profile=skip_profile, resolve=resolve)
+        run_check(
+            config, prompt, skip_profile=skip_profile, resolve=resolve, target=args.target
+        )
     )
 
     if args.pick and report.extraction.ambiguous:
@@ -156,6 +158,7 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
                     profile=report.profile,
                     skip_profile=skip_profile,
                     resolve=resolve,
+                    target=args.target,
                 )
             )
 

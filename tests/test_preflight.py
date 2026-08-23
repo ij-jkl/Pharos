@@ -261,3 +261,43 @@ async def test_unresolved_references_reach_the_report(tree: Path) -> None:
     assert "utils.py" in report.extraction.ambiguous
     assert report.extraction.missing == ["docs/gone.md"]
     assert [d.raw for d in report.extraction.directories] == ["src/auth/"]
+
+
+# ------------------------------------------------------------------- an explicit target
+
+
+@pytest.mark.anyio
+async def test_target_gives_a_verdict_with_no_backend_at_all(tmp_path: Path) -> None:
+    """`--target N` was accepted by check and silently ignored: 500 and 1,000,000 agreed.
+
+    Judging a prompt against a window you have not loaded is the whole reason the flag
+    exists, and check is where you would most want it -- there is nothing to plan, just a
+    number to be under.
+    """
+    (tmp_path / "big.py").write_text("x" * 4000, encoding="utf-8")  # ~1,000 heuristic tokens
+    config = _config(tmp_path)
+    prompt = "Refactor big.py"
+
+    over = await run_check(config, prompt, skip_profile=True, target=300)
+    assert over.verdict is Verdict.EXCEEDS
+    assert "over the requested target (300)" in over.verdict_detail
+
+    under = await run_check(config, prompt, skip_profile=True, target=50_000)
+    assert under.verdict is Verdict.FITS
+    assert "requested target (50,000)" in under.verdict_detail
+
+    # Without one, no backend still means no verdict — the target is the only thing that
+    # can stand in for a measurement, and inventing a default would be a guess.
+    silent = await run_check(config, prompt, skip_profile=True)
+    assert silent.verdict is Verdict.INDETERMINATE
+
+
+@pytest.mark.anyio
+async def test_target_overrides_a_live_budget(tmp_path: Path) -> None:
+    """Asked for a number, answer against that number — not against what happens to be loaded."""
+    (tmp_path / "big.py").write_text("x" * 4000, encoding="utf-8")
+    config = _config(tmp_path)
+    profile = _profile(loaded_ctx=131_072)  # roomy: the live budget would say FITS
+    report = await run_check(config, "Refactor big.py", profile=profile, target=300)
+    assert report.verdict is Verdict.EXCEEDS
+    assert "requested target" in report.verdict_detail
