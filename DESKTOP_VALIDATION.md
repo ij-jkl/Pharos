@@ -1334,6 +1334,36 @@ Three identical `pharos split --semantic` invocations, same prompt, same target,
 byte-identical groupings. `temperature: 0` with a fixed seed holds in practice, which is what
 makes a plan something you can check someone else's work against.
 
+### The proxy, live, on the same pass
+
+Every run above said *"Ran without the proxy"*, so the v0.1 core was untested in this section
+until a headless instance was put in front of it. With one running, `pharos run` announced
+`routing through the Pharos proxy at http://127.0.0.1:11435` and the run completed normally.
+
+`pharos_observations.json` afterwards: **14 observations for a 14-request run**, each carrying
+`input_tokens`, `user_tokens`, `output_tokens`, `messages`, `input_exact: true` — and a grep of
+the whole file for anything from the prompt or the code found nothing. Counts only, as promised.
+
+Then the invariant the entire project rests on, checked live rather than by unit test. The same
+deterministic request sent direct to Ollama and through the proxy:
+
+```
+content direct : 'PASSTHROUGH'      content proxied: 'PASSTHROUGH'
+response keys  : identical (11 fields, none added, none removed)
+prompt_eval_count : direct=20  proxied=20   IDENTICAL
+```
+
+The last line is the one that proves it. `prompt_eval_count` is the *backend's own* count of
+the tokens it received. Had the proxy injected a system prompt, a `stream_options`, or a single
+extra field, that number would differ. It does not.
+
+### The rest of the surface
+
+`--out DIR` wrote `part-01.txt` … `part-03.txt`, each a complete pasteable part. A prompt piped
+on stdin and one read with `--file` both produced correct verdicts. `--no-verify` suppressed the
+verification line and nothing else; `--no-split` ran undivided and said so, declining the plan
+it had built. `--dry-run` planned and touched nothing.
+
 ### Known cost: a separate grouper evicts the run's model
 
 Not a bug, but it was not measured when `semantic_model` was recommended. This card holds one
