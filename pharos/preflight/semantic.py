@@ -342,11 +342,17 @@ def parse(text: str) -> tuple[Proposal | None, str | None]:
 
 
 def validate(proposal: Proposal, request: GroupRequest) -> str | None:
-    """Every check that does not need the tokenizer. Returns a rejection reason, or None.
+    """The checks a proposal cannot be repaired out of. Returns a rejection reason, or None.
 
-    The fitting check is deliberately NOT here: it belongs with the packer, which owns the
-    scaffold and the hand-off reserve. This is the part that can be checked from the request
-    alone, and it is the part that catches a model inventing work.
+    Only two things are fatal here, and they are the two nothing downstream can mend: a file
+    that is missing, invented or duplicated (the grouping is then not *of* your task), and an
+    empty part (there is nothing to put in it).
+
+    Everything to do with size is deliberately absent. A group that is over the token budget
+    or over the file cap is a grouping that is *right and too big*, and throwing away a correct
+    render/physics/audio split because one of the three needs two parts would be discarding the
+    answer over the arithmetic. The packer splits those instead — see ``pharos.preflight.split``
+    — and the part count is re-checked afterwards, once it is known.
     """
     expected = request.names
     proposed = proposal.names
@@ -356,12 +362,6 @@ def validate(proposal: Proposal, request: GroupRequest) -> str | None:
         return (
             f"it proposed {len(proposal.groups)} parts against a ceiling of {request.max_parts}"
         )
-    if request.max_files is not None:
-        over = [g for g in proposal.groups if len(g.files) > request.max_files]
-        if over:
-            return (
-                f"{len(over)} part(s) hold more than the {request.max_files}-file cap"
-            )
     if sorted(proposed) != sorted(expected):
         missing = sorted(set(expected) - set(proposed))
         invented = sorted(set(proposed) - set(expected))

@@ -265,9 +265,26 @@ thresholds produce all of that either way. Its answer is then checked, in code:
 |---|---|
 | coverage | it drops a file, invents one, or lists one twice |
 | non-empty | any part holds nothing |
-| file cap | any part exceeds `max_files_per_part` |
 | part count | it spends more than `semantic_max_extra_parts` beyond the mechanical plan |
-| **fit** | any part exceeds the per-part budget, re-measured with the same tokenizer |
+
+Being **too big** is not on that list, and that is deliberate. Measured, the models group by
+concern correctly and then ignore the token ceiling they were handed — so rejecting on size
+threw away right answers over arithmetic. A group that overruns the budget or the file cap is
+cut into consecutive parts instead, in the model's own order, and the part count is re-checked
+afterwards. An oversized concern becomes *"Physics Subsystem (1 of 2)"* and *"(2 of 2)"*, which
+is what anyone would have done by hand. On the same eight-file task at a budget one part
+tighter:
+
+```
+position   part 1  sprite_batch, collision      part 3  rigid_body, sound_bank
+           part 2  mixer, shader_cache          part 4  framebuffer, broadphase
+           (every part spans two subsystems)
+
+semantic   part 1  Render Subsystem (1 of 2)    part 4  Physics Subsystem (2 of 2)
+           part 2  Render Subsystem (2 of 2)    part 5  Audio Subsystem
+           part 3  Physics Subsystem (1 of 2)
+           (no part spans two subsystems; one extra part)
+```
 
 **One thing is deliberately not on that list: the order.** The model also chooses which part
 runs first, and nothing verifies that order is a real dependency order — it is asked for one,
@@ -305,9 +322,13 @@ Some specifics worth knowing before you turn it on:
   arrived; with thinking off the same question costs 66 tokens.
 - **It declines outright** for a text split, or when any file had to be cut into line ranges —
   the order of those ranges is the file's, and a model can only get it wrong.
-- **It fires perhaps half the time on a tight budget.** Models group by concern and ignore the
-  token ceiling they were given, which is exactly why that ceiling is re-checked here instead
-  of trusted there. A rejection costs you one backend call and nothing else.
+- **It does not fire every time, and a rejection costs one backend call and nothing else.** On
+  a six-file task at a tight budget, two of three models produced a usable grouping and the
+  third dropped a file.
+- **Nothing here measures whether a grouping is *good*.** The checks establish that a plan is
+  valid — every file present, every part fitting, the order the model asked for. Whether
+  "Migrations, Clients, Routes, Errors" is a sensible part is not something any of them can
+  answer, and one of those did get through. Read the part list; it is three lines.
 
 Position packing stays the default: a plan you can reproduce on a machine with no GPU, and get
 the same parts from twice, is worth more than a tidy one. §18 of `DESKTOP_VALIDATION.md` has

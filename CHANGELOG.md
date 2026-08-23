@@ -20,6 +20,11 @@ time one is allowed to decide something *about the plan*, and it is opt-in for t
 - **Any failure falls back to position packing and names the check it failed.** A refused
   connection, prose instead of JSON, a hallucinated filename, a group over budget — all land in
   the same place, and the plan says so in one line whichever way it went.
+- **A group that is right and too big is cut, not rejected.** Size is the one thing a proposal
+  can be wrong about that is mechanically repairable, so an oversized group becomes consecutive
+  parts of the same concern, in the model's own order. Rejecting on size had been discarding
+  correct groupings over arithmetic — including the clean three-subsystem split, at a budget
+  one part tighter. Coverage failures are still fatal; those repair cannot fix.
 - **It works, and it is honest about how often.** On a task across three subsystems whose
   filenames carry no hint of them, `qwen3.5:9b` returned the ideal render/physics/audio split in
   the same three parts position packing used — a free improvement. On a tighter budget, two of

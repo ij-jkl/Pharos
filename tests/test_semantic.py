@@ -232,9 +232,9 @@ def test_validate_rejects_too_many_parts() -> None:
     assert "3 parts against a ceiling of 2" in reason
 
 
-def test_validate_rejects_a_group_over_the_file_cap() -> None:
-    reason = validate(_proposal(["a.py", "b.py"], ["c.py"]), _request(max_files=1))
-    assert reason is not None and "1-file cap" in reason
+def test_validate_ignores_size() -> None:
+    """A group that is right and too big is the packer's problem, not a rejection."""
+    assert validate(_proposal(["a.py", "b.py"], ["c.py"]), _request(max_files=1)) is None
 
 
 def test_validate_names_at_most_three_offenders() -> None:
@@ -412,7 +412,6 @@ async def test_the_title_reaches_the_part_and_is_paid_for(
         ("sorry, I cannot help with that", None, "was not JSON"),
         (_reply([("all of it", list(_FILES[:5]))]), None, "dropped"),
         (_reply([("invented", [*_FILES, "ghost.py"])]), None, "invented"),
-        (_reply([("half", list(_FILES[:3])), ("half", list(_FILES[3:]))]), None, "would not fit"),
         (_reply([(f"p{i}", [f]) for i, f in enumerate(_FILES)]), None, "against a ceiling of 5"),
     ],
 )
@@ -502,7 +501,35 @@ async def test_a_text_split_says_semantic_does_not_apply(
 
 
 @pytest.mark.anyio
-async def test_the_file_cap_is_enforced_against_the_proposal(
+async def test_an_oversized_group_is_split_not_rejected(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Three files of ~1,000 tokens exceed a part. The concern survives; the group is cut."""
+    reply = _reply([("physics", list(_FILES[:3])), ("audio", list(_FILES[3:]))])
+    monkeypatch.setattr(split, "ask", _answers(reply)[0])
+    plan = await _plan(tree)
+
+    assert plan.grouping is Grouping.SEMANTIC
+    assert plan.grouping_note is not None
+    assert "2 groups were too big for one part and were split in order." in plan.grouping_note
+    # The model's order is preserved and no file crosses a concern boundary.
+    assert [[f.display for f in p.files] for p in plan.parts] == [
+        ["alpha.py", "beta.py"],
+        ["gamma.py"],
+        ["delta.py", "epsilon.py"],
+        ["zeta.py"],
+    ]
+    assert [p.title for p in plan.parts] == [
+        "physics (1 of 2)",
+        "physics (2 of 2)",
+        "audio (1 of 2)",
+        "audio (2 of 2)",
+    ]
+    assert plan.ok
+
+
+@pytest.mark.anyio
+async def test_the_file_cap_splits_a_group_rather_than_losing_it(
     tree: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`pharos run` caps files per part for a reason the token budget cannot see."""
@@ -513,9 +540,34 @@ async def test_the_file_cap_is_enforced_against_the_proposal(
     report = await run_check(config, prompt, profile=_profile(tree))
     plan = build_plan(config, prompt, report, target=_TARGET, max_files=2, semantic=True)
 
-    assert plan.grouping is Grouping.POSITION
-    assert plan.grouping_note is not None and "2-file cap" in plan.grouping_note
+    assert plan.grouping is Grouping.SEMANTIC
     assert all(len(p.files) <= 2 for p in plan.parts)
+    assert [[f.display for f in p.files] for p in plan.parts] == [
+        ["alpha.py", "beta.py"],
+        ["gamma.py"],
+        ["delta.py", "epsilon.py"],
+        ["zeta.py"],
+    ]
+
+
+@pytest.mark.anyio
+async def test_repair_that_overruns_the_part_ceiling_is_rejected(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Splitting buys parts, and the ceiling still has the last word.
+
+    Position packs these six files 2/2/2, so with no slack the ceiling is 3. A 3-file group
+    needs two parts on its own, which takes the repaired plan to four.
+    """
+    reply = _reply(
+        [("three", list(_FILES[:3])), ("two", list(_FILES[3:5])), ("one", [_FILES[5]])]
+    )
+    monkeypatch.setattr(split, "ask", _answers(reply)[0])
+    plan = await _plan(tree, semantic_max_extra_parts=0)
+
+    assert plan.grouping is Grouping.POSITION
+    assert plan.grouping_note is not None
+    assert "keeping its groups intact needs 4 parts against a ceiling of 3" in plan.grouping_note
 
 
 @pytest.mark.anyio

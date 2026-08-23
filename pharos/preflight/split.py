@@ -478,28 +478,97 @@ def _semantic_bins(
         return _declined(f"the proposal was rejected — {rejection}")
 
     by_name = {u.display: u for u in units}
-    bins = [[by_name[name] for name in group.files] for group in proposal.groups]
-    # The last check, and the one that matters: a coherent grouping that does not fit is not a
-    # plan. Measured against the same per-part room the packer used, before any of it is shown.
-    over = [i for i, group in enumerate(bins, start=1) if _content(group) > per_part_content]
-    if over:
+    proposed = [[by_name[name] for name in group.files] for group in proposal.groups]
+    bins, titles, split_count = _repair(
+        proposed, [g.title for g in proposal.groups], per_part_content, max_files
+    )
+    # Re-checked after the repair, not before: splitting an oversized concern is what buys the
+    # grouping, and it is also the only thing here that can grow the part count.
+    if len(bins) > request.max_parts:
         return _declined(
-            f"the proposal was rejected — part(s) {', '.join(map(str, over))} would not fit in "
-            f"{per_part_content:,} tokens"
+            f"the proposal was rejected — keeping its groups intact needs {len(bins)} parts "
+            f"against a ceiling of {request.max_parts}"
+        )
+    still_over = [i for i, group in enumerate(bins, start=1) if _content(group) > per_part_content]
+    if still_over:
+        # A single file larger than a part. Nothing to split it against here — the slicer
+        # already declined this whole path — so the grouping goes with it.
+        return _declined(
+            f"the proposal was rejected — part(s) {', '.join(map(str, still_over))} would not "
+            f"fit in {per_part_content:,} tokens even alone"
         )
     shape = (
         f"the same {len(bins)} parts position packing gave"
         if len(bins) == len(position_bins)
         else f"{len(bins)} parts where position packing gave {len(position_bins)}"
     )
+    if split_count == 1:
+        repaired = " 1 group was too big for one part and was split in order."
+    elif split_count:
+        repaired = f" {split_count} groups were too big for one part and were split in order."
+    else:
+        repaired = ""
     return _Grouped(
         note=(
-            f"grouped by {model} into {shape}. The grouping and the part order are the "
-            f"model's; every projection below is not"
+            f"grouped by {model} into {shape}.{repaired} The grouping and the part order are "
+            f"the model's; every projection below is not"
         ),
         bins=bins,
-        titles=[group.title for group in proposal.groups],
+        titles=titles,
     )
+
+
+def _repair(
+    groups: list[list[PartFile]],
+    titles: list[str],
+    per_part_content: int,
+    max_files: int | None,
+) -> tuple[list[list[PartFile]], list[str], int]:
+    """Cut any group too big for one part into consecutive parts, keeping the model's order.
+
+    This is what makes the feature fire more than half the time. Measured, the models are
+    specifically bad at the *packing* constraint: they group by concern, correctly, and then
+    ignore the token ceiling they were handed. Rejecting the whole proposal for that threw away
+    a right answer over arithmetic — a clean render/physics/audio split lost because physics
+    happened to need two parts, replaced by three parts each spanning all three subsystems.
+
+    Splitting is mechanical and order-preserving, so nothing new is trusted: the group's files
+    stay in the sequence the model put them in and fill parts in that sequence. An oversized
+    concern becomes two *consecutive parts of that concern*, which is the outcome anyone would
+    have chosen by hand. Titles are carried onto the continuation parts and numbered, because a
+    reader looking at two parts called "Physics Subsystem" would fairly wonder which is which.
+    """
+    out: list[list[PartFile]] = []
+    out_titles: list[str] = []
+    split_count = 0
+    for group, title in zip(groups, titles, strict=True):
+        chunks = _chunk(group, per_part_content, max_files)
+        if len(chunks) > 1:
+            split_count += 1
+        for n, chunk in enumerate(chunks, start=1):
+            out.append(chunk)
+            out_titles.append(title if len(chunks) == 1 else f"{title} ({n} of {len(chunks)})")
+    return out, out_titles, split_count
+
+
+def _chunk(
+    group: list[PartFile], per_part_content: int, max_files: int | None
+) -> list[list[PartFile]]:
+    """One group as the fewest consecutive parts that each respect the budget and the cap."""
+    chunks: list[list[PartFile]] = []
+    current: list[PartFile] = []
+    used = 0
+    for unit in group:
+        too_heavy = current and used + unit.tokens > per_part_content
+        too_many = max_files is not None and len(current) >= max_files
+        if too_heavy or too_many:
+            chunks.append(current)
+            current, used = [], 0
+        current.append(unit)
+        used += unit.tokens
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _content(group: list[PartFile]) -> int:

@@ -1148,6 +1148,55 @@ corrected from request 2), continuity (1 of 2 hand-offs, the familiar §14 weakn
 verification all behave exactly as they do without the flag. `--semantic` moves files between
 parts; it does not touch a single number.
 
+### Rejecting on size threw away right answers
+
+The first version treated "a group does not fit" as a rejection, alongside coverage. On the
+**shop** fixture that rejected two of three models; on **game** at a one-part-tighter budget it
+rejected the clean render/physics/audio split outright and fell back to the interleaved plan.
+
+Both rejections were for the same reason, and it is not a reasoning failure: the models group
+by concern correctly and then ignore the token ceiling they were handed. Size is the one thing
+a proposal can be wrong about that is *mechanically repairable* — a group that is right and too
+big can be cut into consecutive parts of the same concern, in the model's own order, without
+trusting anything new. So it is, and the part count is re-checked afterwards.
+
+**game**, target 4,200 — the budget at which this previously failed completely:
+
+```
+position   part 1  sprite_batch, collision      part 3  rigid_body, sound_bank
+           part 2  mixer, shader_cache          part 4  framebuffer, broadphase
+
+semantic   part 1  Render Subsystem (1 of 2)    part 4  Physics Subsystem (2 of 2)
+           part 2  Render Subsystem (2 of 2)    part 5  Audio Subsystem
+           part 3  Physics Subsystem (1 of 2)
+```
+
+Every position part spans two subsystems. No semantic part does. The cost is one extra part
+and one extra hand-off.
+
+**shop**, target 5,600, the same three groupers as before the change:
+
+| grouper | before | after |
+|---|---|---|
+| `qwen3.5:9b` | rejected, part 2 over budget | **accepted**, its oversized group split 3+1 |
+| `gemma3:12b` | accepted, 3 parts | accepted, 3 parts (unchanged) |
+| `qwen2.5-coder:7b` | rejected, dropped a file | rejected, dropped a file |
+
+One of three to two of three. The remaining failure is a coverage failure, which repair cannot
+fix and should not: a grouping missing a file is not a grouping of your task.
+
+### Known limit: acceptance is not quality
+
+Worth being blunt about, because this change made it more true. What the checks establish is
+that a plan is *valid* — every file present, every part fitting, the part count bounded. None
+of them can say whether the grouping is any **good**. The `qwen3.5:9b` run above was accepted
+with a part titled "Migrations, Clients, Routes, Errors", which is four unrelated files in a
+trench coat; repair dutifully split it 3+1 and shipped it.
+
+The size check was never a quality filter, and treating it as one was accidental — it rejected
+the *correct* grouping on **game** just as readily. But removing it does mean fewer bad
+groupings are caught by luck. The part list is three lines at the top of the plan; read it.
+
 ### Known limit: it is only as good as the first five lines
 
 A file whose opening lines are a licence header, a long import block, or nothing at all tells
