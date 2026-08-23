@@ -65,10 +65,20 @@ class CheckOutcome:
     detail: str = ""
     skipped: str | None = None  # why it could not run; None when it ran
     pre_existing: bool = False  # it failed before the run too, so the run did not cause it
+    # The baseline for this check never completed -- it timed out, or its tool was missing then
+    # -- so there is no "before" to compare against. Failing now might be the run's doing or
+    # might not, and blaming it on the strength of one measurement would be a guess.
+    unattributable: bool = False
 
     @property
     def newly_broken(self) -> bool:
-        return not self.ok and self.skipped is None and not self.pre_existing
+        """Failing now, passing before, and both measurements actually happened."""
+        return (
+            not self.ok
+            and self.skipped is None
+            and not self.pre_existing
+            and not self.unattributable
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +95,16 @@ class Verification:
     @property
     def already_failing(self) -> list[CheckOutcome]:
         return [c for c in self.checks if not c.ok and c.pre_existing and c.skipped is None]
+
+    @property
+    def compared(self) -> bool:
+        """Every check that ran had a baseline to be judged against."""
+        return not self.unattributable
+
+    @property
+    def unattributable(self) -> list[CheckOutcome]:
+        """Failing, with no usable baseline to say whether this run caused it."""
+        return [c for c in self.checks if not c.ok and c.unattributable and c.skipped is None]
 
     @property
     def skipped(self) -> list[CheckOutcome]:
@@ -274,11 +294,16 @@ def _excerpt(stream: str) -> str:
     return chr(10).join([*head, f"... {hidden} more line(s) ...", *tail])
 
 
-def baseline(root: Path, commands: list[str], *, timeout: float) -> dict[str, bool]:
-    """Which checks pass BEFORE the run. A red suite on arrival is not the run's doing."""
-    return {
-        command: run_command(root, command, timeout=timeout).ok for command in commands
-    }
+def baseline(root: Path, commands: list[str], *, timeout: float) -> dict[str, CheckOutcome]:
+    """How each check stood BEFORE the run. A red suite on arrival is not the run's doing.
+
+    The whole outcome is kept, not just a pass/fail: a baseline that was itself skipped -- its
+    tool missing, or timed out -- reports ``ok=True`` because a check that did not run must
+    never be treated as a failure. Reducing that to a bool here would let a skipped baseline
+    masquerade as a passing one, and the run would then be blamed for a regression nobody ever
+    measured.
+    """
+    return {command: run_command(root, command, timeout=timeout) for command in commands}
 
 
 def verify(
@@ -286,7 +311,7 @@ def verify(
     *,
     written: list[str],
     commands: list[str],
-    command_baseline: dict[str, bool],
+    command_baseline: dict[str, CheckOutcome],
     syntax_baseline: dict[str, str | None],
     timeout: float,
 ) -> Verification:
@@ -300,14 +325,28 @@ def verify(
     checks: list[CheckOutcome] = []
     syntax, unchecked = syntax_check(root, written, syntax_baseline)
     checks.append(syntax)
+    if not written:
+        # Nothing was written, so nothing can have been broken. Running the suite again would
+        # only re-measure the baseline at the cost of running it twice.
+        for command in commands:
+            checks.append(
+                CheckOutcome(name=command, ok=True, skipped="the run wrote no files")
+            )
+        return Verification(checks=tuple(checks), unchecked_files=unchecked)
+
     for command in commands:
         outcome = run_command(root, command, timeout=timeout)
-        if not outcome.ok and command_baseline.get(command) is False:
-            outcome = CheckOutcome(
+        if outcome.ok or outcome.skipped is not None:
+            checks.append(outcome)
+            continue
+        before = command_baseline.get(command)
+        checks.append(
+            CheckOutcome(
                 name=outcome.name,
                 ok=False,
                 detail=outcome.detail,
-                pre_existing=True,
+                pre_existing=before is not None and not before.ok,
+                unattributable=before is None or before.skipped is not None,
             )
-        checks.append(outcome)
+        )
     return Verification(checks=tuple(checks), unchecked_files=unchecked)

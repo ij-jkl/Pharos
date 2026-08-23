@@ -489,6 +489,11 @@ def _add_verification_row(body: Table, verification: Verification | None) -> Non
 
     for check in verification.already_failing:
         lines.append(f"[dim]{check.name} was already failing before the run[/]")
+    for check in verification.unattributable:
+        lines.append(
+            f"[yellow]{check.name} is failing, but its baseline never ran - "
+            f"cannot say this run caused it[/]"
+        )
     for check in verification.skipped:
         lines.append(f"[dim]{check.name} skipped {chr(183)} {check.skipped}[/]")
     if verification.unchecked_files:

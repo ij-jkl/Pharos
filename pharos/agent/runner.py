@@ -39,6 +39,7 @@ from pharos.agent.tools import (
     workspace_root,
 )
 from pharos.agent.verify import (
+    CheckOutcome,
     Verification,
     baseline,
     detect_commands,
@@ -308,7 +309,7 @@ async def run_task(
     # The checks, and their answers BEFORE anything is written. Taken here because a moment
     # later the model starts editing, and a baseline captured after that measures nothing.
     checks: list[str] = []
-    was_passing: dict[str, bool] = {}
+    was_passing: dict[str, CheckOutcome] = {}
     parses_now: dict[str, str | None] = {}
     if config.verify and verify_work:
         checks = (
@@ -324,8 +325,10 @@ async def run_task(
             was_passing = await asyncio.to_thread(
                 baseline, root, checks, timeout=config.verify_timeout_seconds
             )
-            for command, ok in was_passing.items():
-                if not ok:
+            for command, before in was_passing.items():
+                if before.skipped is not None:
+                    say(f"  {command} could not be baselined ({before.skipped})")
+                elif not before.ok:
                     say(f"  {command} was already failing - it will not be charged to this run")
 
     proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"

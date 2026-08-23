@@ -166,11 +166,12 @@ def test_detects_nothing_for_a_project_that_configures_nothing(tmp_path: Path) -
 def test_a_check_already_failing_is_not_charged_to_the_run(tmp_path: Path) -> None:
     """Without this, verification would fail every run on any repository with a red test."""
     command = _py("import sys; sys.exit(1)")
+    (tmp_path / "a.py").write_text(GOOD_PY, encoding="utf-8")
     result = verify(
         tmp_path,
-        written=[],
+        written=["a.py"],
         commands=[command],
-        command_baseline={command: False},
+        command_baseline={command: CheckOutcome(name=command, ok=False)},
         syntax_baseline={},
         timeout=60,
     )
@@ -181,16 +182,52 @@ def test_a_check_already_failing_is_not_charged_to_the_run(tmp_path: Path) -> No
 
 def test_a_check_the_run_broke_fails_the_verification(tmp_path: Path) -> None:
     command = _py("import sys; sys.exit(1)")
+    (tmp_path / "a.py").write_text(GOOD_PY, encoding="utf-8")
     result = verify(
         tmp_path,
-        written=[],
+        written=["a.py"],
         commands=[command],
-        command_baseline={command: True},
+        command_baseline={command: CheckOutcome(name=command, ok=True)},
         syntax_baseline={},
         timeout=60,
     )
     assert not result.ok
     assert [c.name for c in result.newly_broken] == [command]
+
+
+def test_a_failure_with_no_usable_baseline_is_not_pinned_on_the_run(tmp_path: Path) -> None:
+    """A baseline that was itself skipped reports ok=True, because a check that did not run is
+    not a failure. Reducing it to that bool would let a skipped baseline pose as a passing one
+    and the run would be blamed for a regression nobody ever measured."""
+    command = _py("import sys; sys.exit(1)")
+    (tmp_path / "a.py").write_text(GOOD_PY, encoding="utf-8")
+    result = verify(
+        tmp_path,
+        written=["a.py"],
+        commands=[command],
+        command_baseline={command: CheckOutcome(name=command, ok=True, skipped="timed out")},
+        syntax_baseline={},
+        timeout=60,
+    )
+    assert not result.newly_broken
+    assert [c.name for c in result.unattributable] == [command]
+    assert result.ok and not result.compared
+
+
+def test_commands_are_skipped_when_the_run_wrote_nothing(tmp_path: Path) -> None:
+    """Nothing written means nothing can have broken; re-running the suite would only
+    re-measure the baseline at the cost of running it twice."""
+    command = _py("import sys; sys.exit(1)")
+    result = verify(
+        tmp_path,
+        written=[],
+        commands=[command],
+        command_baseline={command: CheckOutcome(name=command, ok=True)},
+        syntax_baseline={},
+        timeout=60,
+    )
+    assert result.ok
+    assert [c.skipped for c in result.checks if c.name == command] == ["the run wrote no files"]
 
 
 def test_ran_separates_nothing_broken_from_nothing_checked(tmp_path: Path) -> None:

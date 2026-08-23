@@ -378,6 +378,7 @@ def _verification_dict(verification: Verification | None) -> dict[str, object] |
             {"name": c.name, "detail": c.detail} for c in verification.newly_broken
         ],
         "already_failing": [c.name for c in verification.already_failing],
+        "unattributable": [c.name for c in verification.unattributable],
         "passed": [c.name for c in verification.passing],
         "skipped": [
             {"name": c.name, "reason": c.skipped} for c in verification.skipped
