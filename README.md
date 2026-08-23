@@ -253,8 +253,11 @@ semantic   part 1  "Render Subsystem Files"    sprite_batch, shader_cache, frame
 That is a real run against `qwen3.5:9b`, not an illustration, and it is the same part count —
 so the better grouping cost nothing.
 
-**This is the only place Pharos asks a model anything, so it is fenced accordingly.** The
-model's entire job is to partition a list of filenames. It does not write a part, choose a
+**This is the only place Pharos lets a model decide anything, so it is fenced accordingly.**
+`pharos run` talks to a model constantly, but only to have the work done — the plan, the
+budgets, the projections and the scorecard are all Pharos's own, and a run cannot argue with
+any of them. `--semantic` is the one exception, and the model's entire job under it is to
+partition a list of filenames. It does not write a part, choose a
 budget, or decide whether anything fits — the same renderer, the same tokenizer and the same
 thresholds produce all of that either way. Its answer is then checked, in code:
 

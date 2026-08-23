@@ -9,7 +9,8 @@ RTX 3060 12 GB running Ollama — and the record of how is in that file rather t
 ## v0.5 — "Divide by meaning"
 
 `pharos split --semantic` and `pharos run --semantic` let a model choose which files belong in
-a part together. It is the only place Pharos asks a model anything, and it is opt-in.
+a part together. A run has always talked to a model to get the work done; this is the first
+time one is allowed to decide something *about the plan*, and it is opt-in for that reason.
 
 - **The model's job is one partition, and nothing else.** It never writes a part, picks a
   budget, or decides whether one fits — the same renderer, tokenizer and thresholds produce all

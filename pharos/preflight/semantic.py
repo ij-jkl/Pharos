@@ -39,9 +39,11 @@ budget are all checked afterwards, in code, against numbers the model never supp
 worst an injected line can do is produce a grouping bad enough to be rejected — which lands
 in exactly the same place as a backend that was switched off.
 
-**This is the one Pharos command that sends anything anywhere**, and only with `--semantic`.
-It sends the task text, the filenames, their token counts and those five lines per file, to
-the backend already configured in `pharos.toml`. Without the flag, nothing leaves.
+**This is the only thing in the pre-flight that sends anything anywhere.** `pharos check` and
+`pharos split` are otherwise entirely local — they read your files and count them, and that is
+all. With `--semantic` the task text, the filenames, their token counts and those five lines
+per file go to the backend already configured in `pharos.toml`. (`pharos run` obviously sends
+plenty; having the work done is what it is for.) Without the flag, nothing leaves.
 
 The call is made with ``temperature: 0`` and a fixed seed: a splitter that answers
 differently on the same input twice is not a tool anybody can check your work against.
@@ -91,6 +93,7 @@ _REPLY_TOKENS_PER_FILE = 48
 
 def reply_budget(files: int) -> int:
     return _REPLY_BASE_TOKENS + _REPLY_TOKENS_PER_FILE * files
+
 
 # Ollama constrains generation to this shape, so the common "here is your JSON: ```json"
 # failure never happens. The parser below still does not assume it worked.

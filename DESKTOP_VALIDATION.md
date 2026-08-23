@@ -993,8 +993,9 @@ Every other ecosystem goes through `verify_commands`, which is the same code pat
 
 ## ☑ 18. Semantic grouping — can a model be trusted with the split? (v0.5, live)
 
-Everything above this section is arithmetic. This one asks a model a question, so the record is
-mostly about the ways the answer was wrong and what the checks did about it.
+The sections above measure models doing work. This one is the first to let a model decide
+something about the *plan*, so the record is mostly about the ways the answer was wrong and
+what the checks did about it.
 
 The question is deliberately the smallest one in the split: given the task, the filenames, their
 token counts and the first five lines of each, **which files belong in a part together, and in
