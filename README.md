@@ -276,7 +276,8 @@ that happens, per part, rather than letting the totals absorb it. `git diff` is 
 
 "Every part completed" is not success. A part completes by replying without calling a tool —
 exactly what a model does when it has read its files and *described* the change instead of
-making it. So every run ends with six numbers, none of which require asking a model anything:
+making it. So every run ends with a scorecard, none of whose numbers require asking a model
+anything:
 
 ```
 Scorecard
@@ -290,10 +291,6 @@ Scorecard
   drift        our estimate ran 0.94-4.70x the backend's count over 72 request(s),
                4.46x on the largest  (worst shortfall 60 tokens, inside the 256-token margin)
   convergence  6 part(s) needed a nudge, 0 stopped early
-  verification 1 check(s) this run broke  passed before, failing now
-                 x ruff check .
-                     F821 Undefined name `Customer`
-                     --> src/orders.py:5:56
 ```
 
 That is a real run, not an illustration. Two of its lines are worth reading together: the
@@ -344,6 +341,21 @@ task, those were exactly the two cases.
   `totals` — COMPLETE, and a `NameError`. Ruff calls that F821 in milliseconds, so this
   runs the tools the repository already has and reports their exit codes. No model is asked
   what the code means; the rule the splitter is built on still holds.
+
+The verification line is newer than that run, so here it is from its own — a six-file task
+against `qwen3.5:9b`, where every assigned file was written and the project stopped linting:
+
+```
+BROKEN        every file was changed, but ruff check . now fails
+coverage      100%  6 of 6 files
+verification  1 check(s) this run broke  passed before, failing now
+              x ruff check .
+                  F821 Undefined name `Customer`
+                  --> src/orders.py:5:56
+```
+
+The model annotated `customer: "Customer"` and `List["LineItem"]` without importing either
+name. Exit code 1. Before this line existed the same run exited 0 and reported COMPLETE.
 
 #### How verification stays honest
 
