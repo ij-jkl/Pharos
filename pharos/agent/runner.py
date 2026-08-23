@@ -42,6 +42,7 @@ from pharos.agent.workspace import (
     Undo,
     Workspace,
     changed_files,
+    current_branch,
     git_guard,
 )
 from pharos.config import PharosConfig
@@ -63,6 +64,7 @@ class RunOutcome:
     plan: SplitPlan | None = None
     parts: list[PartResult] = field(default_factory=list)
     branch: str | None = None
+    base_branch: str | None = None  # what the run branched FROM, for the undo line
     undo: Undo | None = None  # set only when there was no git to fall back on
     files_changed: list[str] = field(default_factory=list)
     counts_exact: bool = False
@@ -279,6 +281,7 @@ async def run_task(
     undo: Undo | None = None
     if use_git:
         try:
+            outcome.base_branch = current_branch(root)
             outcome.branch = git_guard(root)
             if outcome.branch:
                 say(f"working on branch {outcome.branch}")

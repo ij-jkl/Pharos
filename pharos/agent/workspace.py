@@ -158,6 +158,25 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def current_branch(root: Path) -> str | None:
+    """The ref a run started from, so the undo instruction names it instead of assuming.
+
+    "main" was hardcoded into that advice, which is wrong on every repository that calls its
+    default branch something else -- following it fails and leaves you stranded on the run
+    branch, holding the changes but not the way back. Returns the short commit sha when HEAD
+    is detached, which `git checkout` accepts just the same, and None when there is nothing
+    to read.
+    """
+    name = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if name.returncode != 0:
+        return None
+    ref = name.stdout.strip()
+    if ref and ref != "HEAD":
+        return ref
+    sha = _git(root, "rev-parse", "--short", "HEAD")
+    return sha.stdout.strip() or None if sha.returncode == 0 else None
+
+
 def git_guard(root: Path, *, create_branch: bool = True) -> str | None:
     """Verify the tree is clean and move the run onto its own branch. Returns the branch name.
 

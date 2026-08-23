@@ -565,8 +565,9 @@ def _render_footer(console: Console, outcome: RunOutcome) -> None:
         lines.append("[yellow]Nothing was written.[/]")
 
     if outcome.branch:
-        lines.append("[dim]review[/]  git diff main")
-        lines.append(f"[dim]undo[/]    git checkout main && git branch -D {outcome.branch}")
+        base = outcome.base_branch or "-"
+        lines.append(f"[dim]review[/]  git diff {base}")
+        lines.append(f"[dim]undo[/]    git checkout {base} && git branch -D {outcome.branch}")
     elif outcome.undo is not None:
         lines.append(f"[dim]review[/]  compare against {outcome.undo.directory}")
         lines.append("[dim]undo[/]    copy that folder back over the workspace")
@@ -658,9 +659,13 @@ def _render(
         console.print("[yellow]No files changed.[/]")
 
     if outcome.branch:
+        # The ref the run actually branched from. Naming a branch the repository may not
+        # have is advice that fails when it is followed, at the one moment it is needed;
+        # "-" is git's own name for wherever we came from, for a detached HEAD.
+        base = outcome.base_branch or "-"
         console.print(
-            f"\n[dim]On branch {outcome.branch} — review with `git diff main`, "
-            f"bin it with `git checkout main && git branch -D {outcome.branch}`.[/]"
+            f"\n[dim]On branch {outcome.branch} — review with `git diff {base}`, "
+            f"bin it with `git checkout {base} && git branch -D {outcome.branch}`.[/]"
         )
     elif outcome.undo is not None:
         console.print()

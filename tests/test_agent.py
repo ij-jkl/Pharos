@@ -10,15 +10,24 @@ reproducible on any machine.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from rich.console import Console
 
-from pharos.agent.runner import _edit_target, _load_payload, _with_handoff
+from pharos.agent.cli import _render_footer
+from pharos.agent.runner import (
+    RunOutcome,
+    _edit_target,
+    _load_payload,
+    _with_handoff,
+)
 from pharos.agent.session import (
     AgentSession,
     PartResult,
@@ -39,6 +48,7 @@ from pharos.agent.workspace import (
     Undo,
     Workspace,
     WorkspaceError,
+    current_branch,
     git_guard,
 )
 from pharos.config import PharosConfig
@@ -1294,3 +1304,62 @@ def test_the_handoff_request_forbids_the_decline_phrase() -> None:
 
     assert "NAME each file you changed" in _HANDOFF_REQUEST
     assert "Do NOT write 'NO CHANGES NEEDED' here" in _HANDOFF_REQUEST
+
+
+# --- the undo instruction names the branch the run actually started from -------------------------
+
+
+def _repo_on_branch(root: Path, branch: str) -> None:
+    """A git repository whose default branch is `branch` — the case `main` was assumed for."""
+    subprocess.run(["git", "init", "-q", "-b", branch, str(root)], check=True, capture_output=True)
+    (root / "a.py").write_text("a = 1\n", encoding="utf-8")
+    for args in (
+        ["config", "user.email", "t@t"],
+        ["config", "user.name", "t"],
+        ["add", "-A"],
+        ["commit", "-qm", "init"],
+    ):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+
+def test_current_branch_reads_a_non_main_default(tmp_path: Path) -> None:
+    _repo_on_branch(tmp_path, "master")
+    assert current_branch(tmp_path) == "master"
+
+
+def test_current_branch_falls_back_to_a_sha_when_head_is_detached(tmp_path: Path) -> None:
+    _repo_on_branch(tmp_path, "trunk")
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=tmp_path, capture_output=True, text=True
+    ).stdout.strip()
+    subprocess.run(["git", "checkout", "-q", "--detach"], cwd=tmp_path, check=True)
+    # `git checkout <sha>` is as valid as a branch name, so the undo line still works.
+    assert current_branch(tmp_path) == head
+
+
+def test_current_branch_is_none_outside_a_repository(tmp_path: Path) -> None:
+    assert current_branch(tmp_path) is None
+
+
+def test_undo_instruction_names_the_real_base_branch(tmp_path: Path) -> None:
+    """The bug: `main` was hardcoded, so on a `master` repository the advice printed at the
+    end of a run does not work — and it is the only route back to the pre-run tree."""
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(
+        branch="pharos-run/2026-01-01-000000",
+        base_branch="master",
+        files_changed=["a.py"],
+    )
+    _render_footer(console, outcome)
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "git diff master" in text
+    assert "git checkout master" in text
+    assert "main" not in text
+
+
+def test_undo_instruction_falls_back_to_previous_ref_when_base_unknown(tmp_path: Path) -> None:
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(branch="pharos-run/x", base_branch=None, files_changed=["a.py"])
+    _render_footer(console, outcome)
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "git checkout -" in text
