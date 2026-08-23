@@ -670,3 +670,53 @@ async def test_the_configured_grouper_model_is_the_one_asked(
     assert seen == ["a-small-fast-one"]
     await _plan(tree)
     assert seen[-1] == "test-model-not-installed"  # falls back to the run's own model
+
+
+def test_the_reply_budget_scales_but_is_capped() -> None:
+    assert semantic.reply_budget(1) == 256 + 48
+    assert semantic.reply_budget(6) == 256 + 48 * 6
+    # Linear in the file count, and the file count has no ceiling of its own.
+    assert semantic.reply_budget(10_000) == semantic._REPLY_MAX_TOKENS
+
+
+@pytest.mark.anyio
+async def test_no_split_does_not_pay_for_a_grouping(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--no-split throws the parts away; arranging them first is a round trip for a footnote."""
+    from pharos.agent import runner
+
+    config = _config(tree)
+    prompt = _prompt()
+    report = await run_check(config, prompt, profile=_profile(tree))
+
+    async def _check(cfg: object, p: object, **kw: object):
+        return report
+
+    async def _window(cfg: object, p: object, rep: object, say: object):
+        return report
+
+    monkeypatch.setattr(runner, "run_check", _check)
+    monkeypatch.setattr(runner, "_ensure_window", _window)
+    ask_fn, calls = _answers(_reply([("x", list(_FILES))]))
+    monkeypatch.setattr(split, "ask", ask_fn)
+
+    seen: list[bool] = []
+    real = runner.build_plan
+
+    def spy(*args: object, **kwargs: object):
+        seen.append(bool(kwargs.get("semantic")))
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runner, "build_plan", spy)
+
+    await runner.run_task(
+        config, prompt, dry_run=True, use_git=False, semantic=True, divide=False
+    )
+    assert seen == [False], "--no-split must not ask"
+    assert not calls
+
+    await runner.run_task(
+        config, prompt, dry_run=True, use_git=False, semantic=True, divide=True
+    )
+    assert seen == [False, True], "dividing for real must ask"

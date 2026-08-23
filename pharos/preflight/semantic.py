@@ -89,10 +89,15 @@ _TITLE_LIMIT = 80
 # groups. Generous per file, with a floor for the small cases where the base JSON dominates.
 _REPLY_BASE_TOKENS = 256
 _REPLY_TOKENS_PER_FILE = 48
+# And a ceiling, because the per-file term is linear and the file count is not bounded by
+# anything here — a directory of 300 files would otherwise ask for a 14,000-token reply and
+# wait for it. Past this, a reply that runs long is reported as cut off and the plan falls
+# back, which is the right outcome and a much faster one.
+_REPLY_MAX_TOKENS = 4096
 
 
 def reply_budget(files: int) -> int:
-    return _REPLY_BASE_TOKENS + _REPLY_TOKENS_PER_FILE * files
+    return min(_REPLY_BASE_TOKENS + _REPLY_TOKENS_PER_FILE * files, _REPLY_MAX_TOKENS)
 
 
 # Ollama constrains generation to this shape, so the common "here is your JSON: ```json"

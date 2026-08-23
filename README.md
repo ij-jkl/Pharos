@@ -269,8 +269,14 @@ thresholds produce all of that either way. Its answer is then checked, in code:
 | part count | it spends more than `semantic_max_extra_parts` beyond the mechanical plan |
 | **fit** | any part exceeds the per-part budget, re-measured with the same tokenizer |
 
-Fail any of them — or refuse the connection, time out, return prose, or hit its length limit —
-and the plan falls back to position packing and **says which check failed**:
+**One thing is deliberately not on that list: the order.** The model also chooses which part
+runs first, and nothing verifies that order is a real dependency order — it is asked for one,
+but no static analysis backs that up, and a grouping whose part 2 needs what part 3 defines
+would be accepted. Every *quantity* is re-measured; the sequencing is taken on trust, exactly
+as the hand-off between parts always has been.
+
+Fail any of the checks above — or refuse the connection, time out, return prose, or hit its
+length limit — and the plan falls back to position packing and **says which check failed**:
 
 ```
 grouped by position — the proposal was rejected — its file list did not

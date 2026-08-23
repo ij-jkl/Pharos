@@ -264,7 +264,10 @@ async def run_task(
         # Two limits, one plan: the window, and how many files a model gets through in one
         # sitting. Only the first is measurable; see PharosConfig.max_files_per_part.
         max_files=config.max_files_per_part,
-        semantic=semantic,
+        # Not when the parts are being thrown away. --no-split still builds a plan, so the
+        # report can say what it declined, but paying a backend call to arrange parts nobody
+        # will run is a round trip for a footnote.
+        semantic=semantic and divide,
     )
     outcome.plan = plan
     bodies: list[tuple[str, list[PartFile] | None]]

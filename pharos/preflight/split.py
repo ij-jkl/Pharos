@@ -324,11 +324,10 @@ def _plan_scope(
     titles = [""] * len(bins)
     grouping_note: str | None = None
     if config is not None:
-        proposed, titles_or_none, grouping_note = _semantic_bins(
-            config, prompt, report, units, bins, per_part_content, max_files
-        )
-        if proposed is not None and titles_or_none is not None:
-            bins, titles, grouping = proposed, titles_or_none, Grouping.SEMANTIC
+        proposal = _semantic_bins(config, prompt, report, units, bins, per_part_content, max_files)
+        grouping_note = proposal.note
+        if proposal.bins is not None:
+            bins, titles, grouping = proposal.bins, proposal.titles, Grouping.SEMANTIC
 
     all_labels = [u.label() for u in units]
     parts: list[Part] = []
@@ -408,6 +407,23 @@ def _position_bins(
     return bins
 
 
+@dataclass(frozen=True, slots=True)
+class _Grouped:
+    """The outcome of asking. ``bins`` is None whenever the mechanical grouping should stand.
+
+    ``note`` is never None and never empty: asking a model and not saying so is the one thing
+    this feature is not allowed to do, so there is no way to construct a silent outcome.
+    """
+
+    note: str
+    bins: list[list[PartFile]] | None = None
+    titles: list[str] = field(default_factory=list)
+
+
+def _declined(note: str) -> _Grouped:
+    return _Grouped(note=f"{note}; grouped by position")
+
+
 def _semantic_bins(
     config: PharosConfig,
     prompt: str,
@@ -416,29 +432,31 @@ def _semantic_bins(
     position_bins: list[list[PartFile]],
     per_part_content: int,
     max_files: int | None,
-) -> tuple[list[list[PartFile]] | None, list[str] | None, str]:
+) -> _Grouped:
     """Ask the backend to group ``units``, then refuse the answer unless it survives everything.
 
-    Returns ``(bins, titles, note)``. ``bins`` is None whenever the mechanical grouping should
-    stand — which is most of the interesting cases, and each of them names itself in the note.
-    The note is never None: asking a model and not saying so would be the one thing this
-    feature is not allowed to do.
+    Most of the interesting cases end in a refusal, and each of them names itself in the note.
+
+    One thing here is NOT checked, and saying which is the point: the model also chooses the
+    ORDER of the parts, and nothing verifies that order is a real dependency order. It is asked
+    for one — definitions before their users — but no static analysis backs that up, and a
+    grouping whose part 2 needs something part 3 defines would be accepted. Every *quantity* is
+    re-measured; the sequencing is taken on trust, exactly as the hand-off between parts always
+    has been.
     """
     # Not necessarily the model doing the work: grouping is a different job and wants a
     # different model. See PharosConfig.semantic_model for what was measured.
     model = config.semantic_model or config.model
     if model is None:
-        return None, None, "semantic grouping needs a model in pharos.toml; grouped by position"
+        return _declined("semantic grouping needs a model in pharos.toml")
     sliced = [u for u in units if u.is_slice]
     if sliced:
         # A group of line ranges is not a group of ideas. "lines 1940-3878 of forward.py"
         # belongs where the previous slice left off and nowhere else, so the ordering is
         # already determined and a model has nothing to add but risk.
-        return (
-            None,
-            None,
+        return _declined(
             f"{len(sliced)} file(s) had to be cut into line ranges, whose order is fixed by "
-            f"the file itself — grouped by position",
+            f"the file itself"
         )
 
     request = GroupRequest(
@@ -451,13 +469,13 @@ def _semantic_bins(
     )
     reply, error = ask(config, request, model)
     if reply is None:
-        return None, None, f"the backend could not be asked ({error}); grouped by position"
+        return _declined(f"the backend could not be asked ({error})")
     proposal, error = parse(reply)
     if proposal is None:
-        return None, None, f"the proposal was rejected — {error}; grouped by position"
+        return _declined(f"the proposal was rejected — {error}")
     rejection = validate(proposal, request)
     if rejection is not None:
-        return None, None, f"the proposal was rejected — {rejection}; grouped by position"
+        return _declined(f"the proposal was rejected — {rejection}")
 
     by_name = {u.display: u for u in units}
     bins = [[by_name[name] for name in group.files] for group in proposal.groups]
@@ -465,20 +483,22 @@ def _semantic_bins(
     # plan. Measured against the same per-part room the packer used, before any of it is shown.
     over = [i for i, group in enumerate(bins, start=1) if _content(group) > per_part_content]
     if over:
-        return (
-            None,
-            None,
+        return _declined(
             f"the proposal was rejected — part(s) {', '.join(map(str, over))} would not fit in "
-            f"{per_part_content:,} tokens; grouped by position",
+            f"{per_part_content:,} tokens"
         )
     shape = (
         f"the same {len(bins)} parts position packing gave"
         if len(bins) == len(position_bins)
         else f"{len(bins)} parts where position packing gave {len(position_bins)}"
     )
-    return bins, [group.title for group in proposal.groups], (
-        f"grouped by {model} into {shape}. The grouping is the model's; "
-        f"every projection below is not"
+    return _Grouped(
+        note=(
+            f"grouped by {model} into {shape}. The grouping and the part order are the "
+            f"model's; every projection below is not"
+        ),
+        bins=bins,
+        titles=[group.title for group in proposal.groups],
     )
 
 
