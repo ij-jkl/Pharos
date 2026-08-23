@@ -180,8 +180,13 @@ class Scorecard:
         Pharos cannot see, so the projection sits about 40-50 tokens below the backend's count
         regardless of conversation size. ``SAFETY_MARGIN`` is subtracted from every ceiling for
         exactly that. An alarm that fired on every run would be noise, so this asks the
-        question that matters instead — did the shortfall outgrow the margin, at which point
-        the ceiling stops being one.
+        question that matters instead — did the shortfall outgrow the margin?
+
+        It is no longer the emergency it was. The session corrects its ceiling by the ratio
+        measured here once the first response has been counted, so a shortfall past the margin
+        is exposed for one request per part rather than for the whole run. Still worth the
+        alarm: it says the constant did not fit this template, and the first request is the one
+        the correction cannot cover.
         """
         return self.worst_shortfall > SAFETY_MARGIN
 

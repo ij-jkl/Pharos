@@ -819,3 +819,102 @@ Asserted in the README since v0.4 and never demonstrated, because every measured
 printed *"proxy not running"*. Run with the proxy up: the run reports `routing through the
 Pharos proxy`, and the calibration store grew by one record — `agent_shaped: true`, counts
 only, no text. `pharos run` is observed on exactly the same terms as Continue or Cursor.
+
+## ☑ 15. The KV rate, and what a 3060 actually holds (v0.5, live)
+
+`kv_mib_per_1k` was a hand-tuned constant, and it is the divisor in the VRAM headroom
+estimate — the number that answers *"how much further can `num_ctx` go?"*. A rate that is too
+low makes that answer too high, which is advice pointing at the OOM this project exists to
+warn about.
+
+Measured by loading each model at several windows and reading `size_vram` from `/api/ps`.
+VRAM is linear in context, so the slope is the true bytes-per-token.
+
+| model | arch | configured said | measured | derivation predicts |
+|---|---|---|---|---|
+| qwen2.5-coder:7b | qwen2 | 26 | **56.64** | 54.69 (-3.4%) |
+| qwen3-4b | qwen3 | 26 | **142.58** | 140.63 (-1.4%) |
+| qwen3.5-9b | qwen35 | 26 | **32.23** | 31.25 (-3.0%) |
+
+A 4.4x spread across three models. With 4 GB free, the constant claimed 153,846 further
+context tokens where 28,050 was the truth.
+
+Every term needed is published by `/api/show` in the same `model_info` dict the advertised
+context is read from. So it is derived rather than configured, and the report says which.
+
+### Finding: below ~8K the line bends (method, not a bug)
+
+The first fit for qwen2.5-coder:7b used 4K and 8K and gave 89.8 MiB/1K — 59% high. Adding 16K
+and 32K showed 8K→16K and 16K→32K both at exactly 56.64: a fixed allocation is still settling
+below 8K. Every figure above is fitted from 8K upward across three or more windows.
+
+qwen2.5-coder:14b is deliberately absent. At 16K it spilled to CPU (`size` 11,840 MiB against
+`size_vram` 10,003), and a spilled load reallocates, so no clean slope exists on this card.
+
+### Finding: the obvious formula is wrong for two whole architecture families
+
+`layers x kv_heads x (key_length + value_length) x 2` is right only for a uniform stack.
+
+* **Hybrid SSM/attention.** qwen3.5 publishes `full_attention_interval = 4` and `ssm.*` keys:
+  one layer in four keeps a KV cache, the rest hold a state that is fixed per sequence and does
+  not grow with context. Reading the stack as uniform measured **4x high** (125 against 32.2).
+  This is also why the old hand-measured `26` looked plausible — it was near-right for this
+  model and 5-7x wrong for every other.
+* **Sliding-window attention.** gemma3 publishes `sliding_window = 1024`; five layers in six
+  stop growing at that point, and *which* layers is not published. Nothing is derived, and the
+  configured value stands.
+
+Both fall back rather than guess. So does Ollama's own `qwen3.5:9b`, whose GGUF omits
+`attention.head_count_kv` entirely.
+
+### The real reason prompts did not fit: nobody set `num_ctx`
+
+Unset, Ollama picks its cautious default — **4,096** on a 12 GB card — and the part scaffold
+alone fills that. Nothing was wrong with the model: `qwen3.5-9b` Q8_0 holds ~89,800 tokens on
+this card and the Q4_K_M ~173,000. `runner.py` already warned about this; the warning was the
+only thing acting on it.
+
+## ☑ 16. Which local model can actually drive a run (v0.5, live)
+
+Same 6-file, 14-function task — add PEP 484 hints to `src/` — same 32,768 window, same plan of
+3 parts x 2 files. Only the model changed.
+
+| model | coverage | parts that wrote nothing | repair parts |
+|---|---|---|---|
+| qwen2.5-coder:7b | **33%** (2 of 6) | 3 of 3 | 3 |
+| qwen3.5:9b | **100%** (6 of 6) | 0 of 3 | 0 |
+
+Headroom peaked at 6% and 9%. The window was never the constraint in either run — the
+difference is entirely whether the model keeps calling tools instead of describing the change.
+A dedicated coding model two years older lost to a current general one, decisively.
+
+### And it still does not make the model good
+
+The 100% run introduced a real defect: `reporting.py` came back with
+`sorted(total.items(), ...)` where the variable is `totals` — a `NameError` waiting to happen —
+plus a `-> Decimal` on a function returning a float and a pointless `Decimal` import. Coverage
+was 6 of 6 and the code was broken.
+
+This is exactly the claim the README makes: Pharos proves a task fit and that every part ran.
+`git diff` is the reviewer. A scorecard reading COMPLETE beside broken code is the system
+working as documented, not failing.
+
+### ☑ Closed: the undo instruction named a branch that need not exist
+
+`git checkout main` was hardcoded into both run footers. The bench fixture defaults to
+`master`, so the printed way back failed — at the one moment it is needed, holding a tree the
+model has just rewritten. The base ref is now read before the run branch is created.
+
+### ☑ Closed: the drift margin was a property of the model, not of Pharos
+
+`SAFETY_MARGIN = 256` was calibrated where drift ran 0.87-0.98x. On qwen3.5-9b the same
+estimator ran 0.81-0.92x and its worst request fell **275 tokens** short — past the margin, so
+a ceiling was being enforced against a number below the real prompt.
+
+The exact answer was already arriving and being discarded: `prompt_eval_count` comes back with
+every response, and the pairs were recorded for the drift line. The ceiling now scales by the
+worst ratio the conversation has actually seen — worst rather than mean, floored at 1.0. The
+margin stays as the first-request guess, before any response exists to learn from.
+
+Re-run after the change: coverage held at 100%, headroom 8%. Tightening the ceiling cost
+nothing.

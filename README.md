@@ -29,7 +29,8 @@ you how close the KV cache is to eating your remaining VRAM. Pharos surfaces bot
 - **Context gauge** — how many tokens the last request actually used, against the usable
   budget (loaded ctx minus a response reserve), with 80%/90% warning thresholds.
 - **VRAM gauge** — measured free VRAM plus an *estimate* of how many more context tokens fit
-  before OOM.
+  before OOM, computed from the KV-cache footprint the model's **own GGUF metadata** implies
+  rather than from a constant somebody tuned by hand.
 - **Event log** — one line per request: input tokens, output tokens, tok/s, status.
 
 ### Honest counting
@@ -42,6 +43,20 @@ its label:
 - `~1,500 (estimate · gguf)` — counted with the model's real GGUF tokenizer, but the backend
   applies its chat template server-side, so the true prompt is slightly larger.
 - `~5 (heuristic chars/4)` — no GGUF tokenizer available; a rough character heuristic.
+
+That rule applies to the VRAM side too. How much VRAM a context token costs varies by more
+than 4x across models — measured on one RTX 3060: 32.2 MiB per 1K tokens for `qwen3.5-9b`,
+56.6 for `qwen2.5-coder:7b`, 142.6 for `qwen3-4b` — so the single configured constant it used
+to divide by was 4-7x wrong, in the direction that *overstates* how much context still fits.
+With 4 GB free it claimed 153,846 further tokens where 28,050 was the truth.
+
+Every term needed to compute it properly (`block_count`, the KV head count, the head
+dimensions) already arrives from `/api/show` alongside the advertised context. So Pharos
+derives it, and the report says `derived` or `configured` so you know which you are reading.
+Two architecture families are refused rather than guessed at — hybrid SSM stacks that keep a
+cache on only every Nth layer, and sliding-window attention where *which* layers are windowed
+is not published — and those fall back to the configured value, labelled as such. Validated
+against measured VRAM on three architectures, landing 1-4% under each.
 
 Estimates are reconciled against `prompt_eval_count` from the response whenever the backend
 reports it. On `/v1` streaming, OpenAI-compatible responses only carry `usage` if *your

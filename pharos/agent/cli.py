@@ -522,9 +522,12 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             if round(card.drift_low, 2) == round(card.drift_high, 2)
             else f"{card.drift_low:.2f}-{card.drift_high:.2f}x"
         )
+        # Past the margin no longer means a ceiling was enforced against a number below the
+        # real prompt: after the first response the ceiling scales by the ratio measured here.
+        # It still means the estimate needs the correction, which is worth seeing.
         note = (
             f"[yellow]short by {card.worst_shortfall:,} tokens, past the "
-            f"{SAFETY_MARGIN}-token margin[/]"
+            f"{SAFETY_MARGIN}-token margin - ceiling corrected from request 2[/]"
             if card.under_counted
             else f"[dim]worst shortfall {card.worst_shortfall:,} tokens, inside the "
                  f"{SAFETY_MARGIN}-token margin[/]"
