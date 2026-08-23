@@ -98,6 +98,12 @@ class PharosConfig(BaseModel):
     # for the run's own model, wrong. Nothing is lost when it is wrong — the proposal is
     # rejected and the mechanical grouping stands — but a call that always fails is a call
     # not worth making.
+    #
+    # It is not free, though, and that was not measured when the above was written. A 12 GB
+    # card holds one model of this size, so a different grouper EVICTS the run's model and the
+    # next operation reloads it: 4-5s each way here. Leaving this unset avoids the swap.
+    # Which way that trades depends on how good the grouping is on your files, which is the
+    # thing nothing here can measure for you.
     semantic_model: str | None = None
     # After the plan has run, go back over any assigned file that no part actually
     # changed, in a fresh conversation holding only the leftovers. One round, never more:

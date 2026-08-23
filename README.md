@@ -315,9 +315,11 @@ Some specifics worth knowing before you turn it on:
   Five lines is what makes it work: on filenames alone, a model given `sprite_batch.py` /
   `collision.py` / `mixer.py` returns them in listed order under invented titles, which is
   position packing wearing a hat.
-- **`semantic_model` is worth setting.** Grouping is a different job from writing code and
-  wants a different model — measured, the ranking between them reverses depending on whether
-  excerpts are sent. Defaults to the model doing the work.
+- **`semantic_model` is worth considering, and is not free.** Grouping is a different job from
+  writing code and wants a different model — measured, the ranking between them reverses
+  depending on whether excerpts are sent. But a 12 GB card holds one model of this size, so a
+  different grouper evicts the run's model and the next step reloads it (4-5s each way here).
+  Defaults to the model doing the work, which costs no swap.
 - **`temperature: 0`, fixed seed, thinking off.** The same task gives the same parts twice. On
   a thinking model, budgeted 4,096 tokens, the reasoning never terminated and the answer never
   arrived; with thinking off the same question costs 66 tokens.

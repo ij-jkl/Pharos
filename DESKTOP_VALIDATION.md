@@ -1244,3 +1244,108 @@ When a file is too large for one part it is cut into line ranges, and the order 
 is fixed by the file. There is nothing for a model to contribute and a real chance of it
 proposing lines 3879-4000 before lines 1-1939, so the grouping declines and says so rather than
 asking. Same for a text split, where the parts are segments of one pasted blob.
+
+## ☑ 19. End to end, on a project shaped like a project (v0.5, live)
+
+Every fixture up to here was built to exercise one thing. This section is the opposite: a
+small but ordinary Python project — `src/` package, `tests/`, a `pyproject.toml` configuring
+both `ruff` and `pytest`, six modules across three concerns with interleaved names — driven
+through the whole CLI surface, repeatedly, looking for anything that misbehaves.
+
+It found four bugs. Three of them were invisible to every test above.
+
+### The one that mattered: paths, again
+
+Covered in §18 above. Every earlier fixture was flat, so no filename had a separator to
+disagree about; the first run against a project with a `src/` directory reported all six files
+as *dropped and invented at once* and semantic grouping fell back on all three groupers. It had
+never worked on a real project and nothing had noticed.
+
+### `--no-git` claimed a run that wrote files wrote nothing
+
+A run in a folder with no git, with `--no-git`, correctly added a docstring to both of its
+files and then printed **`Nothing was written.`** — because `files_changed` was
+`changed_files(root) if use_git else []`, and the empty list was a positive claim rather than
+"we do not know".
+
+The cascade was worse than the line. That same list is handed to the verifier as the set of
+written files, so `--no-git` quietly turned the syntax check off: a run could break every file
+in the tree and be told there was nothing in a format it could parse. The flag is documented as
+costing you the undo; it was also costing the change report and the verification.
+
+The dispatcher records each path as it writes it, so Pharos already had its own account — not
+the model's claim. Confirmed after: `2 file(s) changed on disk`, syntax check runs and passes.
+The other half of the promise was checked at the same time: a non-git folder *without*
+`--no-git` still snapshots every original to `.pharos/undo-<timestamp>/`, the originals in it
+are the originals, and the footer names the directory.
+
+### The run's JSON never said how the parts were grouped
+
+`pharos run --json` emitted the scorecard and nothing else. Every run says in the human output
+whether a model arranged its parts and why — that note is the entire safety story for
+`--semantic` — and the machine-readable form was silent, so a CI step could not tell a
+model-arranged plan from a position-packed one. It now carries mode, grouping, the note, the
+per-part budget and each part's title, projection and files.
+
+### `pharos check --target` was accepted and ignored
+
+`--target 500` and `--target 999999` returned the same verdict on the same prompt. Judging a
+prompt against a window you have not loaded is the whole reason the flag exists, and `check` is
+where you would most want it. It works now, and skips the backend probe entirely when given.
+
+### Does it actually do the work?
+
+Five real runs of one task — add a `LAYER` constant to each of six files — on `qwen3.5:9b` with
+`qwen2.5-coder:7b` grouping, tree reset between each:
+
+| run | grouping | coverage | verification | verdict | exit | wall |
+|---|---|---|---|---|---|---|
+| 1 | semantic | 100% | **syntax + ruff broken** | BROKEN | 1 | 124s |
+| 2 | semantic | 100% | passed | COMPLETE | 0 | 104s |
+| 3 | semantic | 100% | **syntax + ruff broken** | BROKEN | 1 | ~120s |
+| 4 | semantic | 100% | passed | COMPLETE | 0 | ~110s |
+| 5 | position | 100% | passed | COMPLETE | 0 | 390s |
+
+**Coverage was 100% every single time. Two runs in five shipped a broken build.** The damage
+was checked by hand and the report was exact: `clock_ticks.py` had lost a `def` line leaving an
+orphaned `return` — reported as *unexpected indent, line 5*; `wire_encode.py` had a duplicated
+`def` with no body — reported as *expected an indented block after function definition on line
+4*. The successful runs were checked too: all six files with the right value for their concern,
+8 insertions and 4 deletions in total.
+
+This is the §17 finding again on different code, and it is the whole argument for the
+verification tier. It is also not a `--semantic` effect: the breakage alternated run to run on
+identical inputs, and the one position run passed. The model is the variable.
+
+Two more things this run set confirmed:
+
+* **`pytest -q was already failing before the run`** appeared in every scorecard and was never
+  charged. The fixture's test suite is red for its own reasons (the package is not installed),
+  and no run was blamed for it. That is the baseline comparison working in the wild rather than
+  in a test.
+* **A task with nothing to do is reported as nothing done.** The first attempt asked for module
+  docstrings on files that already had them; the model correctly declined, and Pharos scored it
+  `INCOMPLETE — 0 of 6 files were never changed`, exit 1, with verification honestly reading
+  *not run · the run wrote no files*. No credit was invented for a no-op.
+
+### Determinism, confirmed outside the unit tests
+
+Three identical `pharos split --semantic` invocations, same prompt, same target, returned
+byte-identical groupings. `temperature: 0` with a fixed seed holds in practice, which is what
+makes a plan something you can check someone else's work against.
+
+### Known cost: a separate grouper evicts the run's model
+
+Not a bug, but it was not measured when `semantic_model` was recommended. This card holds one
+5-6 GB model. Asking a different one to group swaps the first out:
+
+```
+before:  qwen3.5:9b (5.7 GB resident)
+after a semantic split with semantic_model = qwen2.5-coder:7b:
+         qwen2.5-coder:7b (5.2 GB resident)
+```
+
+The next operation pays a reload — measured at **4.2-4.6s** for `qwen3.5:9b` and 3.0s for
+`qwen2.5-coder:7b`, so roughly 4-5s each way. Modest, and real: on a card that can hold both
+models it would be nothing, and on this one `--semantic` with a separate grouper costs the
+grouping call plus a swap. Leaving `semantic_model` unset avoids it entirely.
