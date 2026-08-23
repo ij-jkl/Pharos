@@ -1305,13 +1305,14 @@ Five real runs of one task — add a `LAYER` constant to each of six files — o
 | 3 | semantic | 100% | **syntax + ruff broken** | BROKEN | 1 | not timed |
 | 4 | semantic | 100% | passed | COMPLETE | 0 | not timed |
 | 5 | semantic | 100% | **syntax + ruff broken** | BROKEN | 1 | not timed |
-| 6 | position | 100% | passed | COMPLETE | 0 | 390s |
+| 6 | semantic | 100% | **syntax + ruff broken** | BROKEN | 1 | 154s |
+| 7 | position | 100% | passed | COMPLETE | 0 | 390s |
 
 Runs 3-5 were made for other purposes (the JSON contract, the proxy path) and their wall time
 was not recorded. Saying "about two minutes" for them would be inventing three data points to
 make a table look tidy, which is the specific thing this file exists not to do.
 
-**Coverage was 100% every single time. Three runs in six shipped a broken build.** The damage
+**Coverage was 100% every single time. Four runs in seven shipped a broken build.** The damage
 was checked by hand and the report was exact: `clock_ticks.py` had lost a `def` line leaving an
 orphaned `return` — reported as *unexpected indent, line 5*; `wire_encode.py` had a duplicated
 `def` with no body — reported as *expected an indented block after function definition on line
@@ -1320,8 +1321,8 @@ orphaned `return` — reported as *unexpected indent, line 5*; `wire_encode.py` 
 
 This is the §17 finding again on different code, and it is the whole argument for the
 verification tier. It is also not a `--semantic` effect: the breakage alternated run to run on
-identical inputs, and the one position run passed. The model is the variable. Five semantic
-runs is not enough to put a rate on it — three of five is somewhere between "usually" and
+identical inputs, and the one position run passed. The model is the variable. Six semantic
+runs is not enough to put a rate on it — four of six is somewhere between "usually" and
 "sometimes" — and the honest summary is that this model breaks this task often enough that
 shipping its output unchecked would be reckless.
 
