@@ -34,20 +34,28 @@ handoff_reserve = 500
 warn_threshold = 0.80
 alert_threshold = 0.90
 
-# KV-cache VRAM estimate: MiB per 1K context tokens. This is an ESTIMATE only (it varies with
-# architecture, flash-attention and KV-cache quantization); the TUI labels it as such and
-# always trusts measured free VRAM over this number.
+# KV-cache VRAM estimate: MiB per 1K context tokens — a FALLBACK, used only when the model
+# publishes too little to compute the real figure.
 #
-# 32 is a deliberately conservative default, NOT a universal constant — the right value is
-# model-specific. To measure it for your model: load it at two different num_ctx values and
-# take the size_vram delta reported by /api/ps, then divide by the context delta.
+# Normally Pharos derives this from the model's own GGUF metadata (block_count, kv head count
+# and head dimensions, all returned by /api/show) and the report says "derived". It falls back
+# to the value here, labelled "configured", for models that omit those keys or that use
+# sliding-window attention, where the layer pattern is not published and deriving would
+# overstate KV several-fold.
+#
+# Leave it alone unless your report says "configured". If it does, measure rather than guess:
+# load the model at two num_ctx values and take the size_vram delta from /api/ps.
 #
 #   curl -s localhost:11434/api/chat -d '{"model":"M","messages":[{"role":"user","content":"hi"}],"options":{"num_ctx":32768},"stream":false}' >/dev/null
 #   curl -s localhost:11434/api/ps            # note size_vram
 #   ... repeat with num_ctx 65536, note size_vram again ...
 #   kv_mib_per_1k = (vram2 - vram1) / 1048576 / ((ctx2 - ctx1) / 1000)
 #
-# Measured examples: qwen3.5-9b-heretic (9B, Q8_0) ≈ 26.
+# Measure from 8K upward and use three windows, not two: below ~8K a fixed allocation is still
+# changing and the line bends. A 4K/8K pair read 59% high on qwen2.5-coder:7b.
+#
+# Measured on an RTX 3060 (MiB/1K): qwen2.5-coder:7b 56.6, qwen3-4b 142.6, qwen3.5-9b 32.2 —
+# a 4x spread across three models, which is why a single constant was never going to hold.
 kv_mib_per_1k = 32
 
 # Free VRAM held back before estimating headroom (and the num_ctx ceiling the mismatch banner

@@ -103,12 +103,14 @@ async def _build_info(
 
     architecture: str | None = None
     advertised: int | None = None
+    kv_bytes_per_token: int | None = None
     if chosen is not None:
         show = await _try_show(backend, chosen)
         if show is not None:
             model_info = _as_dict(show.get("model_info"))
             architecture = _as_str(model_info.get("general.architecture"))
             advertised = _extract_advertised_ctx(model_info, architecture)
+            kv_bytes_per_token = _extract_kv_bytes_per_token(model_info, architecture)
             details = _as_dict(show.get("details"))
             quant = _as_str(details.get("quantization_level")) or quant
             param_size = _as_str(details.get("parameter_size")) or param_size
@@ -127,6 +129,7 @@ async def _build_info(
         size_vram_bytes=size_vram,
         advertised_max_ctx=advertised,
         loaded_ctx=loaded_ctx,
+        kv_bytes_per_token=kv_bytes_per_token,
     )
 
 
@@ -188,6 +191,112 @@ def _extract_advertised_ctx(model_info: dict[str, Any], arch: str | None) -> int
             if value is not None:
                 return value
     return None
+
+
+# f16 is llama.cpp's default KV-cache element type and what Ollama loads with unless
+# OLLAMA_KV_CACHE_TYPE overrides it. A quantized cache (q8_0) halves the real figure, so
+# assuming f16 over-estimates KV — the safe direction for a headroom number, which must never
+# advise its way into the OOM it exists to prevent.
+_KV_ELEMENT_BYTES = 2
+
+
+def _extract_kv_bytes_per_token(model_info: dict[str, Any], arch: str | None) -> int | None:
+    """KV-cache bytes per context token, derived from the model's own GGUF metadata.
+
+    ``attending_layers x kv_heads x (key_length + value_length) x element_bytes``. Every term
+    is published by /api/show in the same ``model_info`` dict the advertised context comes
+    from, which is what lets a hand-tuned constant be replaced by the model's own arithmetic.
+
+    Validated against ``/api/ps size_vram`` on an RTX 3060 12GB: VRAM is linear in context,
+    so loading the same model at several windows gives the true rate as the slope. Below about
+    8K the line bends -- a fixed allocation still changing size -- so every figure here is
+    fitted from 8K upward, across at least three points, in MiB per 1K tokens.
+
+    ===================  =========  =========  =======  ===================
+    model                predicted   measured    error  windows fitted
+    ===================  =========  =========  =======  ===================
+    qwen2.5-coder:7b         54.69      56.64    -3.4%  8K / 16K / 32K
+    qwen3-4b                140.63     142.58    -1.4%  8K / 16K / 32K
+    qwen3.5-9b (hybrid)      31.25      32.23    -3.0%  2K / 8K / 16K / 32K
+    ===================  =========  =========  =======  ===================
+
+    Three architectures, one per branch below: qwen2 omits its head dimensions and takes the
+    fallback, qwen3 publishes them, qwen35 is the hybrid stack. All three read 1-4% *under*
+    measurement -- llama.cpp's per-token scratch outside the cache proper. That residual
+    slightly overstates headroom, by ~150 MiB on a 4 GB estimate, which is well inside the
+    512 MiB ``vram_safety_margin_mib`` held back before any headroom figure is shown. The
+    constant this replaces was 4-7x out, far past what any margin absorbs.
+
+    qwen2.5-coder:14b is deliberately absent: it cannot be held in 12GB above 8K without
+    spilling to CPU, and a spilled load reallocates, so no clean slope exists to fit here.
+
+    Not every architecture is derivable, and the ones that are not return None so the caller
+    falls back to the configured constant. Guessing here is worse than declining: an
+    understated rate overstates VRAM headroom, which is advice that ends in the OOM Pharos
+    exists to prevent.
+    """
+    if arch is None:
+        return None
+    if model_info.get(f"{arch}.attention.sliding_window") is not None:
+        # Sliding-window attention caps each windowed layer's cache instead of letting it grow
+        # with context, and which layers are windowed is not published (Gemma3 windows five of
+        # every six). Deriving as though every layer were global overstates KV several-fold on
+        # a long context, so this declines rather than guesses.
+        return None
+    layers = _as_int(model_info.get(f"{arch}.block_count"))
+    kv_heads_raw = model_info.get(f"{arch}.attention.head_count_kv")
+    if layers is None or layers <= 0 or kv_heads_raw is None:
+        return None
+
+    # head_count_kv is a scalar for a uniform stack, or a per-layer array for architectures
+    # that vary it. An array already states the whole pattern, so it supersedes both
+    # block_count and the hybrid interval below rather than combining with them; a zero entry
+    # is a layer holding no KV cache at all, which is a legitimate count and not an error.
+    if isinstance(kv_heads_raw, list):
+        per_layer = [_as_int(value) for value in kv_heads_raw]
+        if not per_layer or any(value is None or value < 0 for value in per_layer):
+            return None
+        total_kv_heads = sum(value for value in per_layer if value is not None)
+    else:
+        kv_heads = _as_int(kv_heads_raw)
+        if kv_heads is None or kv_heads <= 0:
+            return None
+        # Hybrid stacks interleave state-space layers with attention, keeping a KV cache only
+        # on every Nth. An SSM layer's state is fixed per sequence and does not grow with
+        # context, so it belongs to the constant footprint rather than the per-token rate.
+        # Ignoring this measured 4x high on qwen3.5-9b -- the error that made the hand-tuned
+        # constant it replaces look plausible.
+        interval = _as_int(model_info.get(f"{arch}.full_attention_interval"))
+        if interval is not None and interval > 1:
+            layers = layers // interval
+        if layers <= 0:
+            return None
+        total_kv_heads = kv_heads * layers
+    if total_kv_heads <= 0:
+        return None
+
+    key_len = _as_int(model_info.get(f"{arch}.attention.key_length"))
+    value_len = _as_int(model_info.get(f"{arch}.attention.value_length"))
+    if key_len is None or value_len is None:
+        # Older GGUFs (qwen2 among them) omit both and imply embedding_length / head_count.
+        fallback = _head_dim_fallback(model_info, arch)
+        if fallback is None:
+            return None
+        key_len = fallback if key_len is None else key_len
+        value_len = fallback if value_len is None else value_len
+    if key_len <= 0 or value_len <= 0:
+        return None
+    return total_kv_heads * (key_len + value_len) * _KV_ELEMENT_BYTES
+
+
+def _head_dim_fallback(model_info: dict[str, Any], arch: str) -> int | None:
+    """Head dimension implied by embedding_length / head_count, for GGUFs omitting key_length."""
+    embedding = _as_int(model_info.get(f"{arch}.embedding_length"))
+    heads = _as_int(model_info.get(f"{arch}.attention.head_count"))
+    if embedding is None or heads is None or embedding <= 0 or heads <= 0:
+        return None
+    dim = embedding // heads
+    return dim if dim > 0 else None
 
 
 # --- defensive coercion helpers (backend JSON is untyped) ---------------------------------------

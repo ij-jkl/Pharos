@@ -29,7 +29,11 @@ async def build_profile(config: PharosConfig) -> EnvironmentProfile:
     gpu = await asyncio.to_thread(probe_gpu)
     backend = await probe_backend(config)
     mismatch, ratio = detect_ctx_mismatch(backend)
-    budget = Accountant(config).report(loaded_ctx=backend.loaded_ctx, gpu=gpu)
+    budget = Accountant(config).report(
+        loaded_ctx=backend.loaded_ctx,
+        gpu=gpu,
+        kv_bytes_per_token=backend.kv_bytes_per_token,
+    )
     return EnvironmentProfile(
         gpu=gpu,
         backend=backend,

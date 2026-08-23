@@ -109,7 +109,7 @@ cp pharos.toml.example pharos.toml
 | `gguf_path` | *(auto)* | Explicit path to the model's GGUF for exact token counting. If unset, Pharos tries Ollama's blob store; if that fails, counting degrades to a labeled heuristic. Setting it explicitly is the robust option. |
 | `response_reserve` | `1024` | Tokens reserved for the reply when computing the usable input budget. |
 | `warn_threshold` / `alert_threshold` | `0.80` / `0.90` | Context-usage fractions that turn the gauge yellow / red. |
-| `kv_mib_per_1k` | `32` | KV-cache VRAM estimate, MiB per 1K context tokens. Drives the *estimated* token headroom; measured free VRAM always wins. |
+| `kv_mib_per_1k` | `32` | **Fallback only.** KV-cache VRAM, MiB per 1K context tokens — normally *derived* from the model's own GGUF metadata and labelled as such. This value is used only when a model publishes too little to derive from. Drives the *estimated* token headroom; measured free VRAM always wins. |
 | `proxy_host` / `proxy_port` | `127.0.0.1` / `11435` | Where Pharos listens. |
 | `log_file` | `pharos.log` | Rotating file for request/error detail (the TUI owns the terminal). |
 

@@ -193,9 +193,12 @@ class VramGauge(Static):
             if gpu.free_mib is not None:
                 text.append(f"  free {gpu.free_mib:,} MiB (measured)", style="dim")
             headroom = budget.vram_headroom_tokens if budget is not None else None
-            if headroom is not None:
+            if headroom is not None and budget is not None:
                 text.append(f" · ≈{headroom:,} more ctx tokens fit", style="yellow")
-                text.append(" (estimate)", style="dim yellow")
+                # Which rate produced this is part of the number: a configured rate that was
+                # never derived is the case where the figure has been most badly wrong.
+                source = "derived" if budget.kv_rate_derived else "configured"
+                text.append(f" (estimate · KV {source})", style="dim yellow")
             elif budget is not None:
                 # Free VRAM alone cannot answer this until the weights are actually resident.
                 text.append(" · headroom N/A — no model resident", style="dim")

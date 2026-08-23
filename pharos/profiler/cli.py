@@ -119,18 +119,34 @@ def _add_budget_rows(grid: Table, budget: BudgetReport, *, gpu_available: bool) 
 
     if budget.kv_estimate_mib is not None:
         kv = f"~{budget.kv_estimate_mib:,.0f} MiB for {_tok(budget.loaded_ctx)} ctx"
-        grid.add_row("KV cache", f"[dim]{kv} (estimate)[/]")
+        grid.add_row("KV cache", f"[dim]{kv} ({kv_provenance(budget)})[/]")
 
     if gpu_available:
         line = f"{_mib(budget.vram_free_mib)} free [dim](measured)[/]"
         if budget.vram_headroom_tokens is not None:
+            source = "KV derived" if budget.kv_rate_derived else "KV configured"
             line += (
                 f" · ≈{_tok(budget.vram_headroom_tokens)} more ctx tokens "
-                f"[dim](estimate · {budget.vram_safety_margin_mib} MiB margin held back)[/]"
+                f"[dim](estimate · {source} · "
+                f"{budget.vram_safety_margin_mib} MiB margin held back)[/]"
             )
         else:
             line += " · [dim]headroom N/A — no model resident to measure against[/]"
         grid.add_row("VRAM headroom", line)
+
+
+def kv_provenance(budget: BudgetReport) -> str:
+    """Where the KV rate came from — the model's own metadata, or the configured fallback.
+
+    The two differ by 5-14x on real models, and the rate drives the headroom advice, so which
+    one produced a figure is part of the figure.
+    """
+    rate = budget.kv_mib_per_1k
+    if rate is None:
+        return "estimate"
+    if budget.kv_rate_derived:
+        return f"derived · {rate:,.0f} MiB/1K from model metadata"
+    return f"estimate · configured {rate:,.0f} MiB/1K"
 
 
 def _mismatch_banner(profile: EnvironmentProfile) -> Panel:

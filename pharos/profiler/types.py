@@ -41,6 +41,9 @@ class BackendInfo:
     size_vram_bytes: int | None = None
     advertised_max_ctx: int | None = None  # from GGUF metadata via /api/show
     loaded_ctx: int | None = None  # the ACTUAL loaded window via /api/ps
+    # KV-cache bytes per context token, derived from the same /api/show metadata block as
+    # advertised_max_ctx. None when the model did not publish enough to compute it.
+    kv_bytes_per_token: int | None = None
     detail: str | None = None  # reason when unreachable
 
 
@@ -63,6 +66,11 @@ class BudgetReport:
     vram_safety_margin_mib: int = 0  # MiB deliberately excluded from the headroom estimate
     # ESTIMATE: loaded_ctx + headroom — how far num_ctx can actually go on this hardware
     achievable_ctx_estimate: int | None = None
+    # The KV rate every figure above was computed with, and where it came from. Derived from
+    # the model's own GGUF metadata when it published enough; otherwise the configured
+    # constant. The two differ by 5-14x in practice, so the number is never shown unlabelled.
+    kv_mib_per_1k: float | None = None
+    kv_rate_derived: bool = False
 
 
 @dataclass(frozen=True, slots=True)
