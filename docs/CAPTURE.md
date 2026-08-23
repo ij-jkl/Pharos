@@ -3,8 +3,19 @@
 The README describes a dashboard nobody reading it can see. One image fixes that, and it has
 to show the thing Pharos exists for — not an idle screen.
 
-**Target:** `docs/pharos-dashboard.png`, then uncomment the image line at the top of
-`README.md`.
+**Captured.** `docs/pharos-dashboard.svg` is in the README, and
+`docs/capture_dashboard.py` reproduces it end to end:
+
+```bash
+uv run python docs/capture_dashboard.py
+```
+
+It starts the real proxy, runs the real dashboard headless via Textual's test harness, sends
+five `/api/chat` requests of deliberately varying size straight through the proxy, and exports
+an SVG. Nothing is staged — the numbers in the image are the numbers those requests produced,
+which is the only kind of screenshot this project has any business publishing.
+
+Re-run it whenever the layout changes. What follows is what the shot has to show, and why.
 
 ## What has to be in frame
 

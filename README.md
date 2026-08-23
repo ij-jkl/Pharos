@@ -13,9 +13,10 @@ mutates a request or a response). Alongside it, three tools outside the request 
 prompt will cost before you paste it (`pharos check`), how to cut it up when it will not fit
 (`pharos split`), and carrying those parts out against your local model (`pharos run`).
 
-<!-- Capture docs/pharos-dashboard.png (see docs/CAPTURE.md), then uncomment:
-![The Pharos dashboard: context mismatch banner, context and VRAM gauges, and the request event log](docs/pharos-dashboard.png)
--->
+![The Pharos dashboard: a context-mismatch banner reading "advertised 262,144, loaded 32,768 (12.5% of capacity)", context and VRAM gauges, and a request event log showing input counts labelled (exact) and (estimate - gguf)](docs/pharos-dashboard.svg)
+
+*A real session, not a mock-up: the model advertises 262,144 tokens and 32,768 are loaded. Every
+count carries its provenance. Reproduce it with `uv run python docs/capture_dashboard.py`.*
 
 ## The problem it solves
 
