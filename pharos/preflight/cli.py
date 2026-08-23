@@ -94,7 +94,9 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
         action="store_true",
         help="ask the backend which files belong together instead of packing them in the "
         "order they were named; falls back to position packing and says so if the proposal "
-        "fails any check",
+        "fails any check. Sends the task, the filenames and the first five lines of each "
+        "file to the backend"
+        + ("" if always_split else " (requires --split)"),
     )
     parser.add_argument(
         "--json",
@@ -103,6 +105,9 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
     )
     args = parser.parse_args(argv)
     want_split = always_split or getattr(args, "split", False)
+    # An accepted flag that does nothing is worse than a rejected one: it looks like it worked.
+    if args.semantic and not want_split:
+        parser.error("--semantic groups the parts of a split, so it needs --split")
 
     # With --json, stdout belongs to the payload alone: prompts, warnings and the picker menu
     # go to stderr, or a caller piping into `jq` gets a parse error instead of a report.

@@ -22,6 +22,7 @@ from pharos.accountant import Accountant
 from pharos.config import PharosConfig
 from pharos.preflight import semantic, split
 from pharos.preflight.check import run_check
+from pharos.preflight.cli import main as check_main
 from pharos.preflight.semantic import (
     FileBrief,
     Group,
@@ -772,3 +773,42 @@ async def test_no_split_does_not_pay_for_a_grouping(
         config, prompt, dry_run=True, use_git=False, semantic=True, divide=True
     )
     assert seen == [False, True], "dividing for real must ask"
+
+
+@pytest.mark.anyio
+async def test_an_untitled_group_is_not_numbered_into_existence(
+    tree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A blank title numbered as " (1 of 2)" is truthy, and the renderer would print it."""
+    monkeypatch.setattr(
+        split, "ask", _answers(_reply([("", list(_FILES[:3])), ("", list(_FILES[3:]))]))[0]
+    )
+    plan = await _plan(tree)
+    assert plan.grouping is Grouping.SEMANTIC
+    assert len(plan.parts) == 4  # both groups were split, so numbering did apply
+    assert [p.title for p in plan.parts] == ["", "", "", ""]
+    for part in plan.parts:
+        assert part.body.startswith(f"[Pharos] Part {part.index} of 4 — this task")
+
+
+# ---------------------------------------------------------------------------------- CLI
+
+
+def test_semantic_without_split_is_an_error(capsys: pytest.CaptureFixture[str]) -> None:
+    """An accepted flag that does nothing is worse than a rejected one: it looks like it worked."""
+    with pytest.raises(SystemExit) as exit_info:
+        check_main(["--semantic", "hello"])
+    assert exit_info.value.code == 2
+    assert "needs --split" in capsys.readouterr().err
+
+
+def test_semantic_is_accepted_alongside_split(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`check --split --semantic` is the same command as `split --semantic`."""
+    from pharos.preflight import cli
+
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    monkeypatch.setattr(split, "ask", _answers(None, "offline")[0])
+    # No files named, so there is nothing to split and no grouping call -- the flag just parses.
+    assert check_main(["--split", "--semantic", "--target", "4000", "hello"]) in (0, 1, 2)

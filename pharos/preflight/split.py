@@ -547,8 +547,20 @@ def _repair(
             split_count += 1
         for n, chunk in enumerate(chunks, start=1):
             out.append(chunk)
-            out_titles.append(title if len(chunks) == 1 else f"{title} ({n} of {len(chunks)})")
+            out_titles.append(_numbered(title, n, len(chunks)))
     return out, out_titles, split_count
+
+
+def _numbered(title: str, n: int, total: int) -> str:
+    """``Physics Subsystem (2 of 3)`` — and nothing at all when there was no title to number.
+
+    A model may return an empty title, or one that was not a string; both arrive here as "".
+    Numbering that produces " (1 of 2)" with a leading space, which the renderer then treats as
+    a real heading because it is truthy.
+    """
+    if total == 1:
+        return title
+    return f"{title} ({n} of {total})" if title else ""
 
 
 def _chunk(
