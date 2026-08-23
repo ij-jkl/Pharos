@@ -422,7 +422,13 @@ class _Grouped:
 
 
 def _declined(note: str) -> _Grouped:
-    return _Grouped(note=f"{note}; grouped by position")
+    """A refusal, stated as the reason alone.
+
+    The note does not repeat which grouping won. Every renderer prints that as a label beside
+    it and the JSON carries it as its own field, so appending it here produced "grouped by
+    position - the proposal was rejected ...; grouped by position" on every fallback.
+    """
+    return _Grouped(note=note)
 
 
 def _semantic_bins(
@@ -505,7 +511,7 @@ def _semantic_bins(
             f"fit in {per_part_content:,} tokens even alone"
         )
     shape = (
-        f"the same {len(bins)} parts position packing gave"
+        f"{len(bins)} parts, the same count position packing gave"
         if len(bins) == len(position_bins)
         else f"{len(bins)} parts where position packing gave {len(position_bins)}"
     )
@@ -515,10 +521,13 @@ def _semantic_bins(
         repaired = f" {split_count} groups were too big for one part and were split in order."
     else:
         repaired = ""
+    # Not "grouped by X": every renderer prints that as a label beside this, and the JSON has
+    # it as its own field, so leading with it gave "grouped by meaning - grouped by qwen..."
+    # on every accepted plan.
     return _Grouped(
         note=(
-            f"grouped by {model} into {shape}.{repaired} The grouping and the part order are "
-            f"the model's; every projection below is not"
+            f"{model} chose {shape}.{repaired} The grouping and the part order are its own; "
+            f"every projection below is not"
         ),
         bins=bins,
         titles=titles,

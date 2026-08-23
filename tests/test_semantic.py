@@ -431,7 +431,10 @@ async def test_every_refusal_falls_back_and_says_why(
     assert plan.grouping is Grouping.POSITION
     assert plan.grouping_note is not None
     assert fragment in plan.grouping_note
-    assert "grouped by position" in plan.grouping_note
+    # The note is the reason alone: the winning grouping is a field of its own, and a label
+    # beside it in every renderer, so repeating it here said everything twice.
+    assert "grouped by position" not in plan.grouping_note
+    assert plan.grouping is Grouping.POSITION
     # The point of the fallback: the plan is exactly as good as it would have been.
     baseline = await _plan(tree, semantic_on=False)
     assert plan.ok

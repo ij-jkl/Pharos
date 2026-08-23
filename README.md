@@ -298,7 +298,7 @@ length limit — and the plan falls back to position packing and **says which ch
 
 ```
 grouped by position — the proposal was rejected — its file list did not
-match the scope — it dropped db_migrations.py; grouped by position
+match the scope — it dropped db_migrations.py
 ```
 
 The note is printed whichever way it went, because a plan that quietly used a model, or
