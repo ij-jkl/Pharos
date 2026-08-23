@@ -1363,3 +1363,53 @@ def test_undo_instruction_falls_back_to_previous_ref_when_base_unknown(tmp_path:
     _render_footer(console, outcome)
     text = console.file.getvalue()  # type: ignore[attr-defined]
     assert "git checkout -" in text
+
+
+# --- the ceiling tightens to what the backend is really counting ---------------------------------
+
+
+def _session_with_drift(
+    workspace: Workspace, samples: list[tuple[int, int]], *, budget: int = 4000
+) -> AgentSession:
+    session = _session(FakeBackend([]), ToolBox(workspace, scope=set()), budget=budget)
+    session._drift = list(samples)
+    return session
+
+
+def test_template_factor_is_one_before_any_response(workspace: Workspace) -> None:
+    """Nothing has been counted yet, so there is nothing to correct by — SAFETY_MARGIN alone
+    covers the first request."""
+    assert _session_with_drift(workspace, [])._template_factor() == 1.0
+
+
+def test_template_factor_takes_the_worst_ratio_seen(workspace: Workspace) -> None:
+    """A ceiling holds at the worst case or it does not hold."""
+    session = _session_with_drift(workspace, [(1000, 1100), (1000, 1250), (1000, 1050)])
+    assert session._template_factor() == pytest.approx(1.25)
+
+
+def test_template_factor_never_loosens_the_ceiling(workspace: Workspace) -> None:
+    """Over-counting wastes room; it is not permission to fit more in."""
+    session = _session_with_drift(workspace, [(1000, 800), (1000, 900)])
+    assert session._template_factor() == 1.0
+
+
+def test_ceiling_is_enforced_against_the_corrected_projection(workspace: Workspace) -> None:
+    """The regression: on qwen3.5-9b the backend counted up to 1.23x our estimate, so a part
+    that looked 200 tokens clear of the ceiling was already over it."""
+    session = _session_with_drift(workspace, [(1000, 1230)])
+    session._messages = [{"role": "user", "content": "x" * 4000}]
+    raw = session._projected()
+    corrected = session._projected_for_ceiling()
+    assert corrected > raw
+    assert corrected == int(raw * 1.23)
+
+
+def test_a_tool_is_offered_only_the_room_that_really_remains(workspace: Workspace) -> None:
+    """`room` decides whether a file is refused as too large. Handing a tool room computed
+    from an estimate the backend has already exceeded is how a part overflows its window."""
+    session = _session_with_drift(workspace, [(1000, 1200)])
+    session._messages = [{"role": "user", "content": "x" * 400}]
+    assert session._ceiling - session._projected_for_ceiling() < (
+        session._ceiling - session._projected()
+    )

@@ -10,10 +10,16 @@ sends a request it has not already proven fits, and the last thing it does alway
 happen. That ordering is the whole design: a run that discovers it is out of window while
 trying to report that it is out of window has lost the work.
 
-The count is close, and slightly LOW on the shapes that have been measured against a live
-backend: 0.87x to 0.98x, tens of tokens under. That residue is the chat template's own
-scaffolding, invisible from here, and SAFETY_MARGIN is subtracted from every ceiling to absorb
-it — the worst shortfall observed on a real run was 60 tokens against a 256-token margin.
+The count is close, and slightly LOW: the chat template's own scaffolding is applied
+server-side and is invisible from here. SAFETY_MARGIN is subtracted from every ceiling as a
+first guess at that residue, but a constant cannot be right for every template -- calibrated
+against one model at 0.87-0.98x, it was measured at 0.81-0.92x on qwen3.5-9b, whose worst
+request fell 275 tokens short of a 256-token margin.
+
+So the margin is a starting point, not the answer. ``prompt_eval_count`` comes back with every
+response and says exactly how short the estimate fell for the template actually loaded, and
+those pairs were already being recorded. ``_template_factor`` feeds them back, so the ceiling
+tightens to whatever the backend has really been counting, and only ever tightens.
 
 Erring high is the safe direction — a part sized against an inflated estimate fits, where the
 reverse eventually overflows — but it is not free: it makes parts smaller and runs longer than
@@ -271,6 +277,31 @@ class AgentSession:
                 total += self._count(json.dumps(calls, separators=(",", ":")))
         return total
 
+    def _template_factor(self) -> float:
+        """How much larger the backend's count has run than ours, in THIS conversation.
+
+        The chat template is applied server-side and is invisible from here, so the projection
+        is a floor by construction and ``SAFETY_MARGIN`` is a guess at how short it falls. But
+        the exact answer arrives with every response: ``prompt_eval_count`` is ground truth for
+        this model and this template, and the pairs are already being recorded for the drift
+        line. Using them is what turns a constant calibrated against one template into a
+        measurement of the one actually loaded.
+
+        The worst ratio seen is the one that counts -- a ceiling holds at the worst case or it
+        does not hold. Never below 1.0: a backend counting fewer tokens than we did is not
+        licence to fit more in, only a sign we were being cautious.
+        """
+        ratios = [
+            reported / projected for projected, reported in self._drift if projected > 0
+        ]
+        return max([1.0, *ratios])
+
+    def _projected_for_ceiling(self) -> int:
+        """The projection the ceiling is enforced against: ours, corrected by what the backend
+        has actually been counting. Deliberately not what ``peak_tokens`` reports, which stays
+        the raw estimate so the drift line keeps measuring the estimator rather than itself."""
+        return int(self._projected() * self._template_factor())
+
     async def run(self, part_body: str) -> PartResult:
         self._messages = [
             {"role": "system", "content": self._system_prompt},
@@ -305,7 +336,7 @@ class AgentSession:
         while steps < _MAX_STEPS:
             projected = self._projected()
             peak = max(peak, projected)
-            if projected > self._ceiling:
+            if self._projected_for_ceiling() > self._ceiling:
                 # Refusing BEFORE the send is the guarantee: nothing that has not been proven
                 # to fit is ever put on the wire.
                 self._on_event(
@@ -461,7 +492,7 @@ class AgentSession:
         if not isinstance(arguments, dict):
             arguments = {}
 
-        room = max(self._ceiling - self._projected(), 0)
+        room = max(self._ceiling - self._projected_for_ceiling(), 0)
         result = self._toolbox.dispatch(name, arguments, room=room, count=self._count)
         detail = result.wrote or arguments.get("path") or ""
         self._on_event(f"{'ok ' if result.ok else '!! '}{name} {detail}".rstrip())
