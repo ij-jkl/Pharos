@@ -6,6 +6,38 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v0.8 — "Cheap checks, every part"
+
+v0.7 named the part that broke a file. It watched only the parser, and the limit it shipped
+with was measured immediately: two runs in four broke `ruff` without breaking any file's
+syntax, so half the observed damage had no part's name on it. A constant above a module's
+`import` is valid Python; `ast.parse` has no opinion about it and `E402` does.
+
+- **The project's own checks now run after every part, when they are cheap enough.** Same
+  before/after comparison as the parser: a check that passed before a part and fails after it
+  was broken by that part, one that arrived red is nobody's, and a later part that makes it
+  pass again is credited.
+- **Cheap enough is measured, not configured.** The baseline already runs every check before
+  the first part, so how long each one costs on this machine and this repository is known and
+  free to read. `per_part_check_seconds` (3.0) is the ceiling; on the measured fixture `ruff
+  check .` comes in under it and `pytest -q` does not, and neither number had to be guessed by
+  anybody. Set it to 0 for v0.7 behaviour, where only the parser ran per part.
+- **A check with no baseline never runs per part**, whatever it costs. Without a "before"
+  there is nothing to compare against, and reporting a failure with no baseline as damage
+  would name a part for a state it may have inherited.
+- **A part that wrote nothing is not re-checked.** There is nothing it could have broken, and
+  the checks would only re-measure the previous part's answer at the price of running them.
+- **`--stop-on-break` covers both now.** A part that leaves the linter red ends the run on the
+  same terms as one that leaves a file unparseable.
+- The scorecard's `damage` gains `check`, so a row reads `part 2 broke ruff check .` or
+  `part 2 broke src/a.py` from one record. Both are in `--json`.
+- Config: `per_part_check_seconds`.
+
+Not demonstrated live: a run **halted** by a linter break. Runs 4 and 5 showed the halt on a
+syntax break and the branch is shared, but the model behaved on the two `--stop-on-break` runs
+made after this landed, so that specific path rests on unit tests and an argument rather than
+an observation. Recorded in `DESKTOP_VALIDATION.md` §22 as such.
+
 ## v0.7 — "Name the part that broke it"
 
 v0.4.2 answered *is the project broken*. On a divided run the more useful question is *by

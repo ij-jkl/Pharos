@@ -8,13 +8,15 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.7** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
+**Status: v0.8** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
 request or a response). Alongside it, three tools outside the request path: what a prompt will
 cost before you paste it (`pharos check`), how to cut it up when it will not fit
 (`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
 finishes by re-running your project's own checks and failing the run if it broke them. New in
-v0.7: each part is parsed as it finishes, so a broken build names the part that broke it, and
-`--stop-on-break` ends a run rather than letting the damage propagate. From v0.6: a run
+v0.8: every part is checked as it finishes — the parser always, and the project's own checks
+too when the baseline measured them as fast enough — so a broken build names the part that
+broke it, and `--stop-on-break` ends a run rather than letting the damage propagate. From
+v0.6: a run
 carries its own record of what has landed on disk from part to part, so context survives a
 hand-off the model wrote badly. From v0.5: `--semantic` lets a model propose *which
 files group together*, and nothing else — every
@@ -512,9 +514,22 @@ task, those were exactly the two cases.
   letting it propagate; the verdict then reads `STOPPED`, and the repair sweep does not run
   over a tree that no longer parses.
 
-  It catches what does not **parse**, and nothing else. A measured run broke `ruff` with
-  `E402` — a constant above an `import`, which is valid Python — and got no damage row,
-  correctly: the checks below caught it without naming a part.
+  From **v0.8** it is not only the parser. Your project's own checks run after each part as
+  well — but only the ones the baseline measured as fast enough, which is a number Pharos
+  already has and you would otherwise have to guess:
+
+  ```
+  baseline: ruff check ., pytest -q
+    running after every part as well: ruff check . (0.3s the baseline took)
+  ```
+
+  `per_part_check_seconds` (3.0) is the ceiling; set it to 0 to go back to the parser alone.
+  A check with no baseline never runs per part however fast it is — without a "before" there
+  is nothing to compare against — and a part that wrote nothing is not re-checked, because
+  there is nothing it could have broken.
+
+  It still measures what your tools measure, and nothing more. A failure no configured check
+  catches is a failure Pharos does not see.
 - **Verification** is the project's own checks, re-run afterwards. Coverage says every
   assigned file was written; it cannot say the result still works. A measured run wrote all six
   of its files, scored 100%, and left `sorted(total.items(), ...)` where the variable is

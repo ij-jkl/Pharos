@@ -146,6 +146,17 @@ class PharosConfig(BaseModel):
     # also measured: from v0.6 the record carries a broken part's conventions to every part
     # after it, so damage propagates rather than staying where it happened.
     stop_on_break: bool = False
+    # A project check is also run after EVERY part when the baseline measured it taking no
+    # longer than this. Attribution is the point: v0.7 watched only the parser, and two
+    # measured runs in four broke `ruff` without breaking any file's syntax, so half the
+    # damage had no part's name on it.
+    #
+    # Measured rather than configured, because the baseline has already run every check and
+    # therefore already knows what each costs on this machine. Three seconds is the stated
+    # preference: a part takes 30-60s here, so a check at the ceiling adds under 10% per part,
+    # and a suite that takes longer than that is one you do not want between parts anyway. Set
+    # it to 0 to keep the old behaviour, where only the parser ran per part.
+    per_part_check_seconds: float = Field(default=3.0, ge=0.0)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

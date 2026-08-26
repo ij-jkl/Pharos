@@ -36,6 +36,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,6 +70,11 @@ class CheckOutcome:
     # -- so there is no "before" to compare against. Failing now might be the run's doing or
     # might not, and blaming it on the strength of one measurement would be a guess.
     unattributable: bool = False
+    # Wall seconds the check took. Free to collect -- every check already runs -- and it is
+    # what decides whether a check is cheap enough to also run BETWEEN parts. Measuring that
+    # beats asking: the user would have to know how long their own suite takes on this
+    # machine, and the baseline has just found out.
+    duration: float = 0.0
     # It failed before and after, but not with the same output. A pass/fail baseline cannot
     # tell "unchanged" from "made worse" on a repository that arrived red, and the honest
     # answer is to say the output moved rather than to claim either.
@@ -267,6 +273,7 @@ def run_command(root: Path, command: str, *, timeout: float) -> CheckOutcome:
         return CheckOutcome(name=command, ok=True, skipped="empty command")
     if shutil.which(parts[0]) is None:
         return CheckOutcome(name=command, ok=True, skipped=f"{parts[0]} is not on PATH")
+    started = time.monotonic()
     try:
         done = subprocess.run(
             parts,
@@ -282,10 +289,11 @@ def run_command(root: Path, command: str, *, timeout: float) -> CheckOutcome:
         return CheckOutcome(name=command, ok=True, skipped=f"timed out after {timeout:.0f}s")
     except OSError as exc:
         return CheckOutcome(name=command, ok=True, skipped=f"could not run: {exc}")
+    took = time.monotonic() - started
     if done.returncode == 0:
-        return CheckOutcome(name=command, ok=True)
+        return CheckOutcome(name=command, ok=True, duration=took)
     stream = (done.stdout or "") + (done.stderr or "")
-    return CheckOutcome(name=command, ok=False, detail=_excerpt(stream))
+    return CheckOutcome(name=command, ok=False, detail=_excerpt(stream), duration=took)
 
 
 def _excerpt(stream: str) -> str:
@@ -368,29 +376,44 @@ def verify(
 
 @dataclass(frozen=True, slots=True)
 class Damage:
-    """One file a part left unparseable that parsed before that part ran."""
+    """One thing a part broke that was working before that part ran.
+
+    Two kinds, one shape. ``check`` says which check noticed: `syntax` for a file that stopped
+    parsing, or the command itself for a project check that went from passing to failing.
+    ``path`` names the file when the check is per-file and is empty otherwise, so a report can
+    say `part 2 broke src/a.py` or `part 2 broke ruff check .` from the same record.
+    """
 
     label: str  # the part that did it
     path: str
     error: str
-    repaired_by: str | None = None  # a later part that made it parse again
+    repaired_by: str | None = None  # a later part that put it back
+    check: str = SYNTAX_CHECK
 
     @property
     def outstanding(self) -> bool:
         return self.repaired_by is None
 
+    @property
+    def subject(self) -> str:
+        """What broke, as a reader should see it: the file, or the check that failed."""
+        return self.path or self.check
 
-class SyntaxWatch:
-    """Parse what each part wrote as it finishes, and remember which part broke what.
 
-    The end-of-run check answers "is the project broken", which is the question that gates the
-    exit code. It cannot answer "by whom", and on a divided run that is the more useful half:
+class DamageWatch:
+    """Check what each part did as it finishes, and remember which part broke what.
+
+    The end-of-run checks answer "is the project broken", which is the question that gates the
+    exit code. They cannot answer "by whom", and on a divided run that is the more useful half:
     a five-part run that ends red tells you to read five diffs.
 
-    Cheap enough to do every time. Only the files the part itself wrote are parsed, only in
-    formats there is a parser for, and parsing a handful of files costs milliseconds against
-    the minute a part takes -- so unlike re-running the project's whole suite between parts,
-    this needs no budget, no timeout and no configuration.
+    Two things are watched. Parsing the files the part itself wrote costs milliseconds and
+    needs no budget or configuration, so it always happens. The project's OWN checks are the
+    other half -- v0.7 watched only the parser, and two measured runs in four broke `ruff`
+    without breaking any file's syntax, so half the damage went unattributed. Those are run
+    per part too, but only the ones the baseline measured as cheap enough; the runner decides
+    which and hands the results in, because a check that takes a minute cannot run between
+    parts that take a minute.
 
     Attribution is against the state immediately BEFORE the part, not the run's baseline. A
     file part 2 broke and part 4 repaired is recorded as both, because charging part 4 for
@@ -398,13 +421,34 @@ class SyntaxWatch:
     break because it did not survive to the end would hide a real thing that happened.
     """
 
-    def __init__(self, root: Path, baseline: dict[str, str | None]) -> None:
+    def __init__(
+        self,
+        root: Path,
+        baseline: dict[str, str | None],
+        checks: dict[str, CheckOutcome] | None = None,
+    ) -> None:
         self._root = root
         self._state = dict(baseline)
+        # Whether each project check was passing at the last point we looked. A check that
+        # was already red on arrival starts False, so a part is never charged for finding it
+        # that way -- the same rule the end-of-run comparison uses.
+        self._checks = {
+            name: outcome.ok and outcome.skipped is None
+            for name, outcome in (checks or {}).items()
+        }
         self._damage: list[Damage] = []
 
-    def after_part(self, label: str, written: list[str]) -> list[Damage]:
-        """Record what this part did to the files it wrote; return what it broke."""
+    def after_part(
+        self,
+        label: str,
+        written: list[str],
+        checks: dict[str, CheckOutcome] | None = None,
+    ) -> list[Damage]:
+        """Record what this part did, and return what it broke.
+
+        ``checks`` is whatever project checks the runner decided were cheap enough to re-run
+        after this part, already executed. Absent, only the parser is consulted.
+        """
         found: list[Damage] = []
         for path, error in syntax_state(self._root, written).items():
             was = self._state.get(path)
@@ -415,19 +459,36 @@ class SyntaxWatch:
             elif error is None and was is not None:
                 self._repair(label, path)
             self._state[path] = error
+
+        for name, outcome in (checks or {}).items():
+            if outcome.skipped is not None:
+                # It did not run, so it says nothing about this part either way. Leaving the
+                # remembered state alone means the next part is still compared against the
+                # last real measurement rather than against a gap.
+                continue
+            passed_before = self._checks.get(name, False)
+            if not outcome.ok and passed_before:
+                found.append(
+                    Damage(label=label, path="", error=outcome.detail, check=name)
+                )
+            elif outcome.ok and not passed_before:
+                self._repair(label, "", check=name)
+            self._checks[name] = outcome.ok
+
         self._damage.extend(found)
         return found
 
-    def _repair(self, label: str, path: str) -> None:
+    def _repair(self, label: str, path: str, check: str = SYNTAX_CHECK) -> None:
         """Credit a later part with fixing an earlier one's damage, most recent first."""
         for index in reversed(range(len(self._damage))):
             entry = self._damage[index]
-            if entry.path == path and entry.repaired_by is None:
+            if entry.path == path and entry.check == check and entry.repaired_by is None:
                 self._damage[index] = Damage(
                     label=entry.label,
                     path=entry.path,
                     error=entry.error,
                     repaired_by=label,
+                    check=entry.check,
                 )
                 return
 

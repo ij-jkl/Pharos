@@ -1694,3 +1694,96 @@ every coverage figure this project has published was measured on runs that ran t
 a part that breaks a file is sometimes repaired by a later part or by the sweep. For it, and
 this part *is* measured: §20 showed the v0.6 record carrying a broken part's conventions to
 every part after it, so damage propagates rather than staying where it happened.
+
+## ☑ 22. The cheap checks, every part (v0.8, live)
+
+§21 closed with a limit rather than a claim: the per-part watch caught what did not parse, and
+nothing else. That limit was measured, not hypothetical — two of the four runs in that section
+broke `ruff` without breaking any file's syntax, so half the damage had no part's name on it.
+A constant above a module's `import` is valid Python; `ast.parse` has no opinion and `E402`
+does.
+
+Same fixture, model and settings as §20 and §21.
+
+### The classification is free, because the baseline already ran
+
+Run 8's opening lines:
+
+```
+baseline: ruff check ., pytest -q
+  running after every part as well: ruff check ., pytest -q (0.7s the baseline took)
+```
+
+Nobody configured that. Every check runs before the first part anyway, so its cost on this
+machine and this repository is already known by the time the decision has to be made — asking
+the user for a number Pharos has just measured would be asking them to guess about their own
+suite. Both checks came in under the 3.0s ceiling here, `pytest -q` included, because on this
+fixture it fails in a fraction of a second (the package is not installed, which is also why it
+is red at baseline and never charged).
+
+### It names the part for the thing §21 could not
+
+```
+· part 1 BROKE src/svc/db_pool.py: expected an indented block after class definition on line 6
+· part 1 BROKE ruff check .: E402 Module level import not at top of file
+```
+
+and on the scorecard:
+
+```
+BROKEN        every file was changed, but syntax, ruff check . now fails
+coverage      ████████████████████████  100%  6 of 6 files
+damage        part 1 broke src/svc/db_pool.py
+                expected an indented block after class definition on line 6
+              part 1 broke ruff check .
+                E402 Module level import not at top of file
+```
+
+That second row is the whole tier. It is the identical failure §21 recorded as *"no damage
+row, correctly"* — the honest limit of v0.7 — now carrying the name of the part three parts
+before the end.
+
+`pytest -q` was red at baseline and produced no damage row on any part, which is the
+before/after rule holding for commands exactly as it does for files.
+
+### What it costs
+
+The baseline measured both checks at **0.7-0.8s combined** across runs 8 and 9. Three parts is
+about two seconds added to a run of roughly two minutes — run 9 came in at 145s against the
+104-154s recorded for the same task in §20, which is inside the run-to-run variance rather than
+distinguishable from it, and a part that wrote nothing is skipped entirely. It does
+not show up in the wall time, and the ceiling is what keeps that true on a repository where
+the suite is not free: a check over the budget is simply not one of the per-part checks, and
+the report says which ones are.
+
+### Not demonstrated live: the halt on a linter break
+
+Run 9 was `--stop-on-break` again, and the model got the task right. First clean run of the
+nine in §20-§22:
+
+```
+COMPLETE      every file the plan assigned was changed
+coverage      ████████████████████████  100%  6 of 6 files
+continuity    ! 0/2 hand-offs · largest 0 of 500 reserved
+                2 part(s) changed files and reported almost nothing ·
+                Pharos carried 4 changed file(s) forward regardless
+verification  ✓ syntax, ruff check .
+```
+
+145s, and nothing to halt on — so **a run stopped by a LINTER break has not been observed
+live.** Runs 4 and 5 demonstrated the halt on a syntax break, and the branch is shared: the
+same `found` list drives it whichever check produced the entry, and the command path is
+covered by unit tests. That is an argument, not a measurement, and it is recorded here as one.
+
+Worth noting on its own terms: this run had the **worst** continuity of any measured — both
+hand-offs empty, two parts that wrote files and said nothing — and it is the one that came out
+correct. The only thing crossing the gap was Pharos's record of the four files already done.
+One run is not evidence that the record caused the result, and it is the kind of run that
+before v0.6 had nothing at all to go on.
+
+### Known limit: it measures what your tools measure
+
+Unchanged from v0.4.2 and worth restating now that more of it runs more often. Pharos runs the
+checks your project already configures and reports their exit codes. A defect no configured
+check catches is a defect it does not see, and nothing here reads the diff. `git diff` is
+still the reviewer.

@@ -421,6 +421,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "damage": [
             {
                 "part": entry.label,
+                "check": entry.check,
                 "file": entry.path,
                 "error": entry.error,
                 "repaired_by": entry.repaired_by,

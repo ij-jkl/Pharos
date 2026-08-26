@@ -45,10 +45,11 @@ from pharos.agent.tools import (
 from pharos.agent.verify import (
     CheckOutcome,
     Damage,
-    SyntaxWatch,
+    DamageWatch,
     Verification,
     baseline,
     detect_commands,
+    run_command,
     syntax_state,
     verify,
 )
@@ -349,6 +350,7 @@ async def run_task(
     checks: list[str] = []
     was_passing: dict[str, CheckOutcome] = {}
     parses_now: dict[str, str | None] = {}
+    per_part_checks: list[str] = []
     if config.verify and verify_work:
         checks = (
             list(config.verify_commands)
@@ -366,6 +368,13 @@ async def run_task(
                     say(f"  {command} could not be baselined ({before.skipped})")
                 elif not before.ok:
                     say(f"  {command} was already failing - it will not be charged to this run")
+            per_part_checks = _cheap_enough(was_passing, config.per_part_check_seconds)
+            if per_part_checks:
+                spent = sum(was_passing[c].duration for c in per_part_checks)
+                say(
+                    f"  running after every part as well: {', '.join(per_part_checks)} "
+                    f"({spent:.1f}s the baseline took)"
+                )
 
     proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"
 
@@ -388,7 +397,11 @@ async def run_task(
     # before it. Costs milliseconds beside the minute a part takes, and it is the only way to
     # name the part responsible: the end-of-run check knows the project is broken and cannot
     # know who did it.
-    watch = SyntaxWatch(root, parses_now) if (config.verify and verify_work) else None
+    watch = (
+        DamageWatch(root, parses_now, was_passing)
+        if (config.verify and verify_work)
+        else None
+    )
     halt_on_break = stop_on_break and watch is not None
 
     handoff: str | None = None
@@ -458,7 +471,11 @@ async def run_task(
             # nobody because the part failed afterwards would lose the one fact worth having
             # about the failure.
             broke = (
-                _broke(watch, f"part {index}", result.files_written, say, outcome)
+                await _broke(
+                    watch, f"part {index}", result.files_written, say, outcome,
+                    root=root, checks=per_part_checks,
+                    check_timeout=config.verify_timeout_seconds,
+                )
                 if watch is not None
                 else False
             )
@@ -513,7 +530,11 @@ async def run_task(
                         label, _repair_body(prompt, chunk), chunk, 1, None, ledger_text
                     )
                     if watch is not None:
-                        _broke(watch, label, result.files_written, say, outcome)
+                        await _broke(
+                            watch, label, result.files_written, say, outcome,
+                            root=root, checks=per_part_checks,
+                            check_timeout=config.verify_timeout_seconds,
+                        )
                     record.record(label, result.changes)
                     ledger_text, _, _, _ = _carry(
                         record, "", config.handoff_reserve, count, ledger=ledger_on
@@ -630,19 +651,58 @@ def _bodies(plan: SplitPlan) -> list[tuple[str, list[PartFile] | None]]:
     ]
 
 
-def _broke(
-    watch: SyntaxWatch,
+def _cheap_enough(measured: dict[str, CheckOutcome], budget: float) -> list[str]:
+    """Which checks are quick enough to also run between parts, decided by measurement.
+
+    The baseline has just run every one of them, so how long each takes on this machine and
+    this repository is already known and costs nothing to read. Asking the user instead would
+    be asking them to guess a number about their own suite that Pharos has the answer to.
+
+    A check that could not be baselined is excluded whatever its duration: without a "before"
+    there is nothing to compare a per-part result against, and reporting a failure with no
+    baseline as damage would name a part for a state it may have inherited.
+    """
+    return [
+        name
+        for name, outcome in measured.items()
+        if outcome.skipped is None and outcome.duration <= budget
+    ]
+
+
+async def _broke(
+    watch: DamageWatch,
     label: str,
     written: list[str],
     say: Callable[[str], None],
     outcome: RunOutcome,
+    *,
+    root: Path,
+    checks: list[str],
+    check_timeout: float,
 ) -> bool:
-    """Parse what this part wrote, say what it broke, and keep the running tally."""
-    found = watch.after_part(label, written)
+    """Check what this part did, say what it broke, and keep the running tally.
+
+    The parser first, always. Then whichever project checks the baseline measured as cheap
+    enough, off the event loop so a run in the TUI keeps drawing while they execute.
+    """
+    ran: dict[str, CheckOutcome] = {}
+    if checks and written:
+        # No writes means nothing this part could have broken, and the checks would only
+        # re-measure the previous part's answer at the price of running them again.
+        ran = await asyncio.to_thread(
+            lambda: {c: run_command(root, c, timeout=check_timeout) for c in checks}
+        )
+    found = watch.after_part(label, written, ran)
     for entry in found:
-        say(f"  [{label}] BROKE {entry.path}: {entry.error}")
+        say(f"  [{label}] BROKE {entry.subject}: {_one_line(entry.error)}")
     outcome.damage = watch.damage
     return bool(found)
+
+
+def _one_line(detail: str) -> str:
+    """A tool's excerpt is several lines; a progress line is one."""
+    first = next((line for line in detail.splitlines() if line.strip()), "")
+    return first if len(first) <= 120 else first[:119] + chr(8230)
 
 
 def _carry(
