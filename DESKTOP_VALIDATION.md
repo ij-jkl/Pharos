@@ -2484,3 +2484,83 @@ most need their hand-off, and they are the ones that now get the room reserved f
 The work itself was worse this time and Pharos said so: coverage 72.2%, `complete: false`, three
 parts named for breaking the build, audit clean. `shop/notifications/templates.py` and
 `tests/test_shop.py` untouched for the fourth run running.
+
+
+---
+
+## ☑ 28. Why two parts ran out of window (v1.0.5, live)
+
+**Runs completed 2026-08-26.** §27 ended with two parts hitting the ceiling and handing off
+early. The log says why in one shape, repeated:
+
+```
++ part 4 replace_lines shop/tax/calculator.py
+· part 4 read_file     shop/tax/calculator.py
++ part 4 replace_lines shop/tax/calculator.py
+· part 4 read_file     shop/tax/calculator.py
+```
+
+Every edit shifts the line numbers below it, so a model holding numbers from an earlier read
+must get fresh ones before touching that file again — and the only way to get them was to read
+the whole file back. **Pharos was explicitly telling it to**: *"read it again before editing
+further down"*.
+
+One part read a 344-token file **seven times** and another six times. Across that run, about
+**15,500 tokens** went on re-reading files already sitting in the window — more than a single
+part's entire ceiling of 14,604.
+
+### What shipped
+
+`replace_lines` now returns the region it wrote, renumbered, with three lines of context either
+side. Capped at forty written lines, past which echoing costs more than the read it saves and
+the answer goes back to the old advice. The shift warning stays and now names the line below
+which the model's own numbers go stale, instead of condemning the whole file.
+
+The mechanism works and is pinned by tests. It is visible in the log too — `rates.py` takes
+**three consecutive edits with no read between them**, which no earlier run does.
+
+### What the runs do NOT establish
+
+The effect on the model's behaviour is inside the noise of five single runs, and saying
+otherwise would be dressing up one sample as a measurement:
+
+| | edits chased by a re-read of the same file |
+|---|---|
+| §25 | 52.6% |
+| §26 | 64.3% |
+| §27 | 68.8% |
+| with the echo | 57.6% |
+| with the echo, and the tool saying so | 53.3% |
+
+The three "before" figures span 52.6–68.8%, and both "after" figures land inside that span. The
+same is true of the totals: 15,469 → 13,414 → **16,782** tokens spent re-reading. The run with
+the MOST re-reading is also the best run by every other measure.
+
+So the honest statement is that Pharos no longer asks for a whole file when it can hand back
+the ten lines that answer the question, and that whether the model takes the offer is not
+something five runs can tell you.
+
+### The runs themselves
+
+| | §27 | echo | echo + told |
+|---|---|---|---|
+| coverage | 72.2% | 72.2% | **88.9%** |
+| parts that hit the ceiling | 2 | 0 | 0 |
+| reads refused for room | 3 | 2 | **0** |
+| `kept_the_thread` | true | true | true |
+| thin hand-offs | 0 | 0 | 0 |
+| hand-offs that had to be asked for | 4 | 3 | **2** |
+| peak of ceiling | 98.3% | 97.8% | 96.7% |
+
+Continuity has now held on three consecutive six-part runs. The last of them is the best pass
+this project has recorded: **72 f-string interpolations** (the previous best was 59), one
+`%`-operator left in the tree and it is in the file the prompt forbade, audit clean, and
+`complete: false` naming parts 1 and 2 for the two files left unparseable.
+
+`shop/notifications/templates.py` and `tests/test_shop.py`: untouched, six runs running.
+
+### Also
+
+**"Stopped early" was doing the work of two facts.** Both parts that hit the ceiling in §27 had
+already written every file they owned — they ran out of window checking their work over, not
+with files untouched. The scorecard now says how many, beside the count and folded into nothing.

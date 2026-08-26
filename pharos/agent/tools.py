@@ -49,6 +49,12 @@ from pharos.preflight.split import PartFile
 
 # Entries a directory listing never shows: noise that costs tokens and teaches the model
 # nothing about the task.
+# How much of a just-edited file is echoed back with its new numbers, so the next edit on
+# the same file does not need a whole re-read. Context either side, and a cap past which
+# echoing costs more than the read it saves -- see ToolBox._renumbered.
+_ECHO_CONTEXT = 3
+_ECHO_MAX_LINES = 40
+
 _HIDDEN = frozenset({".git", "__pycache__", ".venv", "node_modules", ".mypy_cache",
                      ".pytest_cache", ".ruff_cache", ".pharos"})
 
@@ -148,7 +154,9 @@ class ToolBox:
                 "replace_lines",
                 "Replace an inclusive range of lines in a file. PREFER THIS over write_file "
                 "for a small change to an existing file — you only send the lines you are "
-                "changing, not the whole file. Line numbers are the ones shown by read_file.",
+                "changing, not the whole file. Line numbers are the ones shown by read_file, "
+                "or by the renumbered window this tool returns after each edit — that window is "
+                "already current, so a further edit inside it needs no re-read.",
                 {
                     "path": ("string", "Path relative to the workspace root."),
                     "line_start": ("integer", "First line to replace, 1-based inclusive."),
@@ -420,16 +428,24 @@ class ToolBox:
         # in the wrong place — silently, because the tool call itself succeeds. Say the shift
         # out loud, with the direction, rather than trusting the model to track it.
         delta = len(replacement.splitlines()) - (end - start + 1)
-        moved = (
-            ""
-            if delta == 0
-            else (
+        window, shown_to = _renumbered(display, updated, start, len(replacement.splitlines()))
+        if delta == 0:
+            moved = ""
+        elif window:
+            moved = (
+                f" Lines after {end} have shifted by {delta:+d}. The window below is current; "
+                f"below line {shown_to} the numbers from your earlier read are stale."
+            )
+        else:
+            moved = (
                 f" Lines after {end} have shifted by {delta:+d}; the numbers from your earlier "
                 f"read of this file are stale below that point — read it again before editing "
                 f"further down."
             )
+        return ToolResult(
+            f"Replaced lines {start}-{end} of {display}.{moved}{window}", wrote=display
         )
-        return ToolResult(f"Replaced lines {start}-{end} of {display}.{moved}", wrote=display)
+
 
     def _list(self, raw: str) -> ToolResult:
         path = self.workspace.resolve(raw or ".")
@@ -481,6 +497,40 @@ _CRLF = chr(13) + chr(10)
 
 
 _NUMBERED_LINE = re.compile(r"^\s*\d+\| ")
+
+
+def _renumbered(display: str, updated: str, start: int, written: int) -> tuple[str, int]:
+    """The region just written, with its NEW numbers. Returns the text and its last line.
+
+    This is the cheapest fix available for the thing that actually fills a part's window.
+    Every replace_lines shifts the numbering below it, so a model holding numbers from an
+    earlier read has to get fresh ones before touching the same file again -- and the only
+    way to get them was to read the whole file back. Pharos was even telling it to.
+
+    Measured on the six-part run in DESKTOP_VALIDATION §28: one part read a 344-token file
+    SEVEN times and another six times, and the run spent about 15,541 tokens re-reading files
+    already sitting in its window -- more than a single part's entire ceiling. Two parts hit
+    that ceiling and handed off early.
+
+    A few lines of context either side, so an edit next to the last one needs nothing further.
+    Capped, because past a certain size echoing the region back costs more than the re-read it
+    saves, and then the honest answer is the old advice: go and read it.
+    """
+    lines = updated.splitlines(keepends=True)
+    last = start - 1 + written
+    if written > _ECHO_MAX_LINES or last < start or not lines:
+        return "", 0
+    first = max(1, start - _ECHO_CONTEXT)
+    last = min(len(lines), last + _ECHO_CONTEXT)
+    if last < first:
+        return "", 0
+    body = _with_line_numbers("".join(lines[first - 1 : last]), start=first)
+    return (
+        f"\n--- {display} lines {first}-{last}, renumbered after the edit ---\n"
+        f"{body}\n"
+        f"--- end of window. These numbers are current, and like every read view they are "
+        f"not part of the file and must never be written back. ---"
+    ), last
 
 
 def looks_numbered(text: str) -> bool:

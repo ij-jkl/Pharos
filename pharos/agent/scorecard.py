@@ -192,6 +192,11 @@ class Scorecard:
 
     nudged_parts: int = 0
     abandoned_parts: int = 0
+    # Of those, the ones that had already written every file they owned. A part that finishes
+    # its work and then runs out of window while checking it over is not the same event as one
+    # cut off with files still untouched, and "stopped early" alone cannot tell them apart --
+    # measured on a run where BOTH parts that hit the ceiling had written all three of theirs.
+    stopped_with_work_done: int = 0
     failed_parts: int = 0
     # Compaction, both sides of it. ``compacted_tokens`` is window that was actually given
     # back by stubbing tool results a part had finished with; ``reclaimable_tokens`` is what
@@ -466,6 +471,13 @@ def score(
             p.reclaimable_tokens for p in parts if p.stopped_early or p.room_refusals
         ),
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
+        stopped_with_work_done=sum(
+            1
+            for p in parts
+            if p.stopped_early
+            and p.scoped
+            and not {normalise(x) for x in p.scoped} - {normalise(x) for x in p.files_written}
+        ),
         failed_parts=sum(1 for p in parts if p.error),
         verification=verification,
         damage=list(damage or []),
@@ -558,6 +570,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "under_counted": card.under_counted,
         "nudged_parts": card.nudged_parts,
         "abandoned_parts": card.abandoned_parts,
+        "stopped_with_work_done": card.stopped_with_work_done,
         "failed_parts": card.failed_parts,
         "verification": _verification_dict(card.verification),
         "damage": [

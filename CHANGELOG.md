@@ -6,6 +6,39 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.0.5 — "An edit that says where it landed"
+
+Why two parts ran out of window, from the run in §27. It was not the size of the task.
+
+- **`replace_lines` now hands back the region it wrote, renumbered.** Every edit shifts the
+  line numbers below it, so a model holding numbers from an earlier read has to get fresh ones
+  before touching the same file again — and the only way to get them was to read the whole file
+  back. Pharos was explicitly telling it to: *"read it again before editing further down"*.
+
+  The log makes the loop plain: `replace_lines X`, `read_file X`, `replace_lines X`,
+  `read_file X`, over and over. One part read a 344-token file **seven times** and a second one
+  six times. Across the run, **~15,541 tokens went on re-reading files already sitting in the
+  window** — more than a single part's entire ceiling of 14,604. Two parts hit that ceiling.
+
+  The result of an edit now carries the changed region with its new numbers and three lines of
+  context either side, so an adjacent edit needs nothing further. Capped: past forty written
+  lines, echoing the region back costs more than the read it saves, and the answer goes back to
+  the old advice. The shift warning stays, and now says exactly where the model's own numbers
+  go stale rather than condemning the whole file.
+
+  **What five live runs do not establish is whether the model takes the offer.** The rate of
+  edits chased by a re-read went 52.6% / 64.3% / 68.8% before, and 57.6% / 53.3% after — both
+  after-figures land inside the before-range, and the run that re-read the most is the best run
+  by every other measure. The mechanism is pinned by tests and visible in the log (three
+  consecutive edits with no read between them, which no earlier run does). The claim stops
+  there: Pharos no longer asks for a whole file when it can hand back the ten lines that answer
+  the question. See `DESKTOP_VALIDATION.md` §28.
+
+- **"Stopped early" was doing the work of two different facts.** Both parts that hit the ceiling
+  had already written every file they owned; they ran out of window checking their work over,
+  not with files untouched. The scorecard says how many of them that was, beside the count and
+  folded into nothing.
+
 ## v1.0.4 — "The room that was set aside"
 
 The one thin hand-off left after v1.0.3, chased down. It was not the model either.

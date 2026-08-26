@@ -864,7 +864,7 @@ uv run mypy pharos
 uv run pytest
 ```
 
-**681 tests**, `ruff` and `mypy --strict` clean. Tokenizer tests against a real GGUF auto-skip
+**685 tests**, `ruff` and `mypy --strict` clean. Tokenizer tests against a real GGUF auto-skip
 unless a model file is present under `tests/models/` (gitignored). `CHANGELOG.md` is the
 tier-by-tier history; `DESKTOP_VALIDATION.md` is the working record of every assumption
 confirmed against a live GPU + Ollama machine, including the ones that turned out to be wrong.

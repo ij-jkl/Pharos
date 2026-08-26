@@ -842,7 +842,14 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
         body.add_row(
             "convergence",
             f"[dim]{card.nudged_parts} part(s) needed a reminder, "
-            f"{card.abandoned_parts} stopped early[/]",
+            f"{card.abandoned_parts} stopped early"
+            + (
+                f" ({card.stopped_with_work_done} of them with every file they owned "
+                f"already written)"
+                if card.stopped_with_work_done
+                else ""
+            )
+            + "[/]",
         )
     if card.compacted_tokens:
         body.add_row(

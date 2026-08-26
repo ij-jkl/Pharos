@@ -1948,3 +1948,85 @@ async def test_a_handoff_made_only_of_a_pharos_note_is_asked_again(workspace: Wo
     result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
     assert result.handoff_requested
     assert result.text == "src/alpha.py sets alpha to 9."
+
+
+# --- an edit hands back its own new line numbers --------------------------------------------------
+#
+# Every replace_lines shifts the numbering below it, so a model holding numbers from an earlier
+# read had to re-read the whole file before touching it again -- and Pharos was telling it to.
+# Measured live: one part read a 344-token file seven times, and the run spent ~15,541 tokens
+# re-reading files already in its window, more than one part's entire ceiling.
+
+
+def _lined(n: int) -> str:
+    return "".join(f"line {i}\n" for i in range(1, n + 1))
+
+
+def test_an_edit_returns_the_region_it_wrote_with_its_new_numbers(tmp_path: Path) -> None:
+    (tmp_path / "rates.py").write_text(_lined(12), encoding="utf-8")
+    box = ToolBox(workspace=Workspace(tmp_path))
+    result = box.dispatch(
+        "replace_lines",
+        {"path": "rates.py", "line_start": 5, "line_end": 6, "content": "NEW a\nNEW b\nNEW c\n"},
+        room=10_000,
+        count=_count,
+    )
+    assert result.ok
+    # The replacement now occupies 5-7, and what followed has moved down by one.
+    assert " 5| NEW a" in result.text
+    assert " 7| NEW c" in result.text
+    assert " 8| line 7" in result.text
+    # Context either side, so an edit adjacent to this one needs nothing further.
+    assert " 4| line 4" in result.text
+
+
+def test_the_echo_still_says_where_the_numbers_go_stale(tmp_path: Path) -> None:
+    """The window is current; below it the model's earlier read is not. Both are said."""
+    (tmp_path / "rates.py").write_text(_lined(40), encoding="utf-8")
+    box = ToolBox(workspace=Workspace(tmp_path))
+    result = box.dispatch(
+        "replace_lines",
+        {"path": "rates.py", "line_start": 5, "line_end": 6, "content": "one\ntwo\nthree\n"},
+        room=10_000,
+        count=_count,
+    )
+    assert "shifted by +1" in result.text
+    assert "below line 10" in result.text
+
+
+def test_a_replacement_too_large_to_echo_falls_back_to_the_old_advice(tmp_path: Path) -> None:
+    """Past a certain size, echoing the region back costs more than the read it saves, and
+    then the honest answer is the one it always was: go and read the file."""
+    (tmp_path / "rates.py").write_text(_lined(12), encoding="utf-8")
+    box = ToolBox(workspace=Workspace(tmp_path))
+    result = box.dispatch(
+        "replace_lines",
+        {"path": "rates.py", "line_start": 1, "line_end": 2,
+         "content": "".join(f"x{i}\n" for i in range(60))},
+        room=10_000,
+        count=_count,
+    )
+    assert result.ok
+    assert "read it again before editing further down" in result.text
+    assert "renumbered after the edit" not in result.text
+
+
+def test_the_echoed_numbers_are_still_refused_if_written_back(tmp_path: Path) -> None:
+    """The echo is a read view like any other, and it puts more numbered text in front of the
+    model than before, so the guard against pasting those numbers back has to still catch it.
+
+    Three lines is the guard's own threshold, stated where it is defined: below that it cannot
+    tell a pasted view from prose starting with a digit and a bar, and it is deliberately
+    biased against refusing a real edit.
+    """
+    (tmp_path / "rates.py").write_text(_lined(12), encoding="utf-8")
+    box = ToolBox(workspace=Workspace(tmp_path))
+    result = box.dispatch(
+        "replace_lines",
+        {"path": "rates.py", "line_start": 5, "line_end": 7,
+         "content": " 5| NEW a\n 6| NEW b\n 7| NEW c\n"},
+        room=10_000,
+        count=_count,
+    )
+    assert not result.ok
+    assert "NNN| line-number prefixes" in result.text
