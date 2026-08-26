@@ -136,6 +136,16 @@ class PharosConfig(BaseModel):
     # Per-command ceiling. A check that outruns it is reported as skipped, never as passing: a
     # run must not be able to turn a slow suite into a green tick by waiting.
     verify_timeout_seconds: float = Field(default=300.0, gt=0.0)
+    # End the run at the first part that leaves a file it wrote unparseable, instead of
+    # carrying on into the parts after it.
+    #
+    # Off by default, and that is a judgement rather than a measurement. A part that breaks a
+    # file is sometimes repaired by a later one or by the repair sweep, and every coverage
+    # figure this project has published was measured on runs that ran to the end -- turning
+    # this on by default would silently change what those numbers mean. What argues FOR it is
+    # also measured: from v0.6 the record carries a broken part's conventions to every part
+    # after it, so damage propagates rather than staying where it happened.
+    stop_on_break: bool = False
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

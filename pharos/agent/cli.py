@@ -91,12 +91,22 @@ def main(argv: list[str] | None = None) -> int:
         help="skip the project's own checks afterwards (they run twice, so a slow suite costs)",
     )
     parser.add_argument(
+        "--stop-on-break",
+        action="store_true",
+        help="end the run at the first part that leaves a file it wrote unparseable, instead "
+        "of carrying on into the parts after it",
+    )
+    parser.add_argument(
         "--no-ledger",
         action="store_true",
         help="do not carry Pharos's record of what landed on disk between parts; the model's "
         "own hand-off becomes the only thread, as it was before v0.6",
     )
     args = parser.parse_args(argv)
+    if args.stop_on_break and args.no_verify:
+        # The per-part parse is part of the verification tier. Accepting the flag and doing
+        # nothing with it is the failure `pharos check --target` shipped with in v0.4.
+        parser.error("--stop-on-break needs the checks that --no-verify turns off")
 
     console = Console(stderr=args.json)
     progress = Console(stderr=True)
@@ -161,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                     divide=not args.no_split,
                     semantic=args.semantic,
                     use_ledger=not args.no_ledger,
+                    stop_on_break=args.stop_on_break or config.stop_on_break,
                     on_event=report,
                 )
             )
@@ -251,6 +262,16 @@ def _headline(card: Scorecard) -> tuple[str, str, str]:
     """The one-word verdict, its colour, and the sentence that qualifies it."""
     if card.failed_parts:
         return "FAILED", "bold red", "a part could not finish"
+    if card.stopped_on_break is not None:
+        # Not FAILED (nothing errored) and not INCOMPLETE (the untouched files were never
+        # attempted). The run was halted, on purpose, and the word has to say so or the
+        # coverage figure below it reads as a model that gave up.
+        return (
+            "STOPPED",
+            "bold red",
+            f"{card.stopped_on_break} left a file it wrote unparseable, and --stop-on-break "
+            f"ended the run there",
+        )
     if card.coverage is None:
         return "DONE", "bold green", "one unrestricted part; nothing to measure coverage against"
     if card.complete:
@@ -595,6 +616,24 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"nothing touched[/]",
         )
 
+    if card.damage:
+        # Which part, not just which file. The verification block below says the project is
+        # broken; on a five-part run this is the half that says whose diff to read.
+        for entry in card.damage[:4]:
+            fixed = (
+                f" [dim]{chr(183)} repaired by {entry.repaired_by}[/]"
+                if entry.repaired_by
+                else ""
+            )
+            colour = "yellow" if entry.repaired_by else "red"
+            body.add_row(
+                "damage" if entry is card.damage[0] else "",
+                f"[{colour}]{entry.label} broke {entry.path}[/]{fixed}\n"
+                f"  [dim]{entry.error}[/]",
+            )
+        if len(card.damage) > 4:
+            body.add_row("", f"[dim]... {len(card.damage) - 4} more[/]")
+
     if card.truncated_parts:
         body.add_row(
             "[bold red]TRUNCATED[/]",
@@ -770,6 +809,9 @@ def _render(
         verification=outcome.verification,
         ledger_on=outcome.ledger_on,
         ledger_files=outcome.ledger_files,
+        damage=outcome.damage,
+        stopped_on_break=outcome.stopped_on_break,
+        planned_files=outcome.planned_files,
     )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.

@@ -82,7 +82,7 @@ from dataclasses import dataclass, field
 from pharos.agent.ledger import names_its_work
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import normalise
-from pharos.agent.verify import Verification
+from pharos.agent.verify import Damage, Verification
 
 
 def _carried_the_work(part: PartResult) -> bool:
@@ -158,6 +158,11 @@ class Scorecard:
     # What the project's own checks said afterwards, discounting whatever was already failing
     # when the run started. None when verification was switched off or never ran.
     verification: Verification | None = None
+    # Which part left which file unparseable, measured as each part finished. The check above
+    # says whether the project is broken; this says who broke it, and whether anybody came
+    # back for it.
+    damage: list[Damage] = field(default_factory=list)
+    stopped_on_break: str | None = None  # the part the run was halted at, if it was
     # Parts where the backend's own count FELL mid-conversation: it stopped evaluating
     # everything it was sent. Not a drift statistic — proof that the window Pharos measured is
     # not the window in force, and that context was dropped without anybody being told.
@@ -196,6 +201,26 @@ class Scorecard:
             and not self.thin_handoffs
             and not self.revisits
         )
+
+    @property
+    def broke_the_build(self) -> list[str]:
+        """Parts that left something unparseable and nobody fixed it, first offence first."""
+        out: list[str] = []
+        for entry in self.damage:
+            if entry.outstanding and entry.label not in out:
+                out.append(entry.label)
+        return out
+
+    @property
+    def transient_damage(self) -> list[Damage]:
+        """Broken by one part and repaired by a later one.
+
+        Reported rather than dropped. It did not survive to the end, so it is not charged
+        against the run and does not appear in `broke_the_build` — but a part that has to
+        undo an earlier part's damage spent its window on that instead of its own files, and
+        a run that does it repeatedly is a run whose division is not working.
+        """
+        return [entry for entry in self.damage if not entry.outstanding]
 
     @property
     def under_counted(self) -> bool:
@@ -247,6 +272,9 @@ def score(
     verification: Verification | None = None,
     ledger_on: bool = False,
     ledger_files: int = 0,
+    damage: list[Damage] | None = None,
+    stopped_on_break: str | None = None,
+    planned_files: list[str] | None = None,
 ) -> Scorecard:
     """Reduce a finished run to the five questions above."""
     scoped: list[str] = []
@@ -254,7 +282,15 @@ def score(
         for path in part.scoped:
             if path not in scoped:
                 scoped.append(path)
-    scoped_set = {normalise(path) for path in scoped}
+    # Coverage is "of the files the PLAN assigned", so the denominator is the plan when one
+    # is given -- not the parts that happened to execute. A run halted after part 1 of three
+    # otherwise reports 100%, because the files nobody attempted are in no part's scope: the
+    # denominator shrinks along with the numerator and the bar stays full. True of a run
+    # stopped by a failed part too, which it has been since v0.4 and nobody noticed until
+    # --stop-on-break made a short run an ordinary outcome rather than an accident.
+    scoped_set = {normalise(path) for path in scoped} | {
+        normalise(path) for path in (planned_files or [])
+    }
 
     written: set[str] = set()
     for part in parts:
@@ -278,8 +314,8 @@ def score(
     # The last part hands off to nobody, so it is not expected to produce one. Repair parts
     # run AFTER the plan and hand off to nobody either — they are a sweep, not a continuation,
     # so holding them to the thread would penalise a run for the mechanism that rescued it.
-    planned = parts[: len(parts) - repair_parts] if repair_parts else parts
-    expects_handoff = planned[:-1] if len(planned) > 1 else []
+    planned_parts = parts[: len(parts) - repair_parts] if repair_parts else parts
+    expects_handoff = planned_parts[:-1] if len(planned_parts) > 1 else []
     produced = [p for p in expects_handoff if p.text.strip()]
 
     # A hand-off from a part that CHANGED something has to describe it. From a part that did
@@ -336,6 +372,8 @@ def score(
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
         failed_parts=sum(1 for p in parts if p.error),
         verification=verification,
+        damage=list(damage or []),
+        stopped_on_break=stopped_on_break,
     )
 
 
@@ -380,6 +418,17 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "abandoned_parts": card.abandoned_parts,
         "failed_parts": card.failed_parts,
         "verification": _verification_dict(card.verification),
+        "damage": [
+            {
+                "part": entry.label,
+                "file": entry.path,
+                "error": entry.error,
+                "repaired_by": entry.repaired_by,
+            }
+            for entry in card.damage
+        ],
+        "broke_the_build": card.broke_the_build,
+        "stopped_on_break": card.stopped_on_break,
     }
 
 

@@ -8,13 +8,15 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.6** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
+**Status: v0.7** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
 request or a response). Alongside it, three tools outside the request path: what a prompt will
 cost before you paste it (`pharos check`), how to cut it up when it will not fit
 (`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
 finishes by re-running your project's own checks and failing the run if it broke them. New in
-v0.6: a run carries its own record of what has landed on disk from part to part, so context
-survives a hand-off the model wrote badly. From v0.5: `--semantic` lets a model propose *which
+v0.7: each part is parsed as it finishes, so a broken build names the part that broke it, and
+`--stop-on-break` ends a run rather than letting the damage propagate. From v0.6: a run
+carries its own record of what has landed on disk from part to part, so context survives a
+hand-off the model wrote badly. From v0.5: `--semantic` lets a model propose *which
 files group together*, and nothing else — every
 projection is still measured, and a proposal that fails any check is discarded for the
 mechanical one.
@@ -361,6 +363,7 @@ pharos run "Refactor the controllers in `backend/Controllers/` to a consistent r
 pharos run --dry-run "..."     # plan only; changes nothing
 pharos run --no-split "..."    # one undivided conversation, for comparison
 pharos run --no-ledger "..."   # the model's hand-off as the only thread, as before v0.6
+pharos run --stop-on-break "..."  # halt at the first part that breaks a file it wrote
 ```
 
 This is the one part of Pharos that **writes files**, so it will not start without a way back:
@@ -491,6 +494,26 @@ task, those were exactly the two cases.
   reports the worst shortfall in **tokens** against the safety margin that absorbs it —
   measured at 60 tokens against a 256-token margin.
 
+- **Damage** (v0.7) names the part. Every part is parsed the moment it finishes — only the
+  files it wrote, only in formats there is a parser for, which costs milliseconds against the
+  minute a part takes. The checks below say the project is broken; this says who broke it:
+
+  ```
+  damage       part 1 broke src/svc/clock_ticks.py
+                 unexpected indent (<unknown>, line 1)
+  ```
+
+  Attribution is against the state immediately *before* the part, so a file part 2 broke is
+  not charged to part 4 for touching it afterwards, and a file that arrived broken is nobody's.
+  A break a later part repairs is shown as repaired rather than dropped — it is not counted
+  against the run, but a part that spends its window undoing an earlier part's damage is a
+  division that is not working. `--stop-on-break` ends the run at the first one instead of
+  letting it propagate; the verdict then reads `STOPPED`, and the repair sweep does not run
+  over a tree that no longer parses.
+
+  It catches what does not **parse**, and nothing else. A measured run broke `ruff` with
+  `E402` — a constant above an `import`, which is valid Python — and got no damage row,
+  correctly: the checks below caught it without naming a part.
 - **Verification** is the project's own checks, re-run afterwards. Coverage says every
   assigned file was written; it cannot say the result still works. A measured run wrote all six
   of its files, scored 100%, and left `sorted(total.items(), ...)` where the variable is
@@ -627,8 +650,10 @@ re-encoding or re-chunking.
   refusal is unchanged, the proposal is checked in code, and a failed check falls back to
   position packing and says so. Off unless you ask for it.
 - **No review of the work.** `pharos run` re-runs the checks your project already has and
-  reports what broke (see below), but nothing reads the diff and judges it. Whether the code is
-  *right* is still yours; whether it still *builds* is now measured.
+  reports what broke (see below), and from v0.7 it parses each part as it finishes so a break
+  names the part that caused it — but nothing reads the diff and judges it. Whether the code is
+  *right* is still yours; whether it still *parses*, and whose part stopped it parsing, is now
+  measured.
 - **No change auditing / filesystem watching.**
 
 Those belong to later tiers. The contract is simple: what your agent sends is what the

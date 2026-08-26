@@ -1556,6 +1556,7 @@ that notices either. No claim is made here that the record improves the code.
 | 1 | 100% | 2/2 | 0 | 2 | **ruff broken** | BROKEN |
 | 2 | 100% | 1/2 | 1 | 4 | **syntax + ruff broken** | BROKEN |
 | 3 | 100% | 1/2 | 1 | 4 | **ruff broken** | BROKEN |
+| 6 | 100% | 1/2 | 1 | 4 | **ruff broken** (parsed fine) | BROKEN |
 
 Unchanged from §19, and worth restating because the record does not touch it: **coverage was
 100% on every run, and the build broke on all three.** Run 3's damage was `F811` — the model
@@ -1566,3 +1567,100 @@ exact. `pytest -q was already failing before the run` appeared in every scorecar
 charged. Three runs is not a rate, and the two thin hand-offs in three runs are not one either;
 what they are is the §14 failure still occurring at roughly the frequency §14 recorded, with
 the context now surviving it.
+
+## ☑ 21. Naming the part that broke it (v0.7, live)
+
+v0.4.2 answers *is the project broken*. Across §19 and §20 the answer was yes on seven runs of
+eleven, and the report could never say which part did it: the checks run once, at the end, over
+a tree five parts have all written to. v0.7 parses each part's own files the moment it finishes.
+
+Same fixture and model as §20. `qwen3.5:9b`, `num_ctx = 16384`, three parts of two files.
+
+### It names the part, and stops when told to
+
+Run 4, `--stop-on-break`:
+
+```
+part 1 of 3
+  · part 1 BROKE src/svc/clock_ticks.py: unexpected indent (<unknown>, line 1)
+  · part 1 BROKE src/svc/db_pool.py: unexpected indent (<unknown>, line 1)
+  · part 1 stopping here (--stop-on-break): the parts after this one would
+    inherit a tree that does not parse
+```
+
+Parts 2 and 3 never ran. The verdict reads `STOPPED` rather than `FAILED` — nothing errored —
+and rather than `INCOMPLETE`, which would blame the model for four files it was never given a
+chance at.
+
+### Finding: a halted run reported 100% coverage (fixed)
+
+Run 4's scorecard, before the fix:
+
+```
+STOPPED       part 1 left a file it wrote unparseable, and --stop-on-break ended the run there
+coverage      ████████████████████████  100%  2 of 2 files
+```
+
+Two of two. Coverage was measured against the scope of the parts that **executed**, so halting
+the run removed four files from the numerator and the denominator together and the bar stayed
+full. Coverage has always been defined as *of the files the plan assigned*, and the plan
+assigned six.
+
+The denominator is now the plan. Run 5, same flag, same fixture, part 2 breaking instead of
+part 1:
+
+```
+STOPPED       part 2 left a file it wrote unparseable, and --stop-on-break ended the run there
+coverage      ████████████████░░░░░░░░  67%  4 of 6 files
+                untouched  src/svc/span_timer.py
+                untouched  src/svc/wire_encode.py
+damage        part 2 broke src/svc/http_fetch.py
+                expected an indented block after function definition on line 6
+              part 2 broke src/svc/row_map.py
+                expected an indented block after function definition on line 6
+```
+
+**This bug predates v0.7 and was never about `--stop-on-break`.** The loop already broke early
+when a part errored, and every such run has been reporting coverage against a shrunken
+denominator since v0.4. Nobody noticed because a failed part is rare and its report is read for
+the failure; making a short run an ordinary, deliberate outcome is what put the number in front
+of someone.
+
+### Known limit: it catches what does not parse, and nothing else
+
+Run 6, no flag, ran to the end:
+
+```
+BROKEN        every file was changed, but ruff check . now fails
+coverage      ████████████████████████  100%  6 of 6 files
+verification  1 check(s) this run broke
+              ✗ ruff check .
+                  E402 Module level import not at top of file
+                  --> src\svc\clock_ticks.py:6:1
+```
+
+**No damage row, correctly.** Every file still parsed; what broke was a lint rule. A constant
+placed above a module's `import` is valid Python and `ast.parse` has no opinion about it, so
+the per-part watch saw nothing and said nothing. The end-of-run checks caught it, as they have
+since v0.4.2, without naming a part.
+
+Extending the watch to the project's own linters is possible — `ruff` is fast enough to run
+between parts and reports per file, so the same before/after comparison would work — and it is
+not done here. `pytest` is not fast enough for the same treatment, so it would be a check that
+attributes some failures and not others, and that asymmetry needs designing rather than
+assuming. What v0.7 claims is exactly what it measures: which part stopped a file parsing.
+
+### What it costs
+
+Nothing measurable. Only the files the part itself wrote are parsed, only in formats there is a
+parser for, on text already on disk — against the 30-60s a part takes, it does not appear in
+the wall time. No timeout, no configuration, no new dependency, and nothing asked of the
+project that the end-of-run checks were not already asking.
+
+### Why it is off by default
+
+`--stop-on-break` is opt-in, and that is a judgement rather than a measurement. Against it:
+every coverage figure this project has published was measured on runs that ran to the end, and
+a part that breaks a file is sometimes repaired by a later part or by the sweep. For it, and
+this part *is* measured: §20 showed the v0.6 record carrying a broken part's conventions to
+every part after it, so damage propagates rather than staying where it happened.

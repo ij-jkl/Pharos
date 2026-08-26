@@ -364,3 +364,79 @@ def verify(
             )
         )
     return Verification(checks=tuple(checks), unchecked_files=unchecked)
+
+
+@dataclass(frozen=True, slots=True)
+class Damage:
+    """One file a part left unparseable that parsed before that part ran."""
+
+    label: str  # the part that did it
+    path: str
+    error: str
+    repaired_by: str | None = None  # a later part that made it parse again
+
+    @property
+    def outstanding(self) -> bool:
+        return self.repaired_by is None
+
+
+class SyntaxWatch:
+    """Parse what each part wrote as it finishes, and remember which part broke what.
+
+    The end-of-run check answers "is the project broken", which is the question that gates the
+    exit code. It cannot answer "by whom", and on a divided run that is the more useful half:
+    a five-part run that ends red tells you to read five diffs.
+
+    Cheap enough to do every time. Only the files the part itself wrote are parsed, only in
+    formats there is a parser for, and parsing a handful of files costs milliseconds against
+    the minute a part takes -- so unlike re-running the project's whole suite between parts,
+    this needs no budget, no timeout and no configuration.
+
+    Attribution is against the state immediately BEFORE the part, not the run's baseline. A
+    file part 2 broke and part 4 repaired is recorded as both, because charging part 4 for
+    arriving at a file part 2 had already ruined would name the wrong part, and hiding the
+    break because it did not survive to the end would hide a real thing that happened.
+    """
+
+    def __init__(self, root: Path, baseline: dict[str, str | None]) -> None:
+        self._root = root
+        self._state = dict(baseline)
+        self._damage: list[Damage] = []
+
+    def after_part(self, label: str, written: list[str]) -> list[Damage]:
+        """Record what this part did to the files it wrote; return what it broke."""
+        found: list[Damage] = []
+        for path, error in syntax_state(self._root, written).items():
+            was = self._state.get(path)
+            if error is not None and was is None:
+                # Broken now, and either fine before or newly created by this part. Both are
+                # this part's doing; a file that arrived broken is not.
+                found.append(Damage(label=label, path=path, error=error))
+            elif error is None and was is not None:
+                self._repair(label, path)
+            self._state[path] = error
+        self._damage.extend(found)
+        return found
+
+    def _repair(self, label: str, path: str) -> None:
+        """Credit a later part with fixing an earlier one's damage, most recent first."""
+        for index in reversed(range(len(self._damage))):
+            entry = self._damage[index]
+            if entry.path == path and entry.repaired_by is None:
+                self._damage[index] = Damage(
+                    label=entry.label,
+                    path=entry.path,
+                    error=entry.error,
+                    repaired_by=label,
+                )
+                return
+
+    @property
+    def damage(self) -> list[Damage]:
+        """Everything any part broke, in the order it happened, repairs noted."""
+        return list(self._damage)
+
+    @property
+    def outstanding(self) -> list[Damage]:
+        """What is still broken: nobody came back for it."""
+        return [entry for entry in self._damage if entry.outstanding]

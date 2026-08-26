@@ -92,6 +92,14 @@ log_file = "pharos.log"
 # such and never charged to the run.
 verify = true
 
+# End the run at the first part that leaves a file it wrote unparseable, instead of carrying
+# on into the parts after it. Off by default, and that is a judgement rather than a
+# measurement: a broken file is sometimes fixed by a later part or by the repair sweep, and
+# every coverage figure published for this project was measured on runs that ran to the end.
+# What argues for turning it on is also measured -- from v0.6 the record between parts carries
+# a broken part's conventions to every part after it, so damage propagates.
+stop_on_break = false
+
 # The checks to run. Left unset, Pharos detects the ones this repository configures AND that
 # are installed (ruff, pytest) -- it never invents a build command for a project that did not
 # ask for one. Set this and the list is used verbatim, which is how any other ecosystem is

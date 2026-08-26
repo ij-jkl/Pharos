@@ -44,6 +44,8 @@ from pharos.agent.tools import (
 )
 from pharos.agent.verify import (
     CheckOutcome,
+    Damage,
+    SyntaxWatch,
     Verification,
     baseline,
     detect_commands,
@@ -89,6 +91,15 @@ class RunOutcome:
     # later part was actually told about, not everything the run eventually changed.
     ledger_on: bool = False
     ledger_files: int = 0
+    # Which part broke what, as each part finished. The end-of-run checks say whether the
+    # project is broken; this says by whom, which on a five-part run is the more useful half.
+    damage: list[Damage] = field(default_factory=list)
+    stopped_on_break: str | None = None  # the part that ended the run by breaking something
+    # Every file the PLAN assigned, whether or not its part ever ran. Coverage is measured
+    # against this rather than against the parts that executed: a run halted after part 1 of
+    # three otherwise reports 100%, because the four files nobody attempted are not in any
+    # part's scope. True of a run stopped by an error too, and has been since v0.4.
+    planned_files: list[str] = field(default_factory=list)
     via_proxy: bool = True
     # What the project's own checks said afterwards. None when verification was off or
     # the run never got as far as executing anything.
@@ -230,6 +241,7 @@ async def run_task(
     divide: bool = True,
     semantic: bool = False,
     use_ledger: bool = True,
+    stop_on_break: bool = False,
     on_event: Callable[[str], None] | None = None,
 ) -> RunOutcome:
     """Pre-flight, divide and execute ``prompt`` in the configured workspace.
@@ -311,6 +323,8 @@ async def run_task(
         outcome.error = f"no plan could be built — {plan.reason or 'unknown reason'}.{advice}"
         return outcome
 
+    outcome.planned_files = [f.display for _, files in bodies if files for f in files]
+
     if dry_run:
         say(f"dry run — {len(bodies)} part(s) planned, nothing executed")
         return outcome
@@ -341,9 +355,7 @@ async def run_task(
             if config.verify_commands is not None
             else detect_commands(root)
         )
-        parses_now = syntax_state(
-            root, [f.display for _, files in bodies if files for f in files]
-        )
+        parses_now = syntax_state(root, outcome.planned_files)
         if checks:
             say(f"baseline: {', '.join(checks)}")
             was_passing = await asyncio.to_thread(
@@ -371,6 +383,13 @@ async def run_task(
     if not model:
         outcome.error = "no model to run against; set `model` in pharos.toml."
         return outcome
+
+    # Parse what each part wrote the moment it finishes, against the state immediately
+    # before it. Costs milliseconds beside the minute a part takes, and it is the only way to
+    # name the part responsible: the end-of-run check knows the project is broken and cannot
+    # know who did it.
+    watch = SyntaxWatch(root, parses_now) if (config.verify and verify_work) else None
+    halt_on_break = stop_on_break and watch is not None
 
     handoff: str | None = None
     # Pharos's own account of the run, appended to as each write lands. Off it goes back to
@@ -434,9 +453,25 @@ async def run_task(
             if ledger_text:
                 outcome.ledger_files = max(outcome.ledger_files, len(record.files))
             result = await run_part(f"part {index}", body, files, index, handoff, ledger_text)
+            # Parse BEFORE the error check. A part that wrote a broken file and then died on
+            # the next call still broke that file: the write landed, and attributing it to
+            # nobody because the part failed afterwards would lose the one fact worth having
+            # about the failure.
+            broke = (
+                _broke(watch, f"part {index}", result.files_written, say, outcome)
+                if watch is not None
+                else False
+            )
             if result.error:
                 say(f"  [part {index}] failed: {result.error}")
                 failed = True
+                break
+            if broke and halt_on_break:
+                outcome.stopped_on_break = f"part {index}"
+                say(
+                    f"  [part {index}] stopping here (--stop-on-break): the parts after this "
+                    f"one would inherit a tree that does not parse"
+                )
                 break
             record.record(f"part {index}", result.changes)
             ledger_text, carried, cut, prose_reserve = _carry(
@@ -456,7 +491,10 @@ async def run_task(
         # files. Deliberately ONE round: a second would be chasing a model that has declined
         # the same work twice, and an unbounded repair loop is how a run stops having a
         # knowable cost.
-        if not failed and divide and config.repair_pass:
+        # Not after a stop-on-break either. The sweep exists to finish work the plan left
+        # undone, and running it over a tree that no longer parses is the compounding the
+        # flag was set to prevent.
+        if not failed and outcome.stopped_on_break is None and divide and config.repair_pass:
             missed = _untouched(outcome.parts)
             if missed:
                 say(f"{len(missed)} file(s) the plan assigned were never changed - repairing")
@@ -474,6 +512,8 @@ async def run_task(
                     result = await run_part(
                         label, _repair_body(prompt, chunk), chunk, 1, None, ledger_text
                     )
+                    if watch is not None:
+                        _broke(watch, label, result.files_written, say, outcome)
                     record.record(label, result.changes)
                     ledger_text, _, _, _ = _carry(
                         record, "", config.handoff_reserve, count, ledger=ledger_on
@@ -588,6 +628,21 @@ def _bodies(plan: SplitPlan) -> list[tuple[str, list[PartFile] | None]]:
     return [
         (part.body, part.files if plan.mode is SplitMode.SCOPE else None) for part in plan.parts
     ]
+
+
+def _broke(
+    watch: SyntaxWatch,
+    label: str,
+    written: list[str],
+    say: Callable[[str], None],
+    outcome: RunOutcome,
+) -> bool:
+    """Parse what this part wrote, say what it broke, and keep the running tally."""
+    found = watch.after_part(label, written)
+    for entry in found:
+        say(f"  [{label}] BROKE {entry.path}: {entry.error}")
+    outcome.damage = watch.damage
+    return bool(found)
 
 
 def _carry(

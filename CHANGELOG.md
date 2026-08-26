@@ -6,6 +6,52 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v0.7 — "Name the part that broke it"
+
+v0.4.2 answered *is the project broken*. On a divided run the more useful question is *by
+whom*, and the checks at the end cannot answer it: they see one tree, after five parts have
+all written to it, and a red suite at that point sends you to read five diffs.
+
+- **Every part is parsed the moment it finishes.** Only the files that part wrote, only in
+  formats there is a parser for — Python, JSON, TOML — which costs milliseconds against the
+  minute a part takes. No timeout, no configuration, and nothing new asked of the project.
+- **Attribution is against the state immediately before the part, not the run's baseline.** A
+  file part 2 broke does not become part 4's fault for touching it afterwards, and a file that
+  arrived broken is nobody's.
+- **A break that a later part repairs is recorded as both.** It is not charged against the run
+  — it did not survive to the end — and it is not hidden either, because a part that spends
+  its window undoing an earlier part's damage is a division that is not working.
+- **`--stop-on-break` ends the run at the first part that leaves a file unparseable.** Off by
+  default, which is a judgement rather than a measurement: every coverage figure this project
+  has published was measured on runs that ran to the end. What argues for it is measured
+  though — from v0.6 the record carries a broken part's conventions to every part after it, so
+  damage propagates instead of staying where it happened. A stopped run reads `STOPPED`, not
+  `FAILED` (nothing errored) and not `INCOMPLETE` (the remaining files were never attempted),
+  and the repair sweep does not run over a tree that no longer parses.
+- **The scorecard says who.** `damage` lists part, file, error and who repaired it;
+  `broke_the_build` reduces it to the parts still responsible at the end. Both are in `--json`.
+- `--stop-on-break` with `--no-verify` is refused rather than accepted and ignored — the
+  failure `pharos check --target` shipped with in v0.4.
+- Config: `stop_on_break`. CLI: `--stop-on-break`.
+
+### Fixed
+
+- **A run that stopped early reported 100% coverage.** Coverage was measured against the scope
+  of the parts that executed, so halting after part 1 of three removed four files from the
+  numerator and the denominator together and the bar stayed full beside the verdict saying the
+  run had been halted. The denominator is now the plan, which is what coverage has always
+  claimed to measure. **Predates v0.7 and is not about `--stop-on-break`:** the loop has broken
+  early on a failed part since v0.4, and every such run reported the same flattered figure.
+  Nobody noticed because a failed part is rare and its report is read for the failure.
+
+### Known: it catches what does not parse
+
+A run can break a linter without breaking the parser. One measured run put a constant above a
+module's `import` — valid Python, `E402` to ruff — and got no damage row, correctly. The
+end-of-run checks caught it without naming a part. Extending the watch to `ruff` would work;
+extending it to `pytest` would not, and a check that attributes some failures and not others
+needs designing rather than assuming.
+
 ## v0.6 — "Carry the thread"
 
 Every part starts from an empty conversation, so whatever crosses the gap between them is the
