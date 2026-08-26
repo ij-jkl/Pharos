@@ -35,6 +35,7 @@ import os
 import statistics
 import threading
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -461,43 +462,96 @@ class ReadEstimate:
 
 def estimate_agent_reads(
     observations: list[Observation], model: str | None
-) -> ReadEstimate | None:
+) -> tuple[ReadEstimate | None, str | None]:
     """What a client historically added on its own, beyond the prompt and the model's replies.
 
-    Agent-shaped records only. A bare `curl` at the endpoint opens no files, and the overhead
-    estimator already learned once — live, on real traffic — what happens when a handful of
-    pokes are allowed to vote on a number about coding agents.
+    Returns ``(estimate, why_not)`` -- exactly one of the two, in the shape the rest of this
+    project uses for an answer that may not exist.
 
-    Returns None rather than a small number when there is nothing to learn from.
+    **The reason is not decoration.** The first live run of this estimator was made with the
+    proxy still bound to another model's GGUF, so every pair was dropped as incommensurable and
+    the check reported "there are not yet three conversations to learn from" -- when there were
+    seven, and every one of them had been refused. The overhead estimator handles the same
+    condition by falling back AND saying so in its provenance; this one had no way to say
+    anything, so it said the only sentence it had. A missing number is honest here; a missing
+    number with the wrong explanation attached is not.
+
+    Agent-shaped records only. A bare `curl` at the endpoint opens no files, and the overhead
+    estimator already learned once -- live, on real traffic -- what happens when a handful of
+    pokes are allowed to vote on a number about coding agents.
     """
-    shaped = [o for o in _matching(observations, model) if o.agent_shaped]
+    pool = _matching(observations, model)
+    if not pool:
+        return None, (
+            "no traffic has been seen for this model yet -- it is learned from whole agent "
+            "conversations that go past the Pharos proxy"
+        )
+    shaped = [o for o in pool if o.agent_shaped]
     if not shaped:
-        return None
+        return None, (
+            f"none of the {len(pool)} observed request(s) carried tools or a system prompt, so "
+            f"none of them was a coding agent opening files on its own"
+        )
+
     totals: list[int] = []
     pairs = 0
+    refused: Counter[str] = Counter()
     for session in _sessions(shaped):
         injected = 0
         usable = 0
         for previous, current in zip(session, session[1:], strict=False):
-            measured = _injected(previous, current)
+            measured, why = _injected(previous, current)
             if measured is None:
+                refused[why or "it could not be accounted for"] += 1
                 continue
             injected += measured
             usable += 1
         if usable and injected > 0:
             totals.append(injected)
             pairs += usable
+
     if len(totals) < _MIN_READ_SESSIONS:
-        return None
-    return ReadEstimate(
-        tokens=int(statistics.median(totals)),
-        sessions=len(totals),
-        low=min(totals),
-        high=max(totals),
-        provenance=(
-            f"observed · median of {len(totals)} conversations "
-            f"({min(totals):,}-{max(totals):,} tokens), {pairs} turn-to-turn measurements"
+        return None, _why_not(totals, pairs, refused, len(shaped))
+    return (
+        ReadEstimate(
+            tokens=int(statistics.median(totals)),
+            sessions=len(totals),
+            low=min(totals),
+            high=max(totals),
+            provenance=(
+                f"observed · median of {len(totals)} conversations "
+                f"({min(totals):,}-{max(totals):,} tokens), {pairs} turn-to-turn measurements"
+            ),
         ),
+        None,
+    )
+
+
+def _why_not(totals: list[int], kept: int, refused: Counter[str], records: int) -> str:
+    """Say which of the several possible nothings this is.
+
+    Dropped measurements outnumbering the kept ones is the interesting case and gets named
+    with its own cause, because each cause has a different thing the reader could do about it:
+    point the proxy at the model actually in use, or wait for a backend that reports its
+    counts, or simply carry on working.
+    """
+    dropped = sum(refused.values())
+    if dropped and dropped > kept:
+        cause, count = refused.most_common(1)[0]
+        return (
+            f"{dropped} of {dropped + kept} turn-to-turn measurement(s) over {records} "
+            f"observed request(s) could not be used -- {count} of them because {cause}. "
+            f"Nothing is guessed in their place"
+        )
+    if not totals:
+        return (
+            f"{records} agent-shaped request(s) seen, but none of them formed a conversation "
+            f"that grew -- this is learned from whole tasks, and at least "
+            f"{_MIN_READ_SESSIONS} of them"
+        )
+    return (
+        f"only {len(totals)} whole conversation(s) so far; {_MIN_READ_SESSIONS} is the minimum "
+        f"below which a median is a coincidence rather than a measurement"
     )
 
 
@@ -537,10 +591,11 @@ def _continues(previous: Observation, current: Observation) -> bool:
     )
 
 
-def _injected(previous: Observation, current: Observation) -> int | None:
+def _injected(previous: Observation, current: Observation) -> tuple[int | None, str | None]:
     """Tokens the client added between two turns that were neither typed nor generated.
 
-    None for a pair that cannot be accounted for, and three cases qualify:
+    Returns ``(tokens, why_dropped)``. None for a pair that cannot be accounted for, and three
+    cases qualify:
 
     * the previous response reported no ``eval_count`` — the model's own reply is then an
       unknown quantity sitting inside the growth, and subtracting nothing would bill it to the
@@ -557,11 +612,11 @@ def _injected(previous: Observation, current: Observation) -> int | None:
     makes this estimate read LOW on such a model, which is the direction to be wrong in.
     """
     if previous.output_tokens is None:
-        return None
+        return None, "the backend reported no eval_count, so the reply itself is an unknown"
     if previous.input_exact != current.input_exact:
-        return None
+        return None, "one input was backend-exact and the other an estimate"
     if previous.user_exact is False or current.user_exact is False:
-        return None
+        return None, "it was counted in another model's vocabulary"
     growth = current.input_tokens - previous.input_tokens
     typed = current.user_tokens - previous.user_tokens
-    return max(growth - previous.output_tokens - typed, 0)
+    return max(growth - previous.output_tokens - typed, 0), None

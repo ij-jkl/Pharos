@@ -27,6 +27,7 @@ from pharos.agent.audit import (
     audit_part,
     diff_trees,
     index_tree,
+    own_paths,
 )
 from pharos.agent.cli import _add_audit_row
 from pharos.agent.runner import RunOutcome
@@ -385,3 +386,78 @@ async def test_no_audit_leaves_the_report_empty_rather_than_clean(
 ) -> None:
     outcome = await _run(tmp_path, monkeypatch, stray="src/extra.py", audit=False)
     assert outcome.audits == []
+
+
+# --- what Pharos writes itself ----------------------------------------------------------------
+#
+# Every live run of v1.0 reported `pharos.log` and `pharos_observations.json` as unattributed
+# AND out of scope AND written by the checks: three findings, all false, sitting beside the
+# real ones. They are configured paths, so excluding them is exact rather than a guess at what
+# a Pharos file looks like.
+
+
+def _own_config(root: Path, **overrides: object) -> PharosConfig:
+    base: dict[str, object] = {
+        "target_folder": str(root),
+        "log_file": str(root / "pharos.log"),
+        "observations_file": str(root / "pharos_observations.json"),
+        "template_memory_file": str(root / "pharos_templates.json"),
+    }
+    base.update(overrides)
+    return PharosConfig(**base)  # type: ignore[arg-type]
+
+
+def test_pharos_own_files_are_named_from_the_config_not_guessed(tmp_path: Path) -> None:
+    keys = own_paths(_own_config(tmp_path), tmp_path)
+    assert keys == {"pharos.log", "pharos_observations.json", "pharos_templates.json"}
+
+
+def test_a_store_configured_outside_the_workspace_is_simply_absent(tmp_path: Path) -> None:
+    """Nothing to exclude: the walk was never going to see it."""
+    elsewhere = tmp_path.parent / "somewhere-else.json"
+    keys = own_paths(_own_config(tmp_path, observations_file=str(elsewhere)), tmp_path)
+    assert "pharos.log" in keys
+    assert not any("somewhere-else" in key for key in keys)
+
+
+def test_the_index_skips_what_pharos_writes(tmp_path: Path) -> None:
+    _tree(tmp_path)
+    _touch(tmp_path / "pharos.log", "chatter")
+    _touch(tmp_path / "pharos_observations.json", "[]")
+    ignore = own_paths(_own_config(tmp_path), tmp_path)
+
+    assert set(index_tree(tmp_path).entries) > {"src/alpha.py", "src/beta.py"}
+    assert set(index_tree(tmp_path, ignore=ignore).entries) == {"src/alpha.py", "src/beta.py"}
+
+
+def test_the_run_no_longer_reports_its_own_log_as_a_change_nobody_claimed(
+    tmp_path: Path,
+) -> None:
+    """The defect, end to end: the log moves during the part, and is not a finding."""
+    _tree(tmp_path)
+    ignore = own_paths(_own_config(tmp_path), tmp_path)
+    before = index_tree(tmp_path, ignore=ignore)
+    _touch(tmp_path / "pharos.log", "the run said things")
+    _touch(tmp_path / "src" / "alpha.py", "alpha = 2\n")
+
+    audit = audit_part(
+        "part 1",
+        changed=diff_trees(before, index_tree(tmp_path, ignore=ignore)),
+        claimed=["src/alpha.py"],
+        scoped=["src/alpha.py"],
+    )
+    assert audit.clean
+    assert audit.changed.paths == ("src/alpha.py",)
+
+
+def test_the_undo_directory_is_not_walked_at_all(tmp_path: Path) -> None:
+    """It holds a copy of every original the run is about to overwrite — the largest false
+    finding available, and indexing it would double the audit's cost to produce it."""
+    _tree(tmp_path)
+    undo = tmp_path / ".pharos" / "undo-2026-01-01"
+    for name in ("alpha.py", "beta.py"):
+        _touch(undo / "src" / name, "the original")
+    ignore = own_paths(_own_config(tmp_path), tmp_path, tmp_path / ".pharos")
+
+    indexed = index_tree(tmp_path, ignore=ignore)
+    assert set(indexed.entries) == {"src/alpha.py", "src/beta.py"}

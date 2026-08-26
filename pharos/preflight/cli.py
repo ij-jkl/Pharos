@@ -355,6 +355,7 @@ def report_to_dict(report: CheckReport) -> dict[str, object]:
             }
         ),
         "expected": report.expected,
+        "reads_unknown_because": report.reads_note,
         "budget": (
             None
             if budget is None or budget.usable_budget is None
@@ -508,10 +509,12 @@ def _render(console: Console, report: CheckReport) -> None:
             "it, or set client_overhead_tokens in pharos.toml. The floor omits it.[/]"
         )
     if report.reads is None:
+        # The REASON, not a stock sentence. It had been the stock sentence, and it was wrong
+        # the first time it mattered — see pharos.calibration.estimate_agent_reads.
+        why = report.reads_note or "there is nothing to learn from yet"
         console.print(
-            "[dim]What the agent opens on its own is unknown — it is learned from whole agent "
-            "conversations seen by the proxy, and there are not yet three to learn from. Set "
-            "agent_read_tokens in pharos.toml to pin it.[/]"
+            f"[dim]What the agent opens on its own is unknown: {why}. Set agent_read_tokens "
+            f"in pharos.toml to pin it.[/]"
         )
 
     console.print()

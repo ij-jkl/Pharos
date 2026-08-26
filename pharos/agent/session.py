@@ -246,6 +246,11 @@ class PartResult:
     # check never sees: the part is comfortably inside its window and cannot open the next
     # file all the same, so it does NOT stop early, and the scorecard reported it as nothing.
     room_refusals: int = 0
+    # How the model asked for its tools. A part that produced no NATIVE call has told you
+    # something about the model rather than about the task -- see AgentSession, and the
+    # scorecard row that reads these two together.
+    native_calls: int = 0
+    recovered_calls: int = 0
 
 
 class AgentSession:
@@ -309,6 +314,8 @@ class AgentSession:
         self._compacted_tokens = 0
         self._compactions = 0
         self._room_refusals = 0
+        self._native_calls = 0
+        self._recovered_calls = 0
         self._drift: list[tuple[int, int]] = []
         self._largest_tooled = 0
         self.truncated_by_backend = False
@@ -398,6 +405,8 @@ class AgentSession:
         self._compacted_tokens = 0
         self._compactions = 0
         self._room_refusals = 0
+        self._native_calls = 0
+        self._recovered_calls = 0
         nudges = 0
         written_at_last_nudge = 0
         read_at_last_nudge = 0
@@ -473,6 +482,8 @@ class AgentSession:
                     reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
                     compacted=list(self._compacted),
                     room_refusals=self._room_refusals,
+                    native_calls=self._native_calls,
+                    recovered_calls=self._recovered_calls,
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
@@ -481,11 +492,13 @@ class AgentSession:
                 )
 
             calls = message.get("tool_calls") or []
+            self._native_calls += len(calls)
             recovered = False
             if not calls:
                 calls = recover_tool_calls(str(message.get("content") or ""), self._tool_names)
                 recovered = bool(calls)
                 if recovered:
+                    self._recovered_calls += len(calls)
                     self._on_event(f"recovered {len(calls)} tool call(s) written as text")
             self._messages.append(_assistant_message(message))
             if not calls and nudges < _MAX_NUDGES:
@@ -559,6 +572,8 @@ class AgentSession:
                     reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
                     compacted=list(self._compacted),
                     room_refusals=self._room_refusals,
+                    native_calls=self._native_calls,
+                    recovered_calls=self._recovered_calls,
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
@@ -601,6 +616,8 @@ class AgentSession:
             reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
             compacted=list(self._compacted),
             room_refusals=self._room_refusals,
+            native_calls=self._native_calls,
+            recovered_calls=self._recovered_calls,
             nudges=nudges,
             scoped=scoped,
             drift_samples=list(self._drift),

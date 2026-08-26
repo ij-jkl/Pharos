@@ -6,6 +6,84 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.0.1 — what validating v1.0 found
+
+`DESKTOP_VALIDATION.md` §24 was the first live pass over the v1.0 features, and it closed
+with two defects of Pharos's own. Both are fixed here, along with the diagnostic that pass
+spent twenty minutes wishing existed.
+
+### The audit was reporting Pharos's own bookkeeping
+
+Every live run carried the same two entries, in three categories at once:
+
+```
+unattributed: ['pharos.log', 'pharos_observations.json']
+out_of_scope: ['pharos.log', 'pharos_observations.json']
+by_checks:    ['pharos.log', 'pharos_observations.json']
+```
+
+Pharos writes its log and its observation store into the folder it is auditing, and then
+reported them as changes nobody claimed. Six false findings a run, beside the real ones. A
+check whose output is mostly noise is one people learn to skip, which would have cost the
+feature everything it is for.
+
+- **Excluded by configuration, not by pattern.** `log_file`, `observations_file` and
+  `template_memory_file` are config keys, so `own_paths()` resolves those exact three against
+  the workspace root and the walk skips them. Nothing guesses at what a Pharos file looks
+  like; a store the user has configured somewhere else entirely resolves outside the root and
+  is simply absent, because the walk was never going to see it.
+- **The undo directory goes with them, and is not walked at all.** In a folder that is not a
+  repository, `.pharos/undo-<timestamp>/` holds a copy of every original the run is about to
+  overwrite — the single largest false finding available, and indexing it would have doubled
+  the audit's cost to produce it.
+- Confirmed on a live run afterwards: `clean: true`, all four categories empty, every part's
+  changed files exactly its claimed files.
+
+### "Not enough conversations" could be the wrong reason
+
+`estimate_agent_reads` returned `ReadEstimate | None`, so a caller with no number had only one
+sentence to print. On the pass's first run the proxy was still bound to another model's GGUF;
+every pair was refused as incommensurable, and the check reported *"there are not yet three
+conversations to learn from"* — when there were **seven**, and all of them had been refused.
+
+- **It now returns `(estimate, why_not)`**, the shape the rest of this project uses for an
+  answer that may not exist, and the reason travels through `CheckReport.reads_note` to the
+  renderer instead of being replaced there by a stock line. It is in `--json` as
+  `reads_unknown_because`.
+- **Five different nothings, told apart**: no traffic for this model at all; traffic that was
+  never agent-shaped; measurements refused, with the dominant cause named and counted;
+  conversations that never grew; and genuinely too few conversations, with the count it does
+  have. Each one has a different thing the reader could do about it, which is the whole
+  argument for distinguishing them.
+- Replayed against the real store with every record tainted, it now reads: *"60 of 60
+  turn-to-turn measurement(s) over 76 observed request(s) could not be used — 59 of them
+  because it was counted in another model's vocabulary. Nothing is guessed in their place."*
+
+### And the thing a run could not say: the model cannot call tools
+
+The pass opened with a run that covered **0%** — every part `steps=0`, seventeen seconds for
+the whole thing. Not the window, not the task, and not a Pharos fault: asked with a tool
+catalogue, `qwen2.5-coder` at both 7b and 14b writes the call into `content` as text on Ollama
+0.31.1. The qwen3.5 family returns a real `tool_calls`. Finding that out took a hand-written
+probe against the backend, which is not something this tool should make anybody do.
+
+- **The scorecard counts native calls and recovered ones separately**, and says so when a run
+  ends having never received a structured call: *"none — the model never returned a structured
+  tool call. Every request carried the catalogue … try one that does before reading anything
+  else on this card."*
+- **Recovery is not evidence of support.** `recover_tool_calls` picks up a bare JSON call
+  written as prose and gets the work done; it is counted apart, and a run that leaned on it is
+  told so in its own line. A model that instead answers *"I have read the file and it needs no
+  changes"* gives recovery nothing to work with, which is exactly the run that covered 0%.
+- It is a fact rather than an inference: the requests carried the catalogue, and nothing came
+  back with a call in it.
+
+### Also
+
+- `pharos check --json` gains `reads_unknown_because`; the run's JSON gains a `tool_calls`
+  block (`native`, `recovered_from_text`, `unsupported`).
+- **648 tests**, `ruff` and `mypy --strict` clean.
+
 ## v1.0 — "Everything it would not say"
 
 Nine versions carried a section headed *What Pharos does NOT do (yet)*. Five entries. This
@@ -156,7 +234,7 @@ going to.
 - The launcher gains `r? <prompt>` (run, then review) and names the three flags it has no
   letter for. It also had a duplicated menu line since v0.7, which is gone.
 - Config: `agent_read_tokens`.
-- **635 tests**, `ruff` and `mypy --strict` clean.
+- **648 tests**, `ruff` and `mypy --strict` clean.
 
 ## v0.9 — "Remember what the template costs"
 

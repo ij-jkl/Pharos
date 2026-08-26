@@ -33,7 +33,14 @@ from typing import Any
 
 import httpx
 
-from pharos.agent.audit import PartAudit, TreeIndex, audit_part, diff_trees, index_tree
+from pharos.agent.audit import (
+    PartAudit,
+    TreeIndex,
+    audit_part,
+    diff_trees,
+    index_tree,
+    own_paths,
+)
 from pharos.agent.ledger import LEDGER_SHARE, Ledger
 from pharos.agent.review import Finding, Review, ask, batches, collect, parse, validate
 from pharos.agent.session import SAFETY_MARGIN, AgentSession, PartResult
@@ -463,13 +470,18 @@ async def run_task(
     # checks have run, because a check command that rewrites files is doing so during the run
     # and nothing before v1.0 noticed.
     pending: dict[str, tuple[TreeIndex, TreeIndex]] = {}
+    # What Pharos itself writes into the workspace, so the audit stops reporting its own log
+    # as a change nobody claimed. The undo directory goes in too: it exists to hold a copy of
+    # every original the run is about to overwrite, which is the largest false finding
+    # available. Computed once -- none of these move during a run.
+    ours = own_paths(config, root, *([undo.directory] if undo is not None else []))
 
     def close_audit(label: str, result: PartResult) -> None:
         snapshots = pending.pop(label, None)
         if snapshots is None:
             return
         before, after_tools = snapshots
-        after_checks = index_tree(root)
+        after_checks = index_tree(root, ignore=ours)
         outcome.audits.append(
             audit_part(
                 label,
@@ -519,12 +531,12 @@ async def run_task(
             )
             text = _with_handoff(body, carried, index, files, already_done)
             _logger.info("%s body: %s", label, text)
-            before = index_tree(root) if audit else TreeIndex()
+            before = index_tree(root, ignore=ours) if audit else TreeIndex()
             result = await session.run(text)
             if audit:
                 # Taken here, BEFORE the checks run, so this diff is the part's own doing.
                 # What the checks themselves write is a separate question, asked below.
-                pending[label] = (before, index_tree(root))
+                pending[label] = (before, index_tree(root, ignore=ours))
             _logger.info(
                 "%s finished: steps=%d wrote=%s handoff=%r",
                 label, result.steps, result.files_written, result.text,

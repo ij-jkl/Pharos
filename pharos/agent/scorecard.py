@@ -190,9 +190,28 @@ class Scorecard:
     # Tool calls the window stopped outright. The reason `reclaimable_tokens` can be non-zero
     # on a run where every part finished: a read refused for space does not end a part.
     room_refusals: int = 0
+    # How the model asked for its tools, across the whole run.
+    native_calls: int = 0
+    recovered_calls: int = 0
     # What the DISK said, part by part, against what each part said about itself. Empty when
     # the audit was off. See `pharos.agent.audit` for what each of these can mean.
     audits: list[PartAudit] = field(default_factory=list)
+
+    @property
+    def tool_calls_unsupported(self) -> bool:
+        """The model never once returned a structured tool call.
+
+        A run that covers nothing looks identical whether the task was too hard, the window
+        too small, or the model simply unable to call a tool -- and the third was measured
+        live: `qwen2.5-coder`, at 7b and 14b, writes its calls into `content` as text on
+        Ollama 0.31.1 and covered 0% of a task the qwen3.5 family completed. Finding that out
+        took a hand-written probe against the backend, which is not a thing this tool should
+        make anybody do. It is the one explanation the scorecard can offer for free.
+
+        True only when the run actually ASKED for tools and no part ever got one back, so a
+        run that simply had nothing to do does not trip it.
+        """
+        return bool(self.parts) and self.native_calls == 0
 
     @property
     def unattributed_changes(self) -> list[str]:
@@ -421,6 +440,8 @@ def score(
         compacted_tokens=sum(p.compacted_tokens for p in parts),
         compacted_parts=sum(1 for p in parts if p.compactions),
         room_refusals=sum(p.room_refusals for p in parts),
+        native_calls=sum(p.native_calls for p in parts),
+        recovered_calls=sum(p.recovered_calls for p in parts),
         # Only from parts the window actually got in the way of. A part that finished
         # comfortably also has old tool results in it, and reporting what could have been
         # reclaimed from a part that needed nothing would be advertising, not measurement.
@@ -505,6 +526,11 @@ def to_dict(card: Scorecard) -> dict[str, object]:
                 "clean": card.audit_clean,
             }
         ),
+        "tool_calls": {
+            "native": card.native_calls,
+            "recovered_from_text": card.recovered_calls,
+            "unsupported": card.tool_calls_unsupported,
+        },
         "compaction": {
             "tokens_reclaimed": card.compacted_tokens,
             "parts": card.compacted_parts,

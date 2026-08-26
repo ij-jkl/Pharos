@@ -2072,7 +2072,7 @@ since v0.9:
 * **Continuity held**: 2 hand-offs expected, 2 produced, largest 380 tokens against the
   500-token reserve, no overruns, no thin hand-offs, no invented paths, no revisits.
 
-### ☐ Open: two defects this pass found
+### Found open, now closed: two defects of our own
 
 **1. The audit reports Pharos's own bookkeeping as an unclaimed change.** Every run's audit
 carried the same two entries, in three categories at once:
@@ -2095,3 +2095,61 @@ is that there were plenty and all of them were discarded. The overhead estimator
 same condition by falling back **and saying so in its provenance**; the read estimator should
 distinguish "nothing to learn from" from "everything was refused", the way the rest of this
 project distinguishes a missing number from a rejected one.
+
+### ☑ Closed: the two defects this pass found, and what the fixes measured
+
+Both were fixed in **v1.0.1** and re-checked on the same machine, against the same project.
+
+**1. The audit reported Pharos's own bookkeeping.** Every run had carried `pharos.log` and
+`pharos_observations.json` as unattributed AND out of scope AND written by the checks — six
+false findings a run. They are configured paths, so `own_paths()` excludes those exact three
+(`log_file`, `observations_file`, `template_memory_file`) plus the undo directory, which is
+now not walked at all. A run afterwards, same task, same 8,192-token window:
+
+```
+audit clean        : True
+     unattributed  : []
+     out_of_scope  : []
+     by_checks     : []
+     absent        : []
+  part 1 | changed shop/legacy_invoice.py | claimed shop/legacy_invoice.py
+  part 2 | changed shop/legacy_invoice.py | claimed shop/legacy_invoice.py
+  part 3 | changed shop/payments.py       | claimed shop/payments.py
+  part 4 | changed shop/orders.py         | claimed shop/orders.py
+```
+
+Nothing false left, and the real signal — four parts, four exact matches — is what remains.
+That run also reclaimed 1,946 tokens across two parts with `--compact`, one abandoned part
+instead of two, coverage 100%, and part 1 named as the one that broke the build.
+
+**2. "Not enough conversations" could be the wrong reason.** `estimate_agent_reads` now
+returns `(estimate, why_not)` and the reason reaches the renderer. Replayed against the real
+76-record store with every record marked as counted in the wrong vocabulary:
+
+> 60 of 60 turn-to-turn measurement(s) over 76 observed request(s) could not be used — 59 of
+> them because it was counted in another model's vocabulary. Nothing is guessed in their place
+
+Against the store as actually recorded, the same call returns an estimate. The five nothings
+it can now tell apart are in `CHANGELOG.md` under v1.0.1.
+
+### ☑ Added: the run says when the model cannot call tools
+
+§24.0 cost twenty minutes and a hand-written probe against `/api/chat` to establish that the
+0% run was a model limitation. The scorecard now says it, and the same run reproduced after
+the change reads:
+
+```
+tool calls   none — the model never returned a structured tool call
+             Every request carried the catalogue. A model whose template does not
+             support tool calling cannot drive a run, whatever the window says; try
+             one that does before reading anything else on this card.
+```
+
+On `qwen3.5:9b` the same field reads `{"native": 36, "recovered_from_text": 0}` and the row
+stays silent. Calls recovered from text are counted separately and never as native: recovery
+gets the work done and is not evidence the model supports tool calling.
+
+One incidental confirmation, from an accident: a stray backup file in the workspace made the
+run refuse to start — *"the working tree has 1 uncommitted change(s). Commit or stash them
+first: a run's edits have to be separable from yours"*. The guard holds against a tree dirtied
+by anything, including the person running the validation.

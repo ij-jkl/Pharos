@@ -327,23 +327,67 @@ def test_reads_are_the_growth_that_was_neither_typed_nor_generated() -> None:
         for index in range(3)
         for record in _conversation(start=index * 10_000.0, injections=[900, 600])
     ]
-    estimate = estimate_agent_reads(three_alike, None)
+    estimate, why = estimate_agent_reads(three_alike, None)
+    assert why is None
     assert estimate is not None
     assert estimate.tokens == 1500  # 900 + 600, and nothing of the reply or the typing
 
 
 def test_reads_are_the_median_across_conversations_not_the_largest() -> None:
-    estimate = estimate_agent_reads(_three(), None)
-    assert estimate is not None
+    estimate, why = estimate_agent_reads(_three(), None)
+    assert estimate is not None and why is None
     assert (estimate.tokens, estimate.low, estimate.high) == (2000, 1000, 3000)
     assert estimate.sessions == 3
 
 
-def test_two_conversations_are_not_enough_to_learn_from() -> None:
+def test_a_learned_estimate_knows_it_was_learned() -> None:
+    estimate, _ = estimate_agent_reads(_three(), None)
+    assert estimate is not None and estimate.learned
+
+
+# --- and when there is no number, WHICH nothing it is ------------------------------------
+#
+# Every one of these used to be reported with the same sentence about needing three
+# conversations. On the first live run that sentence was simply false: there were seven, and
+# all of them had been refused for a vocabulary mismatch. See estimate_agent_reads.
+
+
+def test_an_empty_store_says_no_traffic_has_been_seen() -> None:
+    estimate, why = estimate_agent_reads([], None)
+    assert estimate is None
+    assert why is not None and "no traffic" in why
+
+
+def test_traffic_that_was_never_agent_shaped_says_so() -> None:
+    """The lesson the overhead estimator learned live, applied before it could happen again."""
+    estimate, why = estimate_agent_reads(_three(agent_shaped=False), None)
+    assert estimate is None
+    assert why is not None and "tools or a system prompt" in why
+
+
+def test_a_vocabulary_mismatch_is_named_as_the_reason() -> None:
+    """The defect this pair exists for: seven conversations, every measurement refused, and
+    the check reporting that there were fewer than three."""
+    estimate, why = estimate_agent_reads(_three(user_exact=False), None)
+    assert estimate is None
+    assert why is not None
+    assert "another model's vocabulary" in why
+    assert "three" not in why  # the wrong reason, specifically
+
+
+def test_a_backend_that_reports_no_eval_count_is_named_as_the_reason() -> None:
+    estimate, why = estimate_agent_reads(_three(output=None), None)
+    assert estimate is None
+    assert why is not None and "eval_count" in why
+
+
+def test_two_conversations_report_the_count_they_actually_have() -> None:
     two = _conversation(start=0.0, injections=[1000]) + _conversation(
         start=10_000.0, injections=[2000]
     )
-    assert estimate_agent_reads(two, None) is None
+    estimate, why = estimate_agent_reads(two, None)
+    assert estimate is None
+    assert why is not None and "only 2 whole conversation(s)" in why
 
 
 def test_a_conversation_that_only_grew_by_its_own_reply_teaches_nothing() -> None:
@@ -352,39 +396,27 @@ def test_a_conversation_that_only_grew_by_its_own_reply_teaches_nothing() -> Non
         for index in range(3)
         for record in _conversation(start=index * 10_000.0, injections=[0, 0])
     ]
-    assert estimate_agent_reads(quiet, None) is None
-
-
-def test_bare_pokes_teach_nothing_about_what_an_agent_opens() -> None:
-    """The lesson the overhead estimator learned live, applied before it could happen again."""
-    assert estimate_agent_reads(_three(agent_shaped=False), None) is None
-
-
-def test_a_turn_whose_reply_was_never_counted_is_dropped_not_guessed() -> None:
-    """With eval_count missing, the reply hides inside the growth and would bill as a read."""
-    assert estimate_agent_reads(_three(output=None), None) is None
+    estimate, why = estimate_agent_reads(quiet, None)
+    assert estimate is None
+    assert why is not None and "none of them formed a conversation that grew" in why
 
 
 def test_a_pair_mixing_an_exact_input_with_an_estimated_one_is_dropped() -> None:
-    mixed = [
-        replace(obs, input_exact=index % 2 == 0)
-        for index, obs in enumerate(_three())
-    ]
-    assert estimate_agent_reads(mixed, None) is None
-
-
-def test_a_pair_counted_in_another_models_vocabulary_is_dropped() -> None:
-    assert estimate_agent_reads(_three(user_exact=False), None) is None
+    mixed = [replace(obs, input_exact=index % 2 == 0) for index, obs in enumerate(_three())]
+    estimate, why = estimate_agent_reads(mixed, None)
+    assert estimate is None
+    assert why is not None and "backend-exact" in why
 
 
 def test_records_predating_the_vocabulary_flag_are_still_learned_from() -> None:
-    assert estimate_agent_reads(_three(user_exact=None), None) is not None
+    estimate, _ = estimate_agent_reads(_three(user_exact=None), None)
+    assert estimate is not None
 
 
 def test_silence_longer_than_the_window_starts_a_new_conversation() -> None:
     """Two turns an hour apart are two tasks, and neither of them is a pair."""
     stretched = [replace(obs, ts=obs.ts * 1000.0) for obs in _three()]
-    assert estimate_agent_reads(stretched, None) is None
+    assert estimate_agent_reads(stretched, None)[0] is None
 
 
 def test_a_reply_that_is_not_replayed_reads_as_zero_never_as_negative() -> None:
@@ -394,15 +426,10 @@ def test_a_reply_that_is_not_replayed_reads_as_zero_never_as_negative() -> None:
         for index in range(3)
         for record in _conversation(start=index * 10_000.0, injections=[-5000], output=6000)
     ]
-    assert estimate_agent_reads(thinking, None) is None
+    assert estimate_agent_reads(thinking, None)[0] is None
 
 
 def test_reads_filter_by_model_like_every_other_estimator() -> None:
     other = _three(model="llama3:8b")
-    assert estimate_agent_reads(other, "qwen3.5-9b-heretic") is None
-    assert estimate_agent_reads(other, "llama3:8b") is not None
-
-
-def test_a_learned_estimate_knows_it_was_learned() -> None:
-    estimate = estimate_agent_reads(_three(), None)
-    assert estimate is not None and estimate.learned
+    assert estimate_agent_reads(other, "qwen3.5-9b-heretic")[0] is None
+    assert estimate_agent_reads(other, "llama3:8b")[0] is not None

@@ -37,9 +37,11 @@ two integers per path, computed locally, reported locally.
 from __future__ import annotations
 
 import os
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pharos.config import PharosConfig
 from pharos.paths import normalise_display
 from pharos.preflight.extract import IGNORED_DIRS
 
@@ -90,8 +92,50 @@ class PartAudit:
         return not (self.unattributed or self.absent or self.out_of_scope or self.by_checks)
 
 
-def index_tree(root: Path, *, cap: int = FILE_CAP) -> TreeIndex:
+def own_paths(config: PharosConfig, root: Path, *extra: Path) -> frozenset[str]:
+    """The paths Pharos itself writes inside the workspace, as keys the index would use.
+
+    The audit exists to report changes nobody claimed, and Pharos writing its own log into the
+    folder it is auditing is the one change it can always account for. Every live run of v1.0
+    reported `pharos.log` and `pharos_observations.json` as unattributed AND out of scope AND
+    written by the checks -- three findings, all false, sitting beside the real ones. A check
+    whose output is mostly noise is a check people learn to skip.
+
+    These are CONFIGURED paths, so excluding them is exact rather than a guess at what a
+    Pharos file looks like. ``extra`` carries anything the caller owns as well -- the undo
+    directory, whose whole point is to hold a copy of every file the run is about to change.
+    """
+    candidates: Iterable[Path] = (
+        Path(config.log_file),
+        Path(config.observations_file),
+        Path(config.template_memory_file),
+        *extra,
+    )
+    found: set[str] = set()
+    for candidate in candidates:
+        absolute = candidate if candidate.is_absolute() else Path.cwd() / candidate
+        try:
+            relative = absolute.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            continue  # configured somewhere else entirely; the walk will never see it
+        found.add(normalise_display(str(relative)))
+    return frozenset(found)
+
+
+def _is_ignored(key: str, ignore: Collection[str]) -> bool:
+    """A key is ignored by an exact match, or by sitting under an ignored directory."""
+    return key in ignore or any(key.startswith(f"{prefix}/") for prefix in ignore)
+
+
+def index_tree(
+    root: Path, *, cap: int = FILE_CAP, ignore: Collection[str] = ()
+) -> TreeIndex:
     """Index every file under ``root``, pruned of the same vcs/venv/cache dirs as the rest.
+
+    ``ignore`` names paths the caller already accounts for -- see ``own_paths``. An ignored
+    directory is not walked at all, which matters for the undo folder: it holds a copy of
+    every original the run touches, and indexing it would double the cost of the audit to
+    produce nothing but noise.
 
     An unreadable entry is skipped rather than raised on: a file that vanished between the
     walk and the stat is a race, not a finding, and the audit must never be able to end a run.
@@ -99,22 +143,36 @@ def index_tree(root: Path, *, cap: int = FILE_CAP) -> TreeIndex:
     entries: dict[str, tuple[int, int]] = {}
     truncated = False
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in IGNORED_DIRS)
+        here = Path(dirpath)
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if d not in IGNORED_DIRS and not _relative_ignored(here / d, root, ignore)
+        )
         for name in sorted(filenames):
             if len(entries) >= cap:
                 truncated = True
                 return TreeIndex(entries=entries, truncated=truncated)
-            path = Path(dirpath) / name
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
+            path = here / name
             try:
                 key = normalise_display(str(path.relative_to(root)))
             except ValueError:
                 continue
+            if _is_ignored(key, ignore):
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
             entries[key] = (stat.st_size, stat.st_mtime_ns)
     return TreeIndex(entries=entries, truncated=truncated)
+
+
+def _relative_ignored(path: Path, root: Path, ignore: Collection[str]) -> bool:
+    try:
+        return _is_ignored(normalise_display(str(path.relative_to(root))), ignore)
+    except ValueError:
+        return False
 
 
 def diff_trees(before: TreeIndex, after: TreeIndex) -> TreeDiff:

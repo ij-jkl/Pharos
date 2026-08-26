@@ -532,6 +532,35 @@ def _render_parts(console: Console, outcome: RunOutcome) -> None:
     console.print(table)
 
 
+def _add_tool_call_row(body: Table, card: Scorecard) -> None:
+    """Say when the model never produced a structured tool call.
+
+    Silent in the normal case. When it fires it is usually the whole explanation for a run
+    that covered nothing, and it is a fact about the model rather than a guess: the requests
+    carried a tool catalogue and no reply came back with a call in it.
+    """
+    if not card.tool_calls_unsupported:
+        if card.recovered_calls:
+            body.add_row(
+                "tool calls",
+                f"[dim]{card.native_calls} native, {card.recovered_calls} recovered from "
+                f"text — this model emits some of its calls as prose[/]",
+            )
+        return
+    recovered = (
+        f" {card.recovered_calls} were recovered from text, which is a fallback and not a fix."
+        if card.recovered_calls
+        else ""
+    )
+    body.add_row(
+        "tool calls",
+        f"[red]none — the model never returned a structured tool call[/]\n"
+        f"[dim]Every request carried the catalogue.{recovered} A model whose template does "
+        f"not support tool calling cannot drive a run, whatever the window says; try one "
+        f"that does before reading anything else on this card.[/]",
+    )
+
+
 def _add_audit_row(body: Table, card: Scorecard) -> None:
     """What the filesystem said, against what the run said about itself.
 
@@ -795,6 +824,7 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"the window that stopped a part were tool results it had finished with; "
             f"--compact would have given them back[/]",
         )
+    _add_tool_call_row(body, card)
     _add_audit_row(body, card)
     _add_verification_row(body, card.verification)
 

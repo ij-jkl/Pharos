@@ -98,6 +98,8 @@ class CheckReport:
     directories: list[ExpandedDirectory] = field(default_factory=list)
     directory_warning: str | None = None  # set when the floor fits but the directories do not
     reads: ReadEstimate | None = None  # what an agent historically opened on its own
+    # Why there is no ``reads``, when there is none. Set instead of it, never beside it.
+    reads_note: str | None = None
     expected_warning: str | None = None  # set when the floor fits but the expected total does not
 
     @property
@@ -183,7 +185,7 @@ async def run_check(
     overhead = _overhead(config, observations, model)
     floor = prompt_tokens + sum(f.tokens for f in files) + (overhead.tokens if overhead else 0)
 
-    reads = _reads(config, observations, model)
+    reads, reads_note = _reads(config, observations, model)
     verdict, detail = _verdict(floor, profile, target)
     reserve_warning = _reserve_warning(config, observations, model)
     directory_warning = _directory_warning(floor, directories, profile)
@@ -207,6 +209,7 @@ async def run_check(
         directories=directories,
         directory_warning=directory_warning,
         reads=reads,
+        reads_note=reads_note,
         expected_warning=expected_warning,
     )
 
@@ -303,16 +306,24 @@ def _overhead(
 
 def _reads(
     config: PharosConfig, observations: list[Observation], model: str | None
-) -> ReadEstimate | None:
-    """What the agent adds unprompted: pinned in config, else learned, else unknown."""
+) -> tuple[ReadEstimate | None, str | None]:
+    """What the agent adds unprompted: pinned in config, else learned, else unknown-and-why.
+
+    The second half of the pair is the reason there is no number, and it is carried all the
+    way to the renderer rather than being replaced there by a generic sentence — see
+    ``estimate_agent_reads``, which was reporting the wrong one.
+    """
     if config.agent_read_tokens is not None:
         pinned = config.agent_read_tokens
-        return ReadEstimate(
-            tokens=pinned,
-            sessions=0,
-            low=pinned,
-            high=pinned,
-            provenance="configured (agent_read_tokens in pharos.toml)",
+        return (
+            ReadEstimate(
+                tokens=pinned,
+                sessions=0,
+                low=pinned,
+                high=pinned,
+                provenance="configured (agent_read_tokens in pharos.toml)",
+            ),
+            None,
         )
     return estimate_agent_reads(observations, model)
 

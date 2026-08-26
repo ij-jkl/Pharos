@@ -1616,3 +1616,42 @@ async def test_compaction_leaves_nothing_to_reclaim_and_no_room_refusals(
     result = await session.run("Read all five files.")
     assert result.room_refusals == 0
     assert result.reclaimable_tokens == 0
+
+
+# --- how the model asked for its tools --------------------------------------------------------
+
+
+async def test_a_structured_call_counts_as_native(workspace: Workspace) -> None:
+    backend = FakeBackend(
+        [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"function": {"name": "read_file", "arguments": {"path": "src/alpha.py"}}}
+                ],
+            },
+            {"role": "assistant", "content": "Read it. NO CHANGES NEEDED."},
+        ]
+    )
+    result = await _session(backend, ToolBox(workspace=workspace), budget=8000).run("Look.")
+    assert (result.native_calls, result.recovered_calls) == (1, 0)
+
+
+async def test_a_call_written_as_text_counts_as_recovered_not_native(
+    workspace: Workspace,
+) -> None:
+    """The shape qwen2.5-coder produces on Ollama 0.31.1: the JSON call in `content`.
+
+    Recovery gets the work done and must not be mistaken for evidence that the model supports
+    tool calling — that distinction is the whole of the scorecard's diagnosis.
+    """
+    written_as_text = json.dumps({"name": "read_file", "arguments": {"path": "src/alpha.py"}})
+    backend = FakeBackend(
+        [
+            {"role": "assistant", "content": written_as_text},
+            {"role": "assistant", "content": "Read it. NO CHANGES NEEDED."},
+        ]
+    )
+    result = await _session(backend, ToolBox(workspace=workspace), budget=8000).run("Look.")
+    assert result.native_calls == 0
+    assert result.recovered_calls == 1

@@ -28,6 +28,8 @@ def _part(
     drift_samples: list[tuple[int, int]] | None = None,
     reclaimable_tokens: int = 0,
     room_refusals: int = 0,
+    native_calls: int = 0,
+    recovered_calls: int = 0,
 ) -> PartResult:
     return PartResult(
         # None means "a normal hand-off": one that names what the part changed, which is what
@@ -51,6 +53,8 @@ def _part(
         drift_samples=drift_samples or [],
         reclaimable_tokens=reclaimable_tokens,
         room_refusals=room_refusals,
+        native_calls=native_calls,
+        recovered_calls=recovered_calls,
     )
 
 
@@ -447,3 +451,46 @@ def test_only_parts_the_window_got_in_the_way_of_report_reclaimable_room() -> No
     assert score([comfortable], handoff_reserve=0).reclaimable_tokens == 0
     assert score([comfortable, refused], handoff_reserve=0).reclaimable_tokens == 1_500
     assert score([refused, stopped], handoff_reserve=0).reclaimable_tokens == 4_000
+
+
+# --- how the model asked for its tools --------------------------------------------------------
+#
+# Measured live: qwen2.5-coder at 7b and 14b writes its calls into `content` as text on Ollama
+# 0.31.1 and covered 0% of a task the qwen3.5 family completed. A run that covers nothing looks
+# identical whichever of three things went wrong, and this is the one the card can rule in for
+# free instead of making somebody probe the backend by hand.
+
+
+def test_a_run_where_no_call_ever_came_back_says_so() -> None:
+    card = score([_part(scoped=["a.py"], native_calls=0)], handoff_reserve=0)
+    assert card.tool_calls_unsupported
+
+
+def test_a_run_with_native_calls_does_not_trip_it() -> None:
+    card = score([_part(scoped=["a.py"], wrote=["a.py"], native_calls=4)], handoff_reserve=0)
+    assert not card.tool_calls_unsupported
+
+
+def test_calls_recovered_from_text_do_not_count_as_native() -> None:
+    """Recovery is a fallback, not evidence the model supports tool calling."""
+    card = score(
+        [_part(scoped=["a.py"], wrote=["a.py"], native_calls=0, recovered_calls=3)],
+        handoff_reserve=0,
+    )
+    assert card.tool_calls_unsupported
+    assert card.recovered_calls == 3
+
+
+def test_a_run_with_no_parts_at_all_makes_no_claim_about_the_model() -> None:
+    assert not score([], handoff_reserve=0).tool_calls_unsupported
+
+
+def test_the_counts_are_summed_across_parts() -> None:
+    card = score(
+        [
+            _part(scoped=["a.py"], native_calls=2, recovered_calls=1),
+            _part(scoped=["b.py"], native_calls=3),
+        ],
+        handoff_reserve=0,
+    )
+    assert (card.native_calls, card.recovered_calls) == (5, 1)
