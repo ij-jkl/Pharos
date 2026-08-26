@@ -90,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip the project's own checks afterwards (they run twice, so a slow suite costs)",
     )
+    parser.add_argument(
+        "--no-ledger",
+        action="store_true",
+        help="do not carry Pharos's record of what landed on disk between parts; the model's "
+        "own hand-off becomes the only thread, as it was before v0.6",
+    )
     args = parser.parse_args(argv)
 
     console = Console(stderr=args.json)
@@ -154,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
                     verify_work=not args.no_verify,
                     divide=not args.no_split,
                     semantic=args.semantic,
+                    use_ledger=not args.no_ledger,
                     on_event=report,
                 )
             )
@@ -558,10 +565,20 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"{card.handoff_reserve:,} reserved[/]",
         )
         if card.thin_handoffs:
+            # Two different facts, and the second must not read as an excuse for the first.
+            # A part that wrote files and reported nothing still failed to report; that the
+            # run carried the context anyway is worth saying in the same breath and not
+            # instead.
+            rescued = (
+                f" [dim]{chr(183)} Pharos carried {card.ledger_files} changed file(s) "
+                f"forward regardless[/]"
+                if card.ledger_on and card.ledger_files
+                else ""
+            )
             body.add_row(
                 "",
                 f"[yellow]{card.thin_handoffs} part(s) changed files and reported almost "
-                f"nothing[/]",
+                f"nothing[/]{rescued}",
             )
         if card.handoff_overruns:
             body.add_row("", f"[yellow]{card.handoff_overruns} overran the reserve[/]")
@@ -751,6 +768,8 @@ def _render(
         handoff_reserve=outcome.handoff_reserve,
         repair_parts=outcome.repair_parts,
         verification=outcome.verification,
+        ledger_on=outcome.ledger_on,
+        ledger_files=outcome.ledger_files,
     )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.

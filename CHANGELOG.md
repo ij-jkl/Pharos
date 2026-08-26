@@ -6,6 +6,66 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v0.6 — "Carry the thread"
+
+Every part starts from an empty conversation, so whatever crosses the gap between them is the
+whole of what part 4 knows about part 1. Until now that was the hand-off the model wrote, and
+`DESKTOP_VALIDATION.md` §14 has carried an open finding about it since v0.4: parts change files
+and then report *"NO CHANGES NEEDED"*, and `kept_the_thread` was false in every two-file run.
+Pharos does not have to take a model's word for what a model just did.
+
+- **The run carries its own record of what landed.** The dispatcher already sees every write
+  succeed, and both write paths hold the old text and the new one at that moment, so the lines
+  a part ADDED are known exactly — no model, no diff of the working tree, no guess. That record
+  goes to every later part, under the model's hand-off rather than instead of it.
+- **It carries the lines, not just the filenames.** A list of files says what was touched; the
+  first few added lines of each say what was decided. On a live run part 2 read the record and
+  reported back *"Pattern matched the existing files: LAYER assigned at line 3"* — the
+  convention crossed the gap mechanically, which is the thing prose was failing to do.
+- **It is not allowed to flatter the scorecard.** `thin_handoffs` still asks whether the MODEL's
+  summary named a file its part changed, and `kept_the_thread` still fails when it did not.
+  Answering either with Pharos's record would make both true by construction and stop them
+  measuring anything. A run where a part reported nothing now reads *"1 part(s) changed files
+  and reported almost nothing · Pharos carried 4 changed file(s) forward regardless"* — two
+  facts, neither excusing the other.
+- **One reserve, not two.** The record and the hand-off share `handoff_reserve`, because that
+  is the number every part's ceiling was computed against; adding the record on top of it would
+  make each part quietly smaller than the plan promised. The record goes first and takes at
+  most half, so the prose is never squeezed out by a long list of filenames.
+- **It degrades instead of truncating.** Too tight a budget drops the sample of added lines
+  first, then falls back to filenames in shorter framing, then to a count. Every rung says what
+  it is showing, and below the last rung it carries nothing rather than something misleading.
+- **Repair parts get it too.** Their scope is by definition the files NOT in the record, so
+  nothing is withheld — and a sweep that knows the conventions the run settled on stops starting
+  blind.
+- Config: `handoff_ledger` (on; turn it off to measure what the prose alone achieves). CLI:
+  `--no-ledger`.
+
+### Fixed
+
+- **A cut hand-off overran the reserve by the size of its own explanation.** `_cap_handoff`
+  trimmed the prose to exactly `handoff_reserve` and then appended forty tokens of marker
+  saying it had done so — the precise overrun the function exists to prevent, committed by the
+  fix for it. The test covering it asserted `<= 100 + 60  # the marker itself costs a little`,
+  so the bug was documented and waved through. Predates v0.6; found because the record is
+  measured against the same reserve and the total is now asserted.
+- **Blank lines in the record were copied into the code.** Found on the first live run and not
+  by a test: an edit that inserted a constant followed by two blank lines put those blanks in
+  the record, the next part read them as part of the pattern to match, and reproduced them.
+  Two of that run's lint failures were blank-line churn propagated faithfully from one file to
+  the next. Blank lines are now counted in the total and kept out of the sample.
+- **The sample was too long.** Six added lines per file became three after two live runs: the
+  first added line is the change, and what follows it is whatever else the write disturbed —
+  on a whole-file rewrite, five lines of reformatted class body carried forward for nothing.
+
+### Known: it propagates conventions, including wrong ones
+
+Measured, first run. Part 1 put `LAYER` above the module's `import`, the record showed it, and
+parts 2 and 3 matched — E402 in two files instead of one. That is the feature working: it buys
+consistency across parts, not correctness, and the checks are what catch the difference. A run
+that is wrong the same way in six files is also easier to fix than one that is wrong six ways,
+but nothing here should be read as a claim that the record improves the code.
+
 ## v0.5 — "Divide by meaning"
 
 `pharos split --semantic` and `pharos run --semantic` let a model choose which files belong in

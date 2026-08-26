@@ -1406,3 +1406,163 @@ The next operation pays a reload — measured at **4.2-4.6s** for `qwen3.5:9b` a
 `qwen2.5-coder:7b`, so roughly 4-5s each way. Modest, and real: on a card that can hold both
 models it would be nothing, and on this one `--semantic` with a separate grouper costs the
 grouping call plus a swap. Leaving `semantic_model` unset avoids it entirely.
+
+## ☑ 20. The record between parts — does carrying it change anything? (v0.6, live)
+
+§14 has carried one open finding since v0.4: *continuity degrades as parts multiply*. Parts
+change files and then report almost nothing, and `kept_the_thread` was false in every two-file
+run. v0.6 stops asking the model what it did and carries Pharos's own record instead — the
+files each write touched, and the first few lines it added.
+
+Three runs against a fixture shaped like §19's: six modules under `src/svc/`, three concerns,
+interleaved names, a `pyproject.toml` configuring both `ruff` and `pytest`. `qwen3.5:9b`,
+`num_ctx = 16384`, `max_files_per_part = 2`, three parts of two files, tree reset between each.
+Task: add a `LAYER` constant naming the concern to each of the six.
+
+### It arrives, and the model uses it
+
+The record reached parts 2 and 3 on every run. What part 3 was handed on run 1:
+
+```
+--- ALREADY DONE IN THIS RUN (recorded by Pharos as each write landed, not summarised by a model) ---
+src/svc/clock_ticks.py  (+4 lines)
+    LAYER = "scheduling"
+src/svc/db_pool.py  (+4 lines)
+    LAYER = "database"
+src/svc/http_fetch.py  (+1 line)
+    LAYER = "http"
+src/svc/row_map.py  (+1 line)
+    LAYER = "mapping"
+Those files are finished and belong to other parts: do not open or change them. [...]
+```
+
+And part 2's own hand-off on that run, unprompted:
+
+> Pattern matched the existing files: LAYER assigned at line 3, blank lines follow.
+
+That is the evidence the feature was built for. The model read the record and said so. It is
+also the evidence for the finding two sections down, because *"blank lines follow"* was true
+and should not have been.
+
+### The measured failure, happening, survived
+
+Run 2 produced exactly the §14 case:
+
+```
+continuity   ! 1/2 hand-offs · largest 73 of 500 reserved
+               1 part(s) changed files and reported almost nothing ·
+               Pharos carried 4 changed file(s) forward regardless
+```
+
+One part wrote files and reported nothing, and the next part was told what had happened
+anyway. `kept_the_thread` is still false, which is deliberate: `thin_handoffs` asks what the
+MODEL reported, and answering it with Pharos's record would make it true by construction and
+stop it measuring anything. The metric was not moved to make the release look better. What
+changed is what the next part knows, and that is reported beside the metric rather than inside
+it.
+
+### Finding: the record put blank lines into the code (fixed)
+
+Run 1, and not caught by any test. An edit inserted `LAYER = "scheduling"` followed by two
+blank lines. The diff correctly recorded three added lines, the record showed them — blanks
+included — and part 3 reproduced the pattern faithfully into `wire_encode.py`, blanks and all:
+
+```
++
++LAYER = "wire"
++
++
++
+ import json
++
++
++
+```
+
+Two of that run's lint failures (`I001`, un-sorted import block) were blank-line churn copied
+from one file to the next by the record itself. A blank line carries no convention worth
+matching, so blank lines are now counted in the total and kept out of the sample. Confirmed
+gone on run 2.
+
+### Finding: six sample lines was too many (fixed)
+
+Run 2's record, after the blank-line fix:
+
+```
+src/svc/db_pool.py  (+13 lines, 6 shown)
+    LAYER = "db_conns"
+    class Pool:
+        def __init__(self, size: int) -> None:
+            self.size = size
+            self._free = list(range(size))
+        def take(self) -> int:
+```
+
+The first added line is the change. The other five are whatever else a whole-file rewrite
+disturbed, carried to the next part for nothing and paid for out of the same reserve as the
+hand-off. `SAMPLE_LINES` went from 6 to 3 — a measurement, not a preference, though a coarse
+one at n=2. Run 3's record, at the new size:
+
+```
+src/svc/clock_ticks.py  (+11 lines, 2 shown)
+    LAYER = "clock_ticks"
+    import time
+src/svc/db_pool.py  (+2 lines, 1 shown)
+    LAYER = "db_pool"
+src/svc/http_fetch.py  (+6 lines, 2 shown)
+        LAYER = "http_fetch"
+    def fetch(url: str, retries: int = 1) -> str:
+src/svc/row_map.py  (+6 lines, 2 shown)
+    LAYER = "row_map"
+```
+
+Four files and their decisions in eleven lines. The totals still say how much each write
+actually moved — `+11` for a file the model largely rewrote — so nothing is hidden by the
+sample being small.
+
+### Finding: a cut hand-off overran the reserve by its own explanation (fixed)
+
+Not found live — found by writing the invariant down. The new record shares `handoff_reserve`
+with the prose, so a test asserts that what crosses the gap fits inside it. It did not.
+
+`_cap_handoff` trimmed the hand-off to exactly the reserve and *then* appended a marker saying
+it had been cut, so every cut hand-off went over by the size of the marker — around 40 tokens
+against a 500-token reserve. This is the same class of failure the function was written to
+fix, committed by the fix. The test covering it read:
+
+```python
+assert _count(kept) <= 100 + 60  # the marker itself costs a little
+```
+
+so the overrun was documented in the assertion that was supposed to prevent it. The marker is
+now counted first and the prose trimmed to what remains; below the marker's own size a shorter
+one is used, and below that the drop is still stated rather than silent. **Predates v0.6.**
+
+### Known: it propagates conventions, including wrong ones
+
+Run 1, measured. Part 1 wrote `LAYER` above the module's `import`. The record showed that, and
+parts 2 and 3 matched it — `E402 Module level import not at top of file` in two files instead
+of one.
+
+This is the feature working, not failing. It buys consistency between parts; it does not buy
+correctness, and nothing about carrying a record could. A run that is wrong the same way in
+six files is cheaper to fix than one that is wrong six ways, and it is the verification tier
+that notices either. No claim is made here that the record improves the code.
+
+### What the run still does
+
+| run | coverage | hand-offs | thin | carried | verification | verdict |
+|---|---|---|---|---|---|---|
+| 1 | 100% | 2/2 | 0 | 2 | **ruff broken** | BROKEN |
+| 2 | 100% | 1/2 | 1 | 4 | **syntax + ruff broken** | BROKEN |
+| 3 | 100% | 1/2 | 1 | 4 | **ruff broken** | BROKEN |
+
+Unchanged from §19, and worth restating because the record does not touch it: **coverage was
+100% on every run, and the build broke on all three.** Run 3's damage was `F811` — the model
+appended a second copy of most of `clock_ticks.py` rather than editing it. Verification named the damage each
+time — `expected an indented block after class definition on line 9` in `span_timer.py`,
+`expected an indented block after function definition on line 9` in `wire_encode.py`, both
+exact. `pytest -q was already failing before the run` appeared in every scorecard and was never
+charged. Three runs is not a rate, and the two thin hand-offs in three runs are not one either;
+what they are is the §14 failure still occurring at roughly the frequency §14 recorded, with
+the context now surviving it.

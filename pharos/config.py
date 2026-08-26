@@ -50,6 +50,19 @@ class PharosConfig(BaseModel):
     # not a constant, so this is a knob rather than a magic number: 500 clears every hand-off
     # observed, and an agent that writes essays needs it raised.
     handoff_reserve: int = Field(default=500, ge=0)
+    # Carry Pharos's own record of what has landed on disk from part to part, alongside the
+    # hand-off the model writes. On by default because the model's half is measurably
+    # unreliable: across sixteen live runs (DESKTOP_VALIDATION §14) parts changed files and
+    # then reported "NO CHANGES NEEDED", so the next part was handed a summary that was not
+    # thin but wrong. The record cannot be wrong — it is written by the dispatcher as each
+    # write succeeds, not by a model describing itself afterwards.
+    #
+    # It shares `handoff_reserve` with the prose rather than adding to it, taking at most half,
+    # so turning it on cannot make a part overrun the budget its ceiling was computed from.
+    #
+    # Turn it off to see what the model's own hand-offs achieve alone, which is what every
+    # coverage figure recorded before v0.6 measures.
+    handoff_ledger: bool = True
     # The context window `pharos run` asks the backend to load the model with. Ollama picks a
     # conservative VRAM-based default (4,096 on a 12 GB card), which is too small to plan an
     # agentic edit against: the part scaffold alone fills it. Left unset, whatever is already

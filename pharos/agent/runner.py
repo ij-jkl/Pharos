@@ -12,10 +12,13 @@ as it does for Continue or Cursor. When the proxy is not running the runner fall
 backend directly and says so, because refusing to work without the dashboard would be a silly
 dependency for a CLI.
 
-Between parts the only thing carried forward is the hand-off the previous part wrote — a few
-hundred tokens, bounded by ``handoff_reserve``. Each part otherwise starts from an empty
-conversation. That is what keeps part 5 as affordable as part 1, and it is the difference
-between this and an agent that simply runs until it dies.
+Between parts two things are carried forward, together bounded by ``handoff_reserve``: the
+hand-off the previous part wrote, and Pharos's own record of what has actually landed on disk.
+The second exists because the first is unreliable in a measured way — parts change files and
+then report "NO CHANGES NEEDED" — and Pharos does not have to take a model's word for what a
+model just did. Each part otherwise starts from an empty conversation. That is what keeps part
+5 as affordable as part 1, and it is the difference between this and an agent that simply runs
+until it dies.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from typing import Any
 
 import httpx
 
+from pharos.agent.ledger import LEDGER_SHARE, Ledger
 from pharos.agent.session import SAFETY_MARGIN, AgentSession, PartResult
 from pharos.agent.tools import (
     ToolBox,
@@ -81,6 +85,10 @@ class RunOutcome:
     catalogue_tokens: int = 0
     repair_parts: int = 0  # extra parts run over files the plan assigned and nobody changed
     handoff_reserve: int = 0  # what each part held back, so the scorecard can judge overruns
+    # Pharos's record of the run, carried between parts. `ledger_files` counts the files some
+    # later part was actually told about, not everything the run eventually changed.
+    ledger_on: bool = False
+    ledger_files: int = 0
     via_proxy: bool = True
     # What the project's own checks said afterwards. None when verification was off or
     # the run never got as far as executing anything.
@@ -221,6 +229,7 @@ async def run_task(
     verify_work: bool = True,
     divide: bool = True,
     semantic: bool = False,
+    use_ledger: bool = True,
     on_event: Callable[[str], None] | None = None,
 ) -> RunOutcome:
     """Pre-flight, divide and execute ``prompt`` in the configured workspace.
@@ -364,10 +373,23 @@ async def run_task(
         return outcome
 
     handoff: str | None = None
+    # Pharos's own account of the run, appended to as each write lands. Off it goes back to
+    # v0.5 behaviour, where the model's prose was the only thread between parts — which is
+    # what the coverage figures in DESKTOP_VALIDATION were measured against.
+    record = Ledger()
+    ledger_on = config.handoff_ledger and use_ledger and divide
+    outcome.ledger_on = ledger_on
+    ledger_text = ""
+
     async with httpx.AsyncClient(base_url=base_url) as client:
 
         async def run_part(
-            label: str, body: str, files: list[PartFile] | None, index: int, carried: str | None
+            label: str,
+            body: str,
+            files: list[PartFile] | None,
+            index: int,
+            carried: str | None,
+            already_done: str = "",
         ) -> PartResult:
             """One part, start to finish. The repair pass goes through here too, so a repaired
             file is bounded, scoped and scored on exactly the same terms as a planned one."""
@@ -386,7 +408,7 @@ async def run_task(
                 num_ctx=config.num_ctx,
                 on_event=_prefixed(say, label),
             )
-            text = _with_handoff(body, carried, index, files)
+            text = _with_handoff(body, carried, index, files, already_done)
             _logger.info("%s body: %s", label, text)
             result = await session.run(text)
             _logger.info(
@@ -409,21 +431,20 @@ async def run_task(
         failed = False
         for index, (body, files) in enumerate(bodies, start=1):
             say(f"part {index} of {len(bodies)}")
-            result = await run_part(f"part {index}", body, files, index, handoff)
+            if ledger_text:
+                outcome.ledger_files = max(outcome.ledger_files, len(record.files))
+            result = await run_part(f"part {index}", body, files, index, handoff, ledger_text)
             if result.error:
                 say(f"  [part {index}] failed: {result.error}")
                 failed = True
                 break
-            carried, cut = (
-                _cap_handoff(result.text, config.handoff_reserve, count)
-                if result.text
-                else ("", False)
+            record.record(f"part {index}", result.changes)
+            ledger_text, carried, cut, prose_reserve = _carry(
+                record, result.text, config.handoff_reserve, count, ledger=ledger_on
             )
             if cut:
-                say(
-                    f"  [part {index}] hand-off cut to the "
-                    f"{config.handoff_reserve:,}-token reserve"
-                )
+                say(f"  [part {index}] hand-off cut to the {prose_reserve:,} tokens left of "
+                    f"the {config.handoff_reserve:,}-token reserve")
             handoff = carried or None
 
         # A repair pass over whatever the plan assigned and no part actually changed.
@@ -444,7 +465,19 @@ async def run_task(
                     label = f"repair {offset} of {len(chunks)}"
                     say(label)
                     outcome.repair_parts += 1
-                    result = await run_part(label, _repair_body(prompt, chunk), chunk, 1, None)
+                    # The record goes to repair parts as well. Their scope is by definition
+                    # the files NOT in it, so nothing is withheld from them, and a sweep that
+                    # knows the conventions the run has already settled on writes code that
+                    # matches. Without it a repair part starts completely blind.
+                    if ledger_text:
+                        outcome.ledger_files = max(outcome.ledger_files, len(record.files))
+                    result = await run_part(
+                        label, _repair_body(prompt, chunk), chunk, 1, None, ledger_text
+                    )
+                    record.record(label, result.changes)
+                    ledger_text, _, _, _ = _carry(
+                        record, "", config.handoff_reserve, count, ledger=ledger_on
+                    )
                     if result.error:
                         say(f"  [{label}] failed: {result.error}")
                         break
@@ -557,6 +590,34 @@ def _bodies(plan: SplitPlan) -> list[tuple[str, list[PartFile] | None]]:
     ]
 
 
+def _carry(
+    record: Ledger,
+    prose: str,
+    reserve: int,
+    count: Callable[[str], int],
+    *,
+    ledger: bool,
+) -> tuple[str, str, bool, int]:
+    """What the next part inherits, and the arithmetic that keeps it inside one reserve.
+
+    Two things cross the gap between parts and they share a single budget, because that budget
+    is what every part's ceiling was computed against: adding the record on top of the reserve
+    rather than inside it would make each part smaller than the plan promised, silently, which
+    is the failure this project exists to expose.
+
+    The record goes first and is capped at ``LEDGER_SHARE`` of the reserve. First because it
+    is the half that cannot be wrong; capped because the model's hand-off carries intent no
+    mechanical record reconstructs, and starving it to fit a long list of filenames would
+    trade the irreplaceable half for the reproducible one.
+
+    Returns the record, the hand-off, whether the hand-off was cut, and what it was cut to.
+    """
+    text = record.render(count=count, budget=int(reserve * LEDGER_SHARE)) if ledger else ""
+    prose_reserve = max(reserve - count(text), 0)
+    carried, cut = _cap_handoff(prose, prose_reserve, count) if prose else ("", False)
+    return text, carried, cut, prose_reserve
+
+
 def _cap_handoff(handoff: str, reserve: int, count: Callable[[str], int]) -> tuple[str, bool]:
     """Hold a hand-off to the room the plan reserved for it.
 
@@ -569,32 +630,55 @@ def _cap_handoff(handoff: str, reserve: int, count: Callable[[str], int]) -> tup
     tail is elaboration, so a reader — human or model — loses the least that way. Silently
     truncating would be the context loss this project refuses, which is why the marker is
     part of the forwarded text rather than only a line in the report.
+
+    The marker is counted against the reserve too, which it was not until v0.6. Trimming the
+    prose to exactly the reserve and then appending forty tokens of explanation overran the
+    budget by forty tokens on every cut hand-off — the same failure the function exists to
+    prevent, committed by the fix for it, and invisible because nothing measured the total
+    that crossed the gap. The record carried beside the hand-off now does measure it.
     """
     if reserve <= 0 or count(handoff) <= reserve:
         return handoff, False
-    # Cut by characters against a token budget, then walk back until it actually fits.
-    kept = handoff
-    while kept and count(kept) > reserve:
-        kept = kept[: int(len(kept) * 0.8)] if len(kept) > 40 else ""
     marker = (
         f"\n[Pharos] The rest of this hand-off was cut: it was {count(handoff):,} tokens "
         f"against the {reserve:,} reserved for it, and the part below was planned around that "
         f"reserve. Ask for what is missing if you need it."
     )
+    room = reserve - count(marker)
+    if room <= 0:
+        # No room to explain the cut at length. Say the shortest true thing instead: that
+        # there was a hand-off and it did not fit. Dropping it silently would leave the next
+        # part unable to tell an empty hand-off from a discarded one.
+        brief = f"[Pharos] Hand-off dropped: {count(handoff):,} tokens against {reserve:,}."
+        return (brief, True) if count(brief) <= reserve else ("", True)
+    # Cut by characters against a token budget, then walk back until it actually fits.
+    kept = handoff
+    while kept and count(kept) > room:
+        kept = kept[: int(len(kept) * 0.8)] if len(kept) > 40 else ""
     return kept.rstrip() + marker, True
 
 
 def _with_handoff(
-    body: str, handoff: str | None, index: int, files: list[PartFile] | None = None
+    body: str,
+    handoff: str | None,
+    index: int,
+    files: list[PartFile] | None = None,
+    already_done: str = "",
 ) -> str:
     """The prompt a part actually receives: what it inherits, what it owes, and its scope.
 
-    Two things the splitter's body does not say, both learned from watching runs.
+    Three things the splitter's body does not say, all learned from watching runs.
 
     A hand-off pasted above a task reads as a verdict on that task. Part 1 reported the work
     complete and parts 2, 3 and 4 did nothing at all — correctly, by their reading. It is
     labelled as context about OTHER files, and the point is repeated after it, because the
     last thing read is the thing obeyed.
+
+    And that hand-off is a model's account of its own work, which is exactly the claim least
+    worth taking on trust: measured across sixteen runs, parts changed files and then reported
+    "NO CHANGES NEEDED". So Pharos's own record of what landed goes in underneath it, and it
+    goes SECOND on purpose — where the two disagree, the one read last is the one obeyed, and
+    the one read last is the one that cannot be wrong.
 
     And a list of files reads as material, not as a checklist. Runs settle around half the
     scope and stop, satisfied. The reminder that catches that only fires AFTER the model has
@@ -611,6 +695,8 @@ def _with_handoff(
             f"That hand-off describes work on DIFFERENT files. The files scoped to you below "
             f"have NOT been done yet — do them now, whatever it says about progress."
         )
+    if already_done:
+        sections.append(already_done)
     if files:
         total = len(files)
         subject = "file" if total == 1 else "files"

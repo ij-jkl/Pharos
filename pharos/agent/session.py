@@ -40,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from pharos.agent.ledger import FileChange
 from pharos.agent.tools import ToolBox, catalogue_text, normalise
 
 _logger = logging.getLogger("pharos.agent")
@@ -193,6 +194,10 @@ class PartResult:
         return self.nudges > 0
     scoped: list[str] = field(default_factory=list)  # the files this part owned
     handoff_tokens: int = 0  # size of the hand-off it produced
+    # What the dispatcher saw land on disk, with the lines each write added. Pharos's own
+    # record of the part, independent of anything the part says about itself, and what the
+    # run carries to the next part -- see `pharos.agent.ledger`.
+    changes: list[FileChange] = field(default_factory=list)
 
 
 class AgentSession:
@@ -356,6 +361,7 @@ class AgentSession:
                     reported_tokens=reported,
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
+                    changes=self._toolbox.changes(),
                     ceiling=self._ceiling,
                     nudges=nudges,
                     scoped=scoped,
@@ -435,6 +441,7 @@ class AgentSession:
                     reported_tokens=reported,
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
+                    changes=self._toolbox.changes(),
                     ceiling=self._ceiling,
                     nudges=nudges,
                     scoped=scoped,
@@ -470,6 +477,7 @@ class AgentSession:
             reported_tokens=reported,
             stopped_early=stopped_early,
             scope_refusals=list(self._toolbox.scope_refusals),
+            changes=self._toolbox.changes(),
             ceiling=self._ceiling,
             nudges=nudges,
             scoped=scoped,

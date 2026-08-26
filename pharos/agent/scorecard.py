@@ -16,9 +16,10 @@ The six:
 
 * **Coverage** — of the files the plan assigned, how many were written. The headline. A run
   that touches three of twenty did not succeed, whatever its parts reported.
-* **Continuity** — the thread between parts is the hand-off and nothing else, since every part
-  starts from an empty conversation. So: was one produced wherever there was a next part, and
-  did it fit the reserve held back for it. A hand-off that overran its reserve was planned
+* **Continuity** — every part starts from an empty conversation, so the thread between them is
+  whatever is carried across. Two things are, and they are scored separately on purpose. The
+  hand-off the model writes: was one produced wherever there was a next part, and did it fit
+  the reserve held back for it. A hand-off that overran its reserve was planned
   against a budget that was too small, which is a config finding, not a model failure.
   A hand-off can also be present and carry nothing, so each one is checked for whether it
   NAMES any file its part changed. That started as a length threshold and length turned out to
@@ -26,6 +27,13 @@ The six:
   to `INoteRepository.cs` and `NoteRepository.cs`"), while the useless ones are parts that
   wrote files and then reported "NO CHANGES NEEDED". A threshold flags the first and waves the
   second through; naming separates them exactly. A part that changed nothing is not held to it.
+
+  And, from v0.6, Pharos's own record of every write, carried to each later part. That is not
+  folded into the numbers above and it deliberately cannot rescue them: `thin_handoffs` asks
+  what the MODEL reported, and answering it with what Pharos recorded would make it true by
+  construction. `ledger_files` sits beside it and says how many files were carried anyway, so a
+  run where the prose said nothing and the context survived reads as exactly that, rather than
+  as either a pass or a disaster.
 * **Revisits** — the fingerprint of a part that lost the thread. A part reaching for a file
   ANOTHER PART OWNED is redoing work already done; the scope layer refuses it, so it is
   recorded rather than damaging. Distinguished from a path the model simply invented, which is
@@ -71,6 +79,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from pharos.agent.ledger import names_its_work
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import normalise
 from pharos.agent.verify import Verification
@@ -79,19 +88,16 @@ from pharos.agent.verify import Verification
 def _carried_the_work(part: PartResult) -> bool:
     """Does a part's hand-off mention any of the files it changed?
 
-    This was a length check, and length is a poor proxy. Measured against real hand-offs: the
-    useful ones read "Added XML doc comments to `INoteRepository.cs` and `NoteRepository.cs`"
-    - about fifteen tokens, and everything the next part needs. The useless ones read "NO
-    CHANGES NEEDED" from parts that demonstrably wrote files. A token threshold flags the
-    first and, at the wrong setting, waves the second through; naming separates them exactly.
+    The rule lives in `pharos.agent.ledger` and is applied here. It used to be written out in
+    full in both places, which is how this project has twice grown the same bug in two copies
+    of one comparison; `pharos.paths` exists for the same reason.
 
-    A part that changed nothing has nothing to name, and is not held to this.
+    Note what is NOT consulted: the ledger. From v0.6 the run carries Pharos's own record of
+    every write between parts, so context survives a hand-off that says nothing — but this
+    question is about the MODEL's summary, and answering it with Pharos's record would make it
+    true by construction and stop it measuring anything.
     """
-    if not part.files_written:
-        return True
-    lowered = part.text.lower()
-    return any(path.replace(chr(92), "/").rsplit("/", 1)[-1].lower() in lowered
-               for path in part.files_written)
+    return names_its_work(part.text, part.files_written)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +128,12 @@ class Scorecard:
     handoff_overruns: int = 0
 
     thin_handoffs: int = 0  # parts that wrote files and then reported almost nothing
+
+    # What Pharos carried between parts itself. Reported beside `thin_handoffs` rather than
+    # folded into it: a part whose prose said nothing still failed to report, and the fact that
+    # the run survived it anyway is a different fact, worth stating separately.
+    ledger_on: bool = False
+    ledger_files: int = 0  # distinct files some later part was told about, by Pharos
 
     revisits: list[str] = field(default_factory=list)  # files another part already owned
     invented: list[str] = field(default_factory=list)  # paths in no part's scope at all
@@ -233,6 +245,8 @@ def score(
     handoff_reserve: int,
     repair_parts: int = 0,
     verification: Verification | None = None,
+    ledger_on: bool = False,
+    ledger_files: int = 0,
 ) -> Scorecard:
     """Reduce a finished run to the five questions above."""
     scoped: list[str] = []
@@ -307,6 +321,8 @@ def score(
             1 for p in expects_handoff if handoff_reserve and p.handoff_tokens > handoff_reserve
         ),
         thin_handoffs=thin,
+        ledger_on=ledger_on,
+        ledger_files=ledger_files,
         revisits=revisits,
         invented=invented,
         peak_fraction=peak_fraction,
@@ -345,6 +361,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             "overruns": card.handoff_overruns,
         },
         "thin_handoffs": card.thin_handoffs,
+        "ledger": {"on": card.ledger_on, "files_carried": card.ledger_files},
         "revisits": card.revisits,
         "invented_paths": card.invented,
         "peak_fraction": round(card.peak_fraction, 3),

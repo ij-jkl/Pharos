@@ -1256,9 +1256,24 @@ def test_an_oversized_handoff_is_cut_to_the_reserve() -> None:
     kept, cut = _cap_handoff(huge, 100, _count)
 
     assert cut
-    assert _count(kept) <= 100 + 60  # the marker itself costs a little
+    # The marker used to be appended AFTER the prose had been trimmed to exactly the reserve,
+    # so every cut hand-off overran by the size of its own explanation. This assertion read
+    # `<= 100 + 60  # the marker itself costs a little` and waved it through.
+    assert _count(kept) <= 100
     assert kept.startswith("Documented the repository")  # the opening survives
     assert "was cut" in kept  # and the loss is stated in the text, not just the report
+
+
+def test_a_reserve_too_small_to_explain_the_cut_still_says_there_was_one() -> None:
+    """Below the marker's own size the choice is a shorter truth or a silent drop."""
+    from pharos.agent.runner import _cap_handoff
+
+    huge = "Documented the repository classes in detail. " * 200
+    kept, cut = _cap_handoff(huge, 30, _count)
+
+    assert cut
+    assert _count(kept) <= 30
+    assert "dropped" in kept
 
 
 def test_a_handoff_inside_the_reserve_is_passed_through_untouched() -> None:

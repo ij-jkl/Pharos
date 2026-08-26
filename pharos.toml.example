@@ -22,6 +22,14 @@ response_reserve = 1024
 # is not a constant. Raise it if your agent writes long hand-offs.
 handoff_reserve = 500
 
+# Carry Pharos's own record of what has landed on disk from part to part, alongside the
+# hand-off the model writes. On by default: across sixteen live runs the model's half proved
+# unreliable in one specific way — parts changed files and then reported "NO CHANGES NEEDED" —
+# and the record is written by the dispatcher as each write succeeds, so it cannot be wrong.
+# It shares handoff_reserve with the prose rather than adding to it, taking at most half.
+# Set it to false to see what the model's own hand-offs achieve alone.
+handoff_ledger = true
+
 # The window `pharos run` asks the backend to load the model with. Ollama picks a cautious
 # VRAM-based default (4,096 on a 12 GB card), and that is too small for agentic work: the part
 # scaffold alone fills it before a single file can be scoped in. Leave it commented out and

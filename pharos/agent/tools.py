@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pharos.agent.ledger import SAMPLE_LINES, FileChange, added_lines
 from pharos.agent.workspace import Undo, Workspace, WorkspaceError
 from pharos.paths import normalise_display
 from pharos.preflight.content import BinaryFile, read_countable
@@ -106,6 +107,12 @@ class ToolBox:
     files_read: list[str] = field(default_factory=list)
     scope_refusals: list[str] = field(default_factory=list)
     write_counts: dict[str, int] = field(default_factory=dict)
+    # The lines each write ADDED, kept as the write happens. Both write paths hold the old
+    # text and the new one at that moment, so this is exact and costs one diff of text
+    # already in memory. It is what `pharos.agent.ledger` carries to the next part, and it
+    # is Pharos's record rather than the model's account of itself.
+    additions: dict[str, list[str]] = field(default_factory=dict)
+    addition_totals: dict[str, int] = field(default_factory=dict)
 
     # -- catalogue -----------------------------------------------------------------------
 
@@ -200,6 +207,41 @@ class ToolBox:
         if display not in self.files_written:
             self.files_written.append(display)
         return None
+
+    def _note_added(self, display: str, before: str, after: str) -> None:
+        """Record the lines a successful write added to a file.
+
+        Only a sample is kept -- a new 400-line file added 400 lines and the next part needs
+        enough to match a convention, not the file. The total counts the whole diff, so the
+        record can say it is showing a sample instead of implying it is showing everything.
+
+        Blank lines are counted and not shown. They carry no convention a later part could
+        match, and on the first live run of the record they were worse than useless: an edit
+        that inserted a constant followed by two blank lines put those blanks in the record,
+        the next part read them as part of the pattern to follow, and reproduced them -- two
+        of that run's lint failures were blank-line churn copied faithfully from one file to
+        the next. Showing what a later part should imitate means showing only lines worth
+        imitating.
+        """
+        lines = added_lines(before, after)
+        if not lines:
+            return
+        kept = self.additions.setdefault(display, [])
+        room = SAMPLE_LINES - len(kept)
+        if room > 0:
+            kept.extend([line for line in lines if line.strip()][:room])
+        self.addition_totals[display] = self.addition_totals.get(display, 0) + len(lines)
+
+    def changes(self) -> list[FileChange]:
+        """What this part changed, in the order it first touched each file."""
+        return [
+            FileChange(
+                display=display,
+                added=tuple(self.additions.get(display, ())),
+                added_total=self.addition_totals.get(display, 0),
+            )
+            for display in self.files_written
+        ]
 
     def _entry(self, display: str) -> ScopeEntry | None:
         """The scope entry for a path, or None when scope does not cover it."""
@@ -308,10 +350,12 @@ class ToolBox:
         churn = self._note_write(display)
         if churn is not None:
             return churn
+        before = path.read_text(encoding="utf-8") if path.is_file() else ""
         if self.undo is not None:
             self.undo.before_write(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8", newline=_existing_newline(path))
+        self._note_added(display, before, content)
         return ToolResult(f"Wrote {display} ({len(content.splitlines()):,} lines).", wrote=display)
 
     def _replace_lines(self, arguments: dict[str, Any]) -> ToolResult:
@@ -363,11 +407,9 @@ class ToolBox:
         ending = _existing_newline(path)
         if self.undo is not None:
             self.undo.before_write(path)
-        path.write_text(
-            "".join(lines[: start - 1]) + replacement + "".join(lines[end:]),
-            encoding="utf-8",
-            newline=ending,
-        )
+        updated = "".join(lines[: start - 1]) + replacement + "".join(lines[end:])
+        path.write_text(updated, encoding="utf-8", newline=ending)
+        self._note_added(display, "".join(lines), updated)
         # Every line below the edit has just moved, and the model is still holding numbers from
         # a read taken before it. Editing top-to-bottom off a stale map lands the second change
         # in the wrong place — silently, because the tool call itself succeeds. Say the shift

@@ -8,12 +8,14 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.5** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
+**Status: v0.6** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
 request or a response). Alongside it, three tools outside the request path: what a prompt will
 cost before you paste it (`pharos check`), how to cut it up when it will not fit
 (`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
 finishes by re-running your project's own checks and failing the run if it broke them. New in
-v0.5: `--semantic` lets a model propose *which files group together*, and nothing else — every
+v0.6: a run carries its own record of what has landed on disk from part to part, so context
+survives a hand-off the model wrote badly. From v0.5: `--semantic` lets a model propose *which
+files group together*, and nothing else — every
 projection is still measured, and a proposal that fails any check is discarded for the
 mechanical one.
 
@@ -351,12 +353,14 @@ stopped it.
 
 `pharos run` executes the plan instead of printing it. It pre-flights the task, divides it
 with the same splitter, then runs each part as its own conversation against your local model
-— fresh context each time, seeded only with the previous part's hand-off.
+— fresh context each time, seeded only with what crosses the gap: the previous part's hand-off,
+and Pharos's own record of what has already landed on disk.
 
 ```bash
 pharos run "Refactor the controllers in `backend/Controllers/` to a consistent response shape"
 pharos run --dry-run "..."     # plan only; changes nothing
 pharos run --no-split "..."    # one undivided conversation, for comparison
+pharos run --no-ledger "..."   # the model's hand-off as the only thread, as before v0.6
 ```
 
 This is the one part of Pharos that **writes files**, so it will not start without a way back:
@@ -425,7 +429,7 @@ task, those were exactly the two cases.
 - **Coverage** is the headline: of the files the plan assigned, how many were actually
   written. A run that touches three of twenty did not succeed, whatever its parts reported.
 - **Continuity** measures the thread between parts. Every part starts from an empty
-  conversation, so the hand-off is the *only* thing carrying context forward — this checks one
+  conversation, so what crosses the gap is all the context there is — this checks a hand-off
   was produced wherever there was a next part, and that it fitted the reserve held back for
   it. A hand-off that overran means the next part began with a truncated thread, which is a
   `handoff_reserve` problem rather than a model failure. A hand-off can also be present and
@@ -435,6 +439,34 @@ task, those were exactly the two cases.
   `NoteRepository.cs`"* — while the useless ones are parts that wrote files and then reported
   *"NO CHANGES NEEDED"*. A threshold flags the first and waves the second through. A part that
   changed nothing is entitled to say so.
+
+  From **v0.6** that is no longer the whole thread. Pharos keeps its own record of every write
+  as the dispatcher makes it — the file, and the first few lines the write added — and carries
+  it to each later part underneath the model's hand-off. The record cannot be wrong: it is not
+  a summary, it is what happened. On a live run part 2 read it and reported back *"Pattern
+  matched the existing files: LAYER assigned at line 3"*, which is the convention crossing the
+  gap mechanically instead of hopefully.
+
+  It is deliberately not allowed to improve the numbers above. `thin_handoffs` still asks what
+  the *model* reported, so a part that wrote files and said nothing still reads as thin; the
+  record is reported beside it, never folded into it:
+
+  ```
+  continuity   ! 1/2 hand-offs · largest 73 of 500 reserved
+                 1 part(s) changed files and reported almost nothing ·
+                 Pharos carried 4 changed file(s) forward regardless
+  ```
+
+  Two facts, neither excusing the other. Both share one budget — the record takes at most half
+  of `handoff_reserve` and the hand-off gets the rest — because that reserve is the number
+  every part's ceiling was computed against, and adding to it would make each part quietly
+  smaller than the plan promised. `--no-ledger` turns it off, which is how you measure what the
+  prose alone achieves.
+
+  **What it buys is consistency, not correctness.** Measured: part 1 put a constant above a
+  module's `import`, the record showed it, and the later parts matched — the same lint error in
+  two files instead of one. Being wrong the same way everywhere is easier to fix than being
+  wrong six ways, and it is still the checks below that notice.
 - **Revisits** are the fingerprint of a part that lost the thread: reaching for a file another
   part already owned. The scope layer refuses it, so it is recorded rather than damaging.
   Deliberately *not* the same as a path the model invented — one real run tried to write to a
