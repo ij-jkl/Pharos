@@ -344,3 +344,87 @@ async def test_the_expected_warning_only_fires_when_the_floor_itself_fits(
     report = await run_check(config, "Refactor `one.py`", skip_profile=True, target=10)
     assert report.verdict is Verdict.EXCEEDS
     assert report.expected_warning is None
+
+
+def await_check(root: Path, prompt: str, **kw: object):
+    """Synchronous wrapper: these assertions are about extraction, not about async."""
+    import asyncio
+
+    return asyncio.run(
+        run_check(_config(root), prompt, skip_profile=True, target=100_000, **kw)  # type: ignore[arg-type]
+    )
+
+
+def test_a_format_spec_in_backticks_is_not_a_missing_file(tmp_path: Path) -> None:
+    """A prompt ABOUT string formatting spells out `%.2f` and `:.2f`, and both used to surface
+    in the verdict as files that could not be found. The module's stated bias is against false
+    positives, and no dotfile convention starts a name with a digit."""
+    prompt = "Carry the spec across: `%.2f` becomes `:.2f`, `%-30s` becomes `:<30`."
+    report = await_check(tmp_path, prompt)
+    assert report.extraction.missing == []
+
+
+def test_a_real_dotfile_is_still_found_by_name(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text("*.pyc\n", encoding="utf-8")
+    report = await_check(tmp_path, "Update `.gitignore` please")
+    assert [f.display for f in report.files] == [".gitignore"]
+
+
+def test_a_missing_dotfile_is_still_reported(tmp_path: Path) -> None:
+    report = await_check(tmp_path, "Update `.env` please")
+    assert report.extraction.missing == [".env"]
+
+
+# --- --exclude: the file a prompt names in order to forbid it ---------------------------------
+#
+# Found on a real giant prompt. It said "Do not touch `shop/notifications/templates.py`" and
+# "Do not touch the tests. `tests/test_shop.py`" — and both were duly extracted, counted into
+# the floor, and scoped to a part, whose scope block then told the agent it MAY open them. The
+# difference between naming a file as work and naming it as a prohibition is in the meaning of
+# the sentence, and nothing here reads meaning. So it is a flag, like --resolve.
+
+
+def test_an_excluded_file_leaves_the_floor(tmp_path: Path) -> None:
+    (tmp_path / "keep.py").write_text("x = 1\n" * 50, encoding="utf-8")
+    (tmp_path / "leave.py").write_text("y = 2\n" * 50, encoding="utf-8")
+    prompt = "Refactor `keep.py`. Do not touch `leave.py`."
+
+    both = await_check(tmp_path, prompt)
+    assert sorted(f.display for f in both.files) == ["keep.py", "leave.py"]
+
+    one = await_check(tmp_path, prompt, exclude=["leave.py"])
+    assert [f.display for f in one.files] == ["keep.py"]
+    assert one.floor < both.floor
+
+
+def test_an_excluded_file_is_listed_never_silently_dropped(tmp_path: Path) -> None:
+    (tmp_path / "leave.py").write_text("y = 2\n", encoding="utf-8")
+    report = await_check(tmp_path, "Do not touch `leave.py`.", exclude=["leave.py"])
+    assert report.excluded == ["leave.py"]
+
+
+def test_an_exclusion_reaches_inside_a_named_directory(tmp_path: Path) -> None:
+    """"Everything in src/ except the generated one" is a sentence Pharos has to honour."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "real.py").write_text("x = 1\n" * 50, encoding="utf-8")
+    (tmp_path / "src" / "generated.py").write_text("y = 2\n" * 50, encoding="utf-8")
+
+    whole = await_check(tmp_path, "Refactor everything in `src/`")
+    pruned = await_check(tmp_path, "Refactor everything in `src/`", exclude=["generated.py"])
+    assert whole.directory_tokens > pruned.directory_tokens
+    assert "src/generated.py" in [p.replace(chr(92), "/") for p in pruned.excluded]
+
+
+def test_a_bare_filename_and_a_full_path_both_exclude(tmp_path: Path) -> None:
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "leave.py").write_text("y = 2\n", encoding="utf-8")
+    prompt = "Do not touch `pkg/leave.py`."
+    assert await_check(tmp_path, prompt, exclude=["leave.py"]).files == []
+    assert await_check(tmp_path, prompt, exclude=["pkg/leave.py"]).files == []
+
+
+def test_excluding_something_nobody_named_changes_nothing(tmp_path: Path) -> None:
+    (tmp_path / "keep.py").write_text("x = 1\n", encoding="utf-8")
+    report = await_check(tmp_path, "Refactor `keep.py`", exclude=["absent.py"])
+    assert [f.display for f in report.files] == ["keep.py"]
+    assert report.excluded == []

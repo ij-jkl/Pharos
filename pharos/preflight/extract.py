@@ -8,7 +8,8 @@ what an agent will read on its own is v1.0. The bias is against false positives:
 2. quoted spans (double quotes may contain spaces — paths with spaces usually arrive quoted;
    single-quoted spans must be a single token, or every apostrophe would spawn candidates),
 3. bare whitespace-separated tokens, accepted only when they LOOK like a path: contain a
-   separator, carry a known code/text extension, or are a dot-leading name like `.gitignore`.
+   separator, carry a known code/text extension, or are a dot-leading name like `.gitignore`
+   (but not `.2f`, which is a format spec: no dotfile starts its name with a digit).
 
 Resolution against the root (``target_folder``, else cwd): absolute or direct relative hit
 first, then a basename search of the tree (pruned of vcs/venv/cache dirs). One match resolves
@@ -180,7 +181,12 @@ def _is_path_like(raw: str) -> bool:
     if "/" in raw or "\\" in raw:
         return True
     if raw.startswith(".") and len(raw) > 1 and not raw.startswith(".."):
-        return True  # dotfiles: .gitignore, .env
+        # Dotfiles: .gitignore, .env. But NOT a format spec: a prompt that spells out
+        # "`%.2f` becomes `:.2f`" -- which is exactly what a prompt about string formatting
+        # does -- put `.2f` in the verdict as a file that could not be found. No dotfile
+        # convention starts a name with a digit, and this module's stated bias is against
+        # false positives.
+        return not raw[1].isdigit()
     return _has_known_extension(raw)
 
 

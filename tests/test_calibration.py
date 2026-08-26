@@ -92,7 +92,8 @@ def test_store_contains_counts_only(tmp_path: Path) -> None:
     raw = json.loads(path.read_text(encoding="utf-8"))
     allowed = {
         "ts", "endpoint", "model", "input_tokens", "input_exact",
-        "user_tokens", "messages", "output_tokens", "agent_shaped", "user_exact",
+        "user_tokens", "messages", "output_tokens", "agent_shaped", "has_tools",
+        "user_exact",
     }
     assert set(raw[0].keys()) == allowed
     # Names alone would not catch a field that later starts carrying content, so the guard
@@ -433,3 +434,37 @@ def test_reads_filter_by_model_like_every_other_estimator() -> None:
     other = _three(model="llama3:8b")
     assert estimate_agent_reads(other, "qwen3.5-9b-heretic")[0] is None
     assert estimate_agent_reads(other, "llama3:8b")[0] is not None
+
+
+# --- a poke with a system prompt is not a coding agent -----------------------------------------
+#
+# Measured live, twice. `agent_shaped` is "tools OR a system prompt", and a `curl` carrying a
+# system prompt satisfies it — so two probes held the learned overhead at 19 tokens across 116
+# real agent requests, understating a check's floor by more than a thousand. A minimum is only
+# as good as the pool it minimises over, and the tool catalogue is what a chat client never
+# sends.
+
+
+def test_a_tool_carrying_record_outranks_a_system_prompt_alone() -> None:
+    poke = _obs(input_tokens=30, user_tokens=11, messages=2, agent_shaped=True)
+    real = _obs(input_tokens=9_100, user_tokens=40, messages=2, agent_shaped=True)
+    real = replace(real, has_tools=True)
+
+    estimate = estimate_client_overhead([poke, real], None)
+    assert estimate is not None
+    assert estimate.tokens == 9_060  # the agent's, not the poke's
+    assert "tool-carrying" in estimate.provenance
+
+
+def test_with_no_tooled_records_it_falls_back_to_agent_shaped_as_before() -> None:
+    estimate = estimate_client_overhead(
+        [_obs(input_tokens=1_800, user_tokens=10, messages=2)], None
+    )
+    assert estimate is not None and "agent-shaped" in estimate.provenance
+
+
+def test_records_written_before_the_tools_flag_still_count() -> None:
+    """An existing store has no has_tools anywhere; it must keep working exactly as it did."""
+    old = [replace(o, has_tools=None) for o in (_obs(input_tokens=2_000, user_tokens=10),)]
+    estimate = estimate_client_overhead(old, None)
+    assert estimate is not None and estimate.tokens == 1_990

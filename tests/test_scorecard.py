@@ -30,6 +30,7 @@ def _part(
     room_refusals: int = 0,
     native_calls: int = 0,
     recovered_calls: int = 0,
+    files_read: list[str] | None = None,
 ) -> PartResult:
     return PartResult(
         # None means "a normal hand-off": one that names what the part changed, which is what
@@ -55,6 +56,7 @@ def _part(
         room_refusals=room_refusals,
         native_calls=native_calls,
         recovered_calls=recovered_calls,
+        files_read=files_read or [],
     )
 
 
@@ -494,3 +496,23 @@ def test_the_counts_are_summed_across_parts() -> None:
         handoff_reserve=0,
     )
     assert (card.native_calls, card.recovered_calls) == (5, 1)
+
+
+def test_a_file_opened_and_left_alone_is_not_the_same_miss_as_one_never_opened() -> None:
+    """Coverage stays written-over-scoped. What this adds is why a file is in the miss list:
+    measured on a run where three of three "misses" were one-line __init__.py modules a part
+    had opened and correctly found nothing to do in."""
+    card = score(
+        [
+            _part(scoped=["a.py", "b.py", "c.py"], wrote=["a.py"], files_read=["a.py", "b.py"]),
+        ],
+        handoff_reserve=0,
+    )
+    assert card.untouched == ["b.py", "c.py"]
+    assert card.examined_untouched == ["b.py"]
+    assert card.coverage is not None and round(card.coverage, 3) == 0.333
+
+
+def test_examined_is_empty_when_nothing_was_opened() -> None:
+    card = score([_part(scoped=["a.py"], wrote=[])], handoff_reserve=0)
+    assert card.untouched == ["a.py"] and card.examined_untouched == []

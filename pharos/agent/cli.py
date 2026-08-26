@@ -94,6 +94,14 @@ def main(argv: list[str] | None = None) -> int:
         "own, not just against what the part names",
     )
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="drop a named file from every part's scope (repeatable) — for the file a long "
+        "prompt names in order to FORBID it",
+    )
+    parser.add_argument(
         "--review",
         action="store_true",
         help="after the run, show the diff to the model and print what it says. An opinion, "
@@ -200,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
                     compact=args.compact,
                     audit=not args.no_audit,
                     review=args.review,
+                    exclude=args.exclude,
                     use_ledger=not args.no_ledger,
                     stop_on_break=args.stop_on_break or config.stop_on_break,
                     on_event=report,
@@ -532,6 +541,32 @@ def _render_parts(console: Console, outcome: RunOutcome) -> None:
     console.print(table)
 
 
+def _add_untouched_row(body: Table, card: Scorecard) -> None:
+    """Split the misses into the two things they can be.
+
+    Coverage is deliberately written-over-scoped and is not softened here. What this adds is
+    the fact coverage cannot carry: whether a file nobody wrote was one a part opened and left
+    alone, or one nobody ever looked at. Measured on a nineteen-file run where three of the
+    three "misses" were one-line `__init__.py` modules a part had opened and correctly found
+    nothing to do in -- 83% coverage, and no way to see that from the number.
+    """
+    if not card.untouched:
+        return
+    examined = card.examined_untouched
+    unopened = [path for path in card.untouched if path not in set(examined)]
+    parts = []
+    if examined:
+        parts.append(f"{len(examined)} opened and left alone")
+    if unopened:
+        parts.append(f"[yellow]{len(unopened)} never opened[/]")
+    shown = _first_few(card.untouched, 4)
+    body.add_row(
+        "unchanged",
+        f"{len(card.untouched)} scoped file(s) nobody wrote — {', '.join(parts)}  "
+        f"[dim]{shown}[/]",
+    )
+
+
 def _add_tool_call_row(body: Table, card: Scorecard) -> None:
     """Say when the model never produced a structured tool call.
 
@@ -824,6 +859,7 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"the window that stopped a part were tool results it had finished with; "
             f"--compact would have given them back[/]",
         )
+    _add_untouched_row(body, card)
     _add_tool_call_row(body, card)
     _add_audit_row(body, card)
     _add_verification_row(body, card.verification)

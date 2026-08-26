@@ -134,6 +134,8 @@ class InputSpec:
     # coding agent rather than a bare poke at the endpoint. The overhead estimator needs it to
     # compare like with like; see pharos.calibration.
     agent_shaped: bool = False
+    # The stronger half of that signal, kept separate: a tool catalogue specifically.
+    has_tools: bool = False
 
 
 async def counted_forward(
@@ -261,6 +263,7 @@ async def _record_observation(
             messages=spec.message_count,
             output_tokens=metrics.eval_count,
             agent_shaped=spec.agent_shaped,
+            has_tools=spec.has_tools,
             # Only meaningful when something was actually counted; a request with no
             # user-authored content has nothing that could have used the wrong vocabulary.
             user_exact=_tokenizer_matches(state, spec) if spec.user_text else None,

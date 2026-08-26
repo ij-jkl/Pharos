@@ -6,6 +6,37 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.0.2 — "A prompt that does not fit"
+
+A giant prompt, run end to end against a nineteen-module project on an RTX 3060, found
+five things. `DESKTOP_VALIDATION.md` §25 is the pass; this is what came out of it.
+
+- **A refusal with no reason.** `pharos run` exited with *"no plan could be built — unknown
+  reason"*. `SplitPlan.reason` is set only when no plan can be built at all; a scope plan
+  whose parts come out over budget explains itself through the parts, and the runner had no
+  handler for that case. It now names them: which parts, how many, and the worst overrun.
+- **`--exclude PATH`** (repeatable, on `check`, `split` and `run`). A long prompt names a
+  file in order to FORBID it — *"do not touch `templates.py`"*, *"leave the tests alone"* —
+  and extraction cannot tell that apart from naming it as work, because the difference is in
+  the meaning of the sentence. So it is a flag, on the same bargain `--resolve` strikes over
+  an ambiguous reference. Excluded files are listed in the report, never silently dropped,
+  and an exclusion reaches inside an expanded directory.
+- **The overhead estimator prefers records that carried a tool catalogue.** `agent_shaped`
+  is "tools OR a system prompt", so a `curl` probe with a system prompt satisfies it — and
+  two of them held the learned overhead at **19 tokens across 116 real agent requests**,
+  understating a check's floor by more than a thousand. Tri-state, so an existing store keeps
+  working and falls back exactly as before.
+- **A format spec is not a dotfile.** A prompt about string formatting spells out
+  `` `%.2f` becomes `:.2f` ``, and `.2f` was surfacing in the verdict as a file that could
+  not be found. No dotfile convention starts a name with a digit.
+- **Coverage was punishing a run for correctly leaving a file alone.** Three of a run's
+  three misses were one-line `__init__.py` modules a part had opened, found nothing to do
+  in, and left — indistinguishable, inside an 83.3%, from three files nobody looked at.
+  Coverage stays written-over-scoped; a line beside it now says how many misses were opened
+  and left alone, measured from the dispatcher's record of the reads rather than from
+  anything the model claimed about them.
+- **661 tests**, `ruff` and `mypy --strict` clean.
+
 ## v1.0.1 — what validating v1.0 found
 
 `DESKTOP_VALIDATION.md` §24 was the first live pass over the v1.0 features, and it closed

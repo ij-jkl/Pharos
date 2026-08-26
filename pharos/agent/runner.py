@@ -183,6 +183,7 @@ async def _ensure_window(
     prompt: str,
     report: CheckReport,
     say: Callable[[str], None],
+    exclude: list[str] | None = None,
 ) -> CheckReport:
     """Reload the model when the resident window is not the one the user configured.
 
@@ -212,7 +213,7 @@ async def _ensure_window(
     except httpx.HTTPError as exc:
         say(f"could not reload at num_ctx={config.num_ctx}: {exc}")
         return report
-    return await run_check(config, prompt)
+    return await run_check(config, prompt, exclude=exclude)
 
 
 async def _load_and_recheck(
@@ -220,6 +221,7 @@ async def _load_and_recheck(
     prompt: str,
     report: CheckReport,
     say: Callable[[str], None],
+    exclude: list[str] | None = None,
 ) -> CheckReport:
     """No model resident is a fixable state, not a refusal — load the configured one and retry.
 
@@ -248,7 +250,7 @@ async def _load_and_recheck(
         return report
 
     say(f"loaded {config.model}")
-    return await run_check(config, prompt)
+    return await run_check(config, prompt, exclude=exclude)
 
 
 def written_by_parts(parts: list[PartResult]) -> list[str]:
@@ -274,6 +276,7 @@ async def run_task(
     compact: bool = False,
     audit: bool = True,
     review: bool = False,
+    exclude: list[str] | None = None,
     use_ledger: bool = True,
     stop_on_break: bool = False,
     on_event: Callable[[str], None] | None = None,
@@ -290,12 +293,12 @@ async def run_task(
     root = workspace_root(config.target_folder)
     workspace = Workspace(root)
 
-    report = await run_check(config, prompt)
+    report = await run_check(config, prompt, exclude=exclude)
     outcome.report = report
     outcome.counts_exact = report.counts_exact
 
     if report.verdict is Verdict.INDETERMINATE:
-        report = await _load_and_recheck(config, prompt, report, say)
+        report = await _load_and_recheck(config, prompt, report, say, exclude=exclude)
         outcome.report = report
         outcome.counts_exact = report.counts_exact
     if report.verdict is Verdict.INDETERMINATE:
@@ -305,7 +308,7 @@ async def run_task(
         )
         return outcome
 
-    report = await _ensure_window(config, prompt, report, say)
+    report = await _ensure_window(config, prompt, report, say, exclude=exclude)
     outcome.report = report
     outcome.counts_exact = report.counts_exact
     budget = report.profile.budget if report.profile is not None else None
@@ -358,7 +361,7 @@ async def run_task(
                 f"cautious default rather than what this card can hold — set num_ctx in "
                 f"pharos.toml (16384 is a reasonable start) and run again."
             )
-        outcome.error = f"no plan could be built — {plan.reason or 'unknown reason'}.{advice}"
+        outcome.error = f"no plan could be built — {plan.reason or _why_no_plan(plan)}.{advice}"
         return outcome
 
     outcome.planned_files = [f.display for _, files in bodies if files for f in files]
@@ -768,6 +771,33 @@ def review_run(
         discarded=discarded,
         note=note,
     )
+
+
+def _why_no_plan(plan: SplitPlan) -> str:
+    """Explain a plan that EXISTS and does not fit.
+
+    ``reason`` is set only when no plan could be built at all. A scope plan whose parts came
+    out over budget explains itself through the parts, and the runner was rendering that case
+    as "unknown reason" — the one thing this project may not say about its own refusal. Seen
+    live on a giant prompt: eighteen parts, nine of them over, and a message that named none
+    of it.
+    """
+    over = [part for part in plan.parts if not part.fits]
+    if over:
+        worst = max(over, key=lambda part: part.over_by)
+        which = ", ".join(str(part.index) for part in over[:4])
+        more = f" and {len(over) - 4} more" if len(over) > 4 else ""
+        detail = (
+            f"{len(over)} of {len(plan.parts)} part(s) came out over the "
+            f"{plan.target_per_part:,}-token {plan.target_label} — part {which}{more}, the "
+            f"worst by {worst.over_by:,} tokens"
+        )
+    elif not plan.parts:
+        detail = "the planner produced no parts at all"
+    else:
+        detail = "the plan was rejected with no cause recorded, which is itself a bug"
+    notes = "; ".join(plan.notes[:2])
+    return f"{detail}{' — ' + notes if notes else ''}"
 
 
 def _edit_target(config: PharosConfig, usable: int, overhead: int) -> int:

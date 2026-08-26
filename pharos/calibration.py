@@ -64,6 +64,16 @@ class Observation:
     # True when the request carried tools or a system prompt: the shape of a coding agent, as
     # opposed to a bare curl at the endpoint. Still counts only — a boolean, never text.
     agent_shaped: bool = False
+    # True when it carried a TOOL CATALOGUE specifically, which is the stronger signal of the
+    # two ``agent_shaped`` folds together. A `curl` with a system prompt is agent-shaped and
+    # costs about nineteen tokens; measured live, two such pokes were enough to hold the
+    # learned overhead at 19 across 116 real requests, understating a check's floor by more
+    # than a thousand tokens. A tool catalogue is the thing a chat client does not send.
+    #
+    # None means "written before this was tracked", tri-state for the same reason
+    # ``user_exact`` is: a record that never knew is not one that checked and found no tools,
+    # and preferring the known-tooled pool must not silently discard an older store.
+    has_tools: bool | None = None
     # Whether ``user_tokens`` was counted with the vocabulary the request actually named.
     #
     # ``input_exact`` is about the MINUEND: it is True when input_tokens came from the
@@ -118,6 +128,7 @@ def _parse_record(item: object) -> Observation | None:
             # Absent in records written before this field existed: they read as not
             # agent-shaped, which only ever makes them a fallback, never a wrong answer.
             agent_shaped=bool(item.get("agent_shaped", False)),
+            has_tools=_optional_bool(item.get("has_tools")),
             user_exact=_optional_bool(item.get("user_exact")),
         )
     except (KeyError, TypeError, ValueError):
@@ -205,8 +216,20 @@ def estimate_client_overhead(
     # records, that single poke would otherwise define the estimate for every later pre-flight,
     # collapsing 1,800 tokens of real agent overhead to nothing. Mixing clients is normal; the
     # estimate has to survive it.
+    # Three tiers, strongest first. A tool catalogue is what a coding agent sends and a chat
+    # client does not; a system prompt alone is sent by anything, `curl` included. Preferring
+    # the tooled pool is the fix for a measured failure, not a refinement: on a store of 116
+    # real agent requests, two `curl` pokes carrying a system prompt held the estimate at 19
+    # tokens, because a MINIMUM is only as good as the pool it minimises over and both pokes
+    # were first-turn records.
+    tooled = [o for o in pool if o.has_tools]
     agent = [o for o in pool if o.agent_shaped]
-    shaped, shape_note = (agent, "agent-shaped") if agent else (pool, "all")
+    if tooled:
+        shaped, shape_note = tooled, "tool-carrying"
+    elif agent:
+        shaped, shape_note = agent, "agent-shaped"
+    else:
+        shaped, shape_note = pool, "all"
     # Drop records whose user_tokens came from the wrong vocabulary: subtracting one of those
     # from an exact total yields an overhead that is confidently wrong, which is worse than a
     # smaller sample. Records predating the flag (None) are kept — see Observation.user_exact.

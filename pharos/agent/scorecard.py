@@ -110,6 +110,15 @@ class Scorecard:
     scoped_files: int
     written_files: int
     untouched: list[str] = field(default_factory=list)
+    # Of those, the ones a part actually OPENED and then wrote nothing to. Measured from the
+    # dispatcher's own record of the reads, never from what the model said about them.
+    #
+    # Coverage is written-over-scoped and stays that way -- it is the number that has to be
+    # hard. But a run over nineteen files where four of them are one-line __init__.py modules
+    # with nothing to convert reports 83% and reads like a failure, when three of those four
+    # "misses" were a part opening a file, finding nothing to do, and correctly leaving it.
+    # That is a different thing from never opening it, and the difference is measurable.
+    examined_untouched: list[str] = field(default_factory=list)
 
     # Parts that existed only because the plan's own parts left work undone. Coverage counts
     # what they wrote, because the file did get changed — but a run needing many of them is a
@@ -417,6 +426,10 @@ def score(
         scoped_files=len(scoped_set),
         written_files=len(written & scoped_set) if scoped_set else len(written),
         untouched=sorted(scoped_set - written),
+        examined_untouched=sorted(
+            (scoped_set - written)
+            & {normalise(path) for part in parts for path in part.files_read}
+        ),
         handoffs_expected=len(expects_handoff),
         handoffs_produced=len(produced),
         handoff_reserve=handoff_reserve,
@@ -476,6 +489,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
         "scoped_files": card.scoped_files,
         "written_files": card.written_files,
         "untouched": card.untouched,
+        "untouched_but_examined": card.examined_untouched,
         "handoffs": {
             "expected": card.handoffs_expected,
             "produced": card.handoffs_produced,

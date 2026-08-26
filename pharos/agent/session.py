@@ -251,6 +251,10 @@ class PartResult:
     # scorecard row that reads these two together.
     native_calls: int = 0
     recovered_calls: int = 0
+    # Files this part actually OPENED, as the dispatcher saw it -- not what the model says it
+    # looked at. A scoped file that was read and left alone is a different outcome from one
+    # nobody ever opened, and coverage alone cannot tell them apart.
+    files_read: list[str] = field(default_factory=list)
 
 
 class AgentSession:
@@ -484,6 +488,7 @@ class AgentSession:
                     room_refusals=self._room_refusals,
                     native_calls=self._native_calls,
                     recovered_calls=self._recovered_calls,
+                    files_read=list(self._toolbox.files_read),
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
@@ -574,6 +579,7 @@ class AgentSession:
                     room_refusals=self._room_refusals,
                     native_calls=self._native_calls,
                     recovered_calls=self._recovered_calls,
+                    files_read=list(self._toolbox.files_read),
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
@@ -618,6 +624,7 @@ class AgentSession:
             room_refusals=self._room_refusals,
             native_calls=self._native_calls,
             recovered_calls=self._recovered_calls,
+            files_read=list(self._toolbox.files_read),
             nudges=nudges,
             scoped=scoped,
             drift_samples=list(self._drift),

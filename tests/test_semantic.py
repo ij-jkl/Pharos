@@ -751,7 +751,7 @@ async def test_no_split_does_not_pay_for_a_grouping(
     async def _check(cfg: object, p: object, **kw: object):
         return report
 
-    async def _window(cfg: object, p: object, rep: object, say: object):
+    async def _window(cfg: object, p: object, rep: object, say: object, **kw: object):
         return report
 
     monkeypatch.setattr(runner, "run_check", _check)

@@ -27,6 +27,7 @@ from pharos.calibration import (
     load_observations,
 )
 from pharos.config import PharosConfig
+from pharos.paths import normalise_display
 from pharos.preflight.content import BinaryFile, read_countable
 from pharos.preflight.extract import (
     Extraction,
@@ -97,6 +98,7 @@ class CheckReport:
     reserve_warning: str | None
     directories: list[ExpandedDirectory] = field(default_factory=list)
     directory_warning: str | None = None  # set when the floor fits but the directories do not
+    excluded: list[str] = field(default_factory=list)  # dropped by --exclude, and named
     reads: ReadEstimate | None = None  # what an agent historically opened on its own
     # Why there is no ``reads``, when there is none. Set instead of it, never beside it.
     reads_note: str | None = None
@@ -133,6 +135,7 @@ async def run_check(
     skip_profile: bool = False,
     resolve: dict[str, str] | None = None,
     target: int | None = None,
+    exclude: list[str] | None = None,
 ) -> CheckReport:
     """Run the pre-flight for ``prompt``. ``profile`` injects a probe result (tests).
 
@@ -140,6 +143,14 @@ async def run_check(
 
     ``target`` judges the floor against that many tokens instead of the loaded window, so a
     verdict can be had with no backend running at all.
+
+    ``exclude`` drops named files from the count and from any part's scope. A long prompt
+    frequently names a file in order to FORBID it -- "do not touch `templates.py`", "leave the
+    tests alone" -- and extraction cannot tell that apart from naming it as work, because the
+    difference is in the meaning of the sentence and nothing here reads meaning. So it is the
+    same bargain `--resolve` strikes over an ambiguous reference: Pharos will not guess, and
+    the answer is one flag. Excluded files are LISTED in the report rather than silently
+    dropped, on the same principle as everything else it declines to count.
     """
     root_is_fallback = config.target_folder is None
     # Resolved so "not found under ." never appears — the absolute root is the useful message.
@@ -155,10 +166,15 @@ async def run_check(
     prompt_tokens = count(prompt)
     extraction = extract_references(prompt, root, resolve)
 
+    dropped = _exclusions(exclude)
     files: list[CountedFile] = []
     skipped_binary: list[str] = []
+    excluded: list[str] = []
     for ref in extraction.files:
         display = _display_path(ref.path, root)
+        if _is_excluded(display, dropped):
+            excluded.append(display)
+            continue
         try:
             countable = read_countable(ref.path)
         except BinaryFile:
@@ -179,7 +195,9 @@ async def run_check(
         )
 
     claimed = {f.path for f in files}
-    directories = [_expand(ref, root, count, claimed) for ref in extraction.directories]
+    directories = [
+        _expand(ref, root, count, claimed, dropped, excluded) for ref in extraction.directories
+    ]
 
     observations = load_observations(Path(config.observations_file))
     overhead = _overhead(config, observations, model)
@@ -208,10 +226,23 @@ async def run_check(
         reserve_warning=reserve_warning,
         directories=directories,
         directory_warning=directory_warning,
+        excluded=sorted(set(excluded)),
         reads=reads,
         reads_note=reads_note,
         expected_warning=expected_warning,
     )
+
+
+def _exclusions(exclude: list[str] | None) -> frozenset[str]:
+    return frozenset(normalise_display(raw) for raw in (exclude or []) if raw.strip())
+
+
+def _is_excluded(display: str, dropped: frozenset[str]) -> bool:
+    """Match a full relative path or a bare filename, because people type both."""
+    if not dropped:
+        return False
+    key = normalise_display(display)
+    return key in dropped or any(key.endswith(f"/{one}") for one in dropped)
 
 
 def _expand(
@@ -219,6 +250,8 @@ def _expand(
     root: Path,
     count: Callable[[str], int],
     claimed: set[Path | None],
+    dropped: frozenset[str] = frozenset(),
+    excluded: list[str] | None = None,
 ) -> ExpandedDirectory:
     """Count the text files under a named directory, skipping ones already counted by name."""
     contents = expand_directory(ref.path)
@@ -226,6 +259,14 @@ def _expand(
     for path in contents.files:
         if path in claimed:
             continue  # named explicitly as well: counted once, in the floor
+        display_here = _display_path(path, root)
+        if _is_excluded(display_here, dropped):
+            # An exclusion has to reach inside an expanded directory too, or "everything in
+            # src/ except the generated file" is a sentence Pharos cannot honour.
+            if excluded is not None:
+                excluded.append(display_here)
+            claimed.add(path)
+            continue
         try:
             countable = read_countable(path)
         except (OSError, BinaryFile):

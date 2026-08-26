@@ -102,6 +102,15 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
         + ("" if always_split else " (requires --split)"),
     )
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="drop a named file from the count and from every part's scope (repeatable). For "
+        "the file a long prompt names in order to FORBID it — Pharos cannot tell that apart "
+        "from naming it as work, and will not guess",
+    )
+    parser.add_argument(
         "--reserve-reads",
         action="store_true",
         help="hold back room in every part for what agents on this model historically opened "
@@ -153,7 +162,12 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
     skip_profile = args.target is not None
     report = asyncio.run(
         run_check(
-            config, prompt, skip_profile=skip_profile, resolve=resolve, target=args.target
+            config,
+            prompt,
+            skip_profile=skip_profile,
+            resolve=resolve,
+            target=args.target,
+            exclude=args.exclude,
         )
     )
 
@@ -171,6 +185,7 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
                     skip_profile=skip_profile,
                     resolve=resolve,
                     target=args.target,
+                    exclude=args.exclude,
                 )
             )
 
@@ -341,6 +356,7 @@ def report_to_dict(report: CheckReport) -> dict[str, object]:
             if report.overhead is None
             else {"tokens": report.overhead.tokens, "provenance": report.overhead.provenance}
         ),
+        "excluded": list(report.excluded),
         "floor": report.floor,
         "ceiling": report.ceiling,
         "reads": (
@@ -507,6 +523,11 @@ def _render(console: Console, report: CheckReport) -> None:
         console.print(
             "[dim]Client overhead unknown — run traffic through the Pharos proxy to calibrate "
             "it, or set client_overhead_tokens in pharos.toml. The floor omits it.[/]"
+        )
+    if report.excluded:
+        console.print(
+            f"[dim]Excluded by --exclude, counted nowhere and scoped to no part: "
+            f"{', '.join(report.excluded)}[/]"
         )
     if report.reads is None:
         # The REASON, not a stock sentence. It had been the stock sentence, and it was wrong

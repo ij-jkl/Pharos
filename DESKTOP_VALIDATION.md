@@ -2153,3 +2153,128 @@ One incidental confirmation, from an accident: a stray backup file in the worksp
 run refuse to start — *"the working tree has 1 uncommitted change(s). Commit or stash them
 first: a run's edits have to be separable from yours"*. The guard holds against a tree dirtied
 by anything, including the person running the validation.
+
+---
+
+## ☑ 25. A giant prompt, end to end (v1.0.2, live)
+
+**Run completed 2026-08-26.** The question §24 did not ask: somebody pastes a prompt far too
+big for their window, and the whole point of Pharos is that it still gets done.
+
+The target grew to **19 modules** across four subsystems — the shop core, plus `shipping/`
+(carriers, parcels, quotes), `tax/` (rates, calculator) and `notifications/` (templates,
+dispatch) — 12 passing tests and a clean `ruff` baseline. The prompt is a real one: a
+five-section refactor spec naming every file, six numbered rules, worked before/after
+examples, and a "definition of done". 4.9 KB of it.
+
+### It does not fit, and it says so exactly
+
+```
+FLOOR    ≥ 9,475 tokens
+Budget    7,168 usable  (loaded 8,192 − reserve 1,024)
+Verdict   EXCEEDS — the floor alone is 2,307 over the usable budget; anything
+          the agent reads on its own makes it worse
+```
+
+### The split
+
+`--semantic` grouped by subsystem, and the seams it found were real:
+
+```
+part 1  "Core Domain Errors and Money"                errors, money
+part 2  "Catalogue, Orders, Payments Logic"           catalogue, orders, payments, checkout
+part 3  "Shipping and Tax Calculations"               carriers, parcels, quotes, rates, calculator
+part 4  "Notifications and Legacy Invoice Rendering"  (1 of 2 — the group was too big)
+part 5  "Notifications and Legacy Invoice Rendering"  (2 of 2)
+```
+
+*"qwen3.5:9b chose 5 parts where position packing gave 3. 1 group was too big for one part and
+was split in order."* At the run's own halved target it fell back to position packing and said
+so, which is the fallback behaving as designed rather than a failure.
+
+### The run: 6 parts, 13 minutes
+
+| | |
+|---|---|
+| coverage | **83.3%** (15 of 18 scoped files written) |
+| plan coverage / rescued by repair | 72.2% / 2 |
+| tool calls | 74 native, 0 recovered |
+| peak of ceiling | 96.7% |
+| compaction | 1,955 tokens reclaimed, 0 parts abandoned |
+| template offset in force | 345 tokens over 5 runs, **0 exposed requests** |
+| drift | 75 paired requests, 0.899–0.999, worst shortfall 351 |
+| audit | **clean** — every part's claims matched the disk |
+| verdict | `complete: false`; parts 3, 4 and 5 named as breaking the build |
+
+### The quality, judged from outside Pharos
+
+Pharos says a task fit, ran and still builds. Whether the WORK was done is a separate question
+and was answered separately — by counting, by the project's own tools, and by diffing against
+the commit the run started from:
+
+```
+files with f-strings now : 13 of 19
+f-string interpolations  : 59
+%-format operators left  : 1 real one (shop/shipping/quotes.py)
+files that do not parse  : 3
+    shop/notifications/dispatch.py:62  expected 'except' or 'finally' block
+    shop/tax/calculator.py:17          f-string: valid expression required before ':'
+    shop/tax/rates.py:23               f-string: valid expression required before ':'
+pytest -q                : 12 passed
+```
+
+Fifty-nine conversions across thirteen files, and three files left unparseable — two of them
+on the exact trap the prompt had warned about in writing (`%.2f%%`, where the literal `%%`
+becomes a single `%`). **Pharos named all three, part by part, and failed the run.** That is
+the whole contract working on a real task: the tool proved the work fit and ran, measured that
+it broke the build, said who broke it, and made no claim about the rest.
+
+### What the run found, and what shipped because of it
+
+**A refusal with no reason.** The first attempt exited 2 with *"no plan could be built —
+unknown reason"*. `SplitPlan.reason` is set only when no plan can be built at all; a scope
+plan whose parts come out over budget explains itself through the parts, and the runner had no
+handler for that. Reproduced exactly: at a 2,900-token target the planner returns 18 parts
+with 9 over budget and `reason=None`. It now names them — *"9 of 18 part(s) came out over the
+2,900-token requested target — part 2, 3, 4, 6 and 5 more, the worst by 412 tokens"*.
+
+**A prompt names a file in order to FORBID it.** This one said *"Do not touch
+`shop/notifications/templates.py`"* and *"Do not touch the tests"* — and both were duly
+extracted, counted into the floor, and scoped to a part whose scope block then told the agent
+it MAY open them. The difference between naming a file as work and naming it as a prohibition
+is in the meaning of the sentence, and nothing here reads meaning. So `--exclude PATH` is a
+flag, on the same bargain `--resolve` strikes over an ambiguous reference. With it, the floor
+fell from 9,475 to 7,939 — exactly the 1,536 tokens those two files cost — and after the run:
+
+```
+shop/notifications/templates.py            untouched
+tests/test_shop.py                         untouched
+```
+
+**Two `curl` pokes were holding the learned overhead at 19 tokens.** `agent_shaped` is "tools
+OR a system prompt", and a probe carrying a system prompt satisfies it. Over 116 real agent
+requests the minimum stayed at 19, understating a check's floor by more than a thousand
+tokens. Records carrying a **tool catalogue** are now preferred over merely agent-shaped ones,
+tri-state so an existing store keeps working.
+
+**A prompt about string formatting reported `.2f` as a missing file.** It spells out
+`` `%.2f` becomes `:.2f` `` — and `.2f` is a dot-leading name, which the extractor treats as a
+dotfile. No dotfile convention starts a name with a digit, and the module's stated bias is
+against false positives.
+
+**Coverage punishes a run for correctly leaving a file alone.** Three of this run's three
+misses were one-line `__init__.py` modules a part had opened, found nothing to convert in, and
+left — indistinguishable, in an 83.3%, from three files nobody looked at. Coverage stays
+written-over-scoped, because that is the number that has to be hard; a new line beside it says
+how many of the misses were opened and left alone, measured from the dispatcher's own record
+of the reads rather than from anything the model claimed.
+
+### ☐ Still open
+
+**Continuity broke on a long run**: 5 hand-offs expected, 3 produced, `kept_the_thread` false,
+with the ledger carrying 13 files throughout. Not diagnosed. A six-part run is the longest
+chain anything here has been measured over, and the hand-off is the half of continuity the
+model writes.
+
+**One part was truncated by the backend** — its own `prompt_eval_count` fell mid-conversation.
+Exposed, as designed, and not explained.

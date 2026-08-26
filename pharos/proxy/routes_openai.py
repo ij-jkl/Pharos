@@ -83,6 +83,7 @@ def _extract_chat(payload: dict[str, Any]) -> InputSpec:
         user_text="\n".join(user_texts),
         message_count=message_count,
         agent_shaped=has_tools or has_system,
+        has_tools=has_tools,
     )
 
 
