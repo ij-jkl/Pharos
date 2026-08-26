@@ -1850,3 +1850,35 @@ async def test_the_detector_rearms_on_the_next_request_after_compacting(
     await session._chat(tools)          # 1200 — a genuine fall, and caught
     assert session.truncated_by_backend
     assert any("BACKEND TRUNCATED" in note for note in notes)
+
+
+async def test_every_exit_reports_the_work_the_part_had_already_done(
+    workspace: Workspace,
+) -> None:
+    """A part that dies at the backend still wrote what it wrote, and must still say so.
+
+    Three of the four ways a part can end used to write out the same twenty-odd fields by
+    hand, so the only thing that repetition could produce was disagreement between them --
+    and it did: `files_read` and `handoff_requested` were each added to some exits and not
+    others. This pins the exit that is easiest to forget, because nothing about it looks like
+    a successful part.
+    """
+    class DyingBackend(FakeBackend):
+        def handler(self, request: httpx.Request) -> httpx.Response:
+            self.requests.append(json.loads(request.content))
+            if len(self.requests) == 1:
+                return FakeBackend.handler(self, request)
+            return httpx.Response(500, content=b"backend fell over")
+
+    backend = DyingBackend([_writes("src/alpha.py", "alpha = 9\n")])
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
+
+    assert result.error is not None and "backend call failed" in result.error
+    # The fields that come off the session, all of which a hand-written exit could drop:
+    assert result.files_written == ["src/alpha.py"]
+    assert result.changes  # what the dispatcher recorded landing on disk
+    assert result.ceiling > 0
+    assert result.native_calls == 1
+    assert result.scoped == ["src/alpha.py"]
+    assert not result.handoff_requested  # it never got as far as one

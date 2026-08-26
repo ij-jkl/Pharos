@@ -475,29 +475,13 @@ class AgentSession:
             try:
                 message, reported = await self._chat(self._tools)
             except (httpx.HTTPError, ValueError) as exc:
-                return PartResult(
+                return self._result(
                     text="",
                     steps=steps,
-                    files_written=list(self._toolbox.files_written),
-                    peak_tokens=peak,
-                    reported_tokens=reported,
-                    stopped_early=False,
-                    scope_refusals=list(self._toolbox.scope_refusals),
-                    changes=self._toolbox.changes(),
-                    exposed_requests=self._exposed,
-                    ceiling=self._ceiling,
-                    compacted_tokens=self._compacted_tokens,
-                    compactions=self._compactions,
-                    reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
-                    compacted=list(self._compacted),
-                    room_refusals=self._room_refusals,
-                    native_calls=self._native_calls,
-                    recovered_calls=self._recovered_calls,
-                    files_read=list(self._toolbox.files_read),
+                    peak=peak,
+                    reported=reported,
                     nudges=nudges,
                     scoped=scoped,
-                    drift_samples=list(self._drift),
-                    truncated=self.truncated_by_backend,
                     error=f"backend call failed: {_describe(exc)}",
                 )
 
@@ -567,30 +551,13 @@ class AgentSession:
                 # No tool calls means the model considers the part done. Its parting message
                 # is only a hand-off if it happens to read like one -- see _ensure_handoff.
                 text, reported, asked = await self._ensure_handoff(message, reported)
-                return PartResult(
+                return self._result(
                     text=text,
                     steps=steps,
-                    files_written=list(self._toolbox.files_written),
-                    peak_tokens=peak,
-                    reported_tokens=reported,
-                    stopped_early=False,
-                    scope_refusals=list(self._toolbox.scope_refusals),
-                    changes=self._toolbox.changes(),
-                    exposed_requests=self._exposed,
-                    ceiling=self._ceiling,
-                    compacted_tokens=self._compacted_tokens,
-                    compactions=self._compactions,
-                    reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
-                    compacted=list(self._compacted),
-                    room_refusals=self._room_refusals,
-                    native_calls=self._native_calls,
-                    recovered_calls=self._recovered_calls,
-                    files_read=list(self._toolbox.files_read),
+                    peak=peak,
+                    reported=reported,
                     nudges=nudges,
                     scoped=scoped,
-                    drift_samples=list(self._drift),
-                    truncated=self.truncated_by_backend,
-                    handoff_tokens=self._count(text),
                     handoff_requested=asked,
                 )
 
@@ -613,6 +580,45 @@ class AgentSession:
             self._on_event(f"stopped after {_MAX_STEPS} tool rounds without converging")
 
         text, reported = await self._request_handoff(reported)
+        return self._result(
+            text=text,
+            steps=steps,
+            peak=peak,
+            reported=reported,
+            nudges=nudges,
+            scoped=scoped,
+            stopped_early=stopped_early,
+            handoff_requested=True,
+        )
+
+    def _result(
+        self,
+        *,
+        text: str,
+        steps: int,
+        peak: int,
+        reported: int | None,
+        nudges: int,
+        scoped: list[str],
+        stopped_early: bool = False,
+        error: str | None = None,
+        handoff_requested: bool = False,
+    ) -> PartResult:
+        """One place where a finished part is described, whichever way it finished.
+
+        A part can end four ways and three of them wrote out the same twenty-odd fields by
+        hand. Every field read off ``self`` is the same in all three, so the only thing that
+        repetition could ever produce is disagreement between them -- and it did, twice in one
+        afternoon: ``files_read`` and ``handoff_requested`` were each added to some of the
+        exits and not others, and a part that ended down the forgotten path reported a default
+        instead of what happened. What varies genuinely is the handful of arguments above.
+
+        The fourth exit -- a part whose own body will not fit under the ceiling -- stays
+        written out where it happens and deliberately does not come through here. Nothing has
+        run at that point: there is no conversation, no drift sample and no request, so it
+        reports ``ceiling=0`` and the scorecard leaves it out of ``peak_fraction`` rather than
+        recording a part that exceeded a ceiling it never sent anything against.
+        """
         return PartResult(
             text=text,
             steps=steps,
@@ -621,6 +627,7 @@ class AgentSession:
             reported_tokens=reported,
             stopped_early=stopped_early,
             scope_refusals=list(self._toolbox.scope_refusals),
+            error=error,
             changes=self._toolbox.changes(),
             exposed_requests=self._exposed,
             ceiling=self._ceiling,
@@ -637,7 +644,7 @@ class AgentSession:
             drift_samples=list(self._drift),
             truncated=self.truncated_by_backend,
             handoff_tokens=self._count(text),
-            handoff_requested=True,
+            handoff_requested=handoff_requested,
         )
 
     def _execute(self, call: dict[str, Any], *, as_user: bool = False) -> bool:
