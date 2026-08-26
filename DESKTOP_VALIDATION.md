@@ -1626,6 +1626,36 @@ denominator since v0.4. Nobody noticed because a failed part is rare and its rep
 the failure; making a short run an ordinary, deliberate outcome is what put the number in front
 of someone.
 
+### On a run that carries on, it is the difference between one diff and three
+
+Run 7, no `--stop-on-break`, and `--no-ledger` to check that flag does what it says:
+
+```
+BROKEN        every file was changed, but syntax, ruff check . now fails
+coverage      ████████████████████████  100%  6 of 6 files
+continuity    ✓ 2/2 hand-offs · largest 117 of 500 reserved
+damage        part 1 broke src/svc/clock_ticks.py
+                unexpected indent (<unknown>, line 1)
+              part 1 broke src/svc/db_pool.py
+                unexpected indent (<unknown>, line 1)
+```
+
+Part 1 broke two files; parts 2 and 3 carried on and did their own work correctly, so the run
+reached full coverage and shipped a broken build anyway. The verification block says the
+project is broken. The damage block says part 1 did it, three parts ago — which is the whole
+claim of this tier, on a run where the checks alone would have sent you through three diffs.
+
+`--no-ledger` was verified on the same run: zero record blocks in the log, and part 2's body
+was the hand-off alone, exactly its v0.5 shape. A flag accepted and ignored is the failure
+`pharos check --target` shipped with, and it is worth one grep to know it is not this one.
+
+| run | flag | coverage | damage attributed | verdict |
+|---|---|---|---|---|
+| 4 | `--stop-on-break` | 100% *(the bug)* | part 1, 2 files | STOPPED |
+| 5 | `--stop-on-break` | 67% (4 of 6) | part 2, 2 files | STOPPED |
+| 6 | none | 100% | none — nothing stopped parsing | BROKEN (ruff) |
+| 7 | `--no-ledger` | 100% | part 1, 2 files | BROKEN |
+
 ### Known limit: it catches what does not parse, and nothing else
 
 Run 6, no flag, ran to the end:
