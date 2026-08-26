@@ -103,6 +103,7 @@ Four things you can type there:
 | `s <prompt>` | cut one that does not fit into parts that do |
 | `s! <prompt>` | the same, with the parts grouped by meaning (`--semantic`) |
 | `r <prompt>` | **carry it out** — this writes files |
+| `r! <prompt>` | the same, stopping at the first part that breaks a file (`--stop-on-break`) |
 | `d` | the live dashboard |
 
 `q` quits. `r` is the only one that changes anything on disk, and it will not start without a

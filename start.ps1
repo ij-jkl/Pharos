@@ -439,6 +439,7 @@ Write-Host '  e.g.  Refactor everything in `pharos/proxy/` following `README.md`
 Write-Host ''
 Write-Host '    s <prompt>   cut it into parts that fit        d   live dashboard' -ForegroundColor DarkGray
 Write-Host '    s! <prompt>  the same, grouped by meaning         q   quit' -ForegroundColor DarkGray
+Write-Host '    r <prompt>   carry it out (WRITES files)   r! same, stop at the first break' -ForegroundColor DarkGray
 Write-Host '    r <prompt>   carry it out (writes files)        q   quit' -ForegroundColor DarkGray
 
 if ([Console]::IsInputRedirected) {
@@ -489,6 +490,13 @@ while ($true) {
     # The only command here that changes anything on disk, so it says so before it starts.
     # Not routed through Invoke-Check: a run owns the terminal for minutes and streams its own
     # progress, and capturing that would hide the very output that proves it is not stuck.
+    # Before plain 'r ', for the same reason 's!' is before 's '.
+    if ($line -match '^r!\s+(.+)$') {
+        Write-Info 'carrying out the task - WRITES files, and stops at the first part that breaks one'
+        uv run pharos run $Matches[1] --stop-on-break
+        continue
+    }
+
     if ($line -match '^r\s+(.+)$') {
         Write-Info 'carrying out the task - this WRITES files; git branch or snapshot is your undo'
         uv run pharos run $Matches[1]

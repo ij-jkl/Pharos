@@ -318,6 +318,7 @@ printf '\n  Type a prompt to pre-flight it. Name files and folders in backticks,
 printf '  %se.g.  Refactor everything in `pharos/proxy/` following `README.md`%s\n\n' "$C_GREY" "$C_OFF"
 printf '    %ss <prompt>   cut it into parts that fit        d   live dashboard%s\n' "$C_GREY" "$C_OFF"
 printf '    %ss! <prompt>  the same, grouped by meaning         q   quit%s\n' "$C_GREY" "$C_OFF"
+printf '    %sr <prompt>   carry it out (WRITES files)   r! same, stop at the first break%s\n' "$C_GREY" "$C_OFF"
 
 if [ ! -t 0 ]; then
     printf '\n'
@@ -345,6 +346,11 @@ while true; do
         # The only command here that writes to disk, so it says so first. Not routed through
         # run_pharos: a run owns the terminal for minutes and streams its own progress, and
         # capturing that would hide the output that proves it is not stuck.
+        # Before plain `r `, for the same reason `s!` is before `s `.
+        r!\ *)
+            info "carrying out the task — WRITES files, and stops at the first part that breaks one"
+            uv run pharos run "${line#r! }" --stop-on-break || true
+            continue ;;
         r\ *)
             info "carrying out the task — this WRITES files; git branch or snapshot is your undo"
             uv run pharos run "${line#r }" || true
