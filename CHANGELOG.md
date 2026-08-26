@@ -6,6 +6,43 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.0.3 — "Both halves of a hand-off"
+
+The two things §25 left open, diagnosed. Neither was a property of the model, which is what
+both had been recorded as.
+
+- **The hand-off was only ever asked for on the exit that went badly.** A part ends two ways:
+  it stops calling tools, or the step limit cuts it off. Only the second was sent the
+  instruction that says *NAME each file you changed*; the ordinary exit was handed whatever
+  the model happened to say alongside its last tool call. The six-part run in §25 abandoned no
+  part, so every one of them took the unasked path — **5 hand-offs expected, 3 produced, 2 of
+  those 3 thin**, with two parts answering their own last tool result with nothing at all.
+  A parting message that names none of the part's own work is now asked for one properly,
+  once, with no tools offered.
+
+  It does not make continuity green by construction, and it is not meant to. Being asked is
+  not answering: `names_its_work` still judges the reply, a part that answers with prose about
+  nothing is still thin, and the count of hand-offs that **had to be asked for** is reported
+  beside the others rather than folded into any of them. A part that volunteered a real
+  hand-off keeps its own words and costs no extra turn. A part that wrote nothing and said
+  `NO CHANGES NEEDED` is left alone — the request forbids that phrase, and asking would only
+  talk it out of a true answer.
+
+- **Compaction was reported as the backend dropping context.** Both features shipped in v1.0
+  and met for the first time on a real run. The truncation detector rests on *"a conversation
+  only grows, so the backend's count for it can only grow"*, and `--compact` is Pharos
+  deliberately making the conversation smaller. In §25 one line reclaiming 1,955 tokens
+  produced **two BACKEND TRUNCATED warnings and a `truncated_parts: 1`** — blaming the user's
+  backend for context Pharos had just dropped itself. This is the one warning that must never
+  cry wolf, so it now stops crying at its own footsteps: compacting drops the high-water mark,
+  which rearms on the next request. Dropped rather than adjusted by what was reclaimed,
+  because that figure is in our vocabulary and the mark is in the backend's, and subtracting
+  one from the other only cries wolf more quietly.
+
+- **A test asserted that a binary was on your PATH.** `detect_commands` is configuration AND
+  installation, and the test for it failed on this machine purely for being invoked from a
+  shell where the virtualenv was not activated. It skips when the tool is not installed.
+
 ## v1.0.2 — "A prompt that does not fit"
 
 A giant prompt, run end to end against a nineteen-module project on an RTX 3060, found

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -149,7 +150,14 @@ def test_tokenise_keeps_windows_path_separators() -> None:
 # --- detection invents nothing -------------------------------------------------------------------
 
 
+@pytest.mark.skipif(shutil.which("ruff") is None, reason="ruff is not on PATH here")
 def test_detects_a_tool_the_project_configures(tmp_path: Path) -> None:
+    """Detection is configuration AND installation, so this test needs the tool.
+
+    Without the guard it asserts that a binary is on the PATH of whoever runs the suite,
+    which is not a claim about Pharos: it failed on this machine purely for being invoked
+    from a shell where the virtualenv had not been activated.
+    """
     (tmp_path / "pyproject.toml").write_text("[tool.ruff]\nline-length = 100\n", encoding="utf-8")
     assert "ruff check ." in detect_commands(tmp_path)
 

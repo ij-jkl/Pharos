@@ -40,7 +40,7 @@ from typing import Any
 
 import httpx
 
-from pharos.agent.ledger import FileChange
+from pharos.agent.ledger import FileChange, names_its_work
 from pharos.agent.tools import ToolBox, catalogue_text, normalise
 
 _logger = logging.getLogger("pharos.agent")
@@ -221,6 +221,11 @@ class PartResult:
     # different requests and inflates the ratio — measured 2.56x that way against a true 1.3x.
     drift_samples: list[tuple[int, int]] = field(default_factory=list)
     nudges: int = 0  # how many times it stopped short and had to be asked again
+    # Whether Pharos had to ASK for the hand-off rather than being handed one. Reported, never
+    # netted off: a hand-off that had to be requested is still a hand-off the model wrote, and
+    # a run where every one of them had to be asked for is a different run from one where none
+    # did. See ``_ensure_handoff``.
+    handoff_requested: bool = False
 
     @property
     def nudged(self) -> bool:
@@ -559,10 +564,11 @@ class AgentSession:
                     self._messages.append({"role": "user", "content": _NO_WRITE_NUDGE})
                     continue
             if not calls:
-                # No tool calls means the model considers the part done; its text is the
-                # hand-off the part body asked for.
+                # No tool calls means the model considers the part done. Its parting message
+                # is only a hand-off if it happens to read like one -- see _ensure_handoff.
+                text, reported, asked = await self._ensure_handoff(message, reported)
                 return PartResult(
-                    text=str(message.get("content") or "").strip(),
+                    text=text,
                     steps=steps,
                     files_written=list(self._toolbox.files_written),
                     peak_tokens=peak,
@@ -584,7 +590,8 @@ class AgentSession:
                     scoped=scoped,
                     drift_samples=list(self._drift),
                     truncated=self.truncated_by_backend,
-                    handoff_tokens=self._count(str(message.get("content") or "")),
+                    handoff_tokens=self._count(text),
+                    handoff_requested=asked,
                 )
 
             steps += 1
@@ -630,6 +637,7 @@ class AgentSession:
             drift_samples=list(self._drift),
             truncated=self.truncated_by_backend,
             handoff_tokens=self._count(text),
+            handoff_requested=True,
         )
 
     def _execute(self, call: dict[str, Any], *, as_user: bool = False) -> bool:
@@ -778,7 +786,61 @@ class AgentSession:
         if reclaimed:
             self._compactions += 1
             self._compacted_tokens += reclaimed
+            # The truncation detector rests on "a conversation only grows, so the backend's
+            # count for it can only grow". Compaction is Pharos deliberately making the
+            # conversation smaller, which breaks that premise -- and both features shipped in
+            # the same version, so they met for the first time on a real run. Measured in
+            # DESKTOP_VALIDATION §25: one line reclaimed 1,955 tokens, and the next two
+            # requests were reported as BACKEND TRUNCATED, blaming the user's backend for
+            # dropping context Pharos had just dropped itself.
+            #
+            # The high-water mark is dropped rather than adjusted by ``reclaimed``. That
+            # figure is in OUR vocabulary and the mark is in the backend's, so subtracting one
+            # from the other would leave a mark that is wrong by the drift between them -- and
+            # wrong in the direction that cries wolf again, only more quietly. Zero rearms on
+            # the very next tooled request, which costs exactly one request of blindness, at
+            # the one moment the conversation is at its smallest and truncation is least
+            # possible.
+            self._largest_tooled = 0
         return reclaimed
+
+    async def _ensure_handoff(
+        self, message: dict[str, Any], reported: int | None
+    ) -> tuple[str, int | None, bool]:
+        """The parting message, or an explicit request when it is not a hand-off.
+
+        A part can end two ways, and until this existed only one of them was ever ASKED for a
+        hand-off. A part cut short by the step limit gets ``_HANDOFF_REQUEST`` -- the
+        instruction that says NAME each file you changed. A part that simply stops calling
+        tools, which is the ordinary way a part ends, got nothing: whatever it happened to say
+        in the same breath as its last tool call was taken as the hand-off. So the careful
+        instruction was reserved for the exit that went badly, and the common exit was left to
+        luck.
+
+        Measured on the six-part run in DESKTOP_VALIDATION §25, where no part was abandoned
+        and every one of them therefore took the unasked path: 5 hand-offs expected, 3
+        produced, 2 of those 3 thin. Two parts replied to their own last tool result with
+        nothing at all, and an empty string is not a hand-off however generously it is read.
+
+        The test is the same one the scorecard applies -- does the text name a file this part
+        changed -- so a part that volunteered a real hand-off keeps its own words and costs
+        nothing extra. Anything else is asked once, with the proper instruction.
+
+        This does not make continuity green by construction. Being asked is not the same as
+        answering: the model still has to name its files, ``names_its_work`` still judges the
+        reply it gives, and a part that answers the request with prose about nothing still
+        counts as thin. What it removes is an instrument that measured two different protocols
+        and reported the difference as a property of the model.
+
+        A part that wrote nothing and said so is left alone. It has no work to name, the
+        request explicitly forbids the phrase it correctly used, and asking would only talk it
+        out of a true answer.
+        """
+        text = str(message.get("content") or "").strip()
+        if text and names_its_work(text, self._toolbox.files_written):
+            return text, reported, False
+        asked, reported = await self._request_handoff(reported)
+        return (asked or text), reported, True
 
     async def _request_handoff(self, reported: int | None) -> tuple[str, int | None]:
         """Ask for the closing summary, with no tools offered so it cannot start working again."""

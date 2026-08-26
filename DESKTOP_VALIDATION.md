@@ -2269,7 +2269,7 @@ written-over-scoped, because that is the number that has to be hard; a new line 
 how many of the misses were opened and left alone, measured from the dispatcher's own record
 of the reads rather than from anything the model claimed.
 
-### ☐ Still open
+### ☑ Both closed in §26
 
 **Continuity broke on a long run**: 5 hand-offs expected, 3 produced, `kept_the_thread` false,
 with the ledger carrying 13 files throughout. Not diagnosed. A six-part run is the longest
@@ -2278,3 +2278,109 @@ model writes.
 
 **One part was truncated by the backend** — its own `prompt_eval_count` fell mid-conversation.
 Exposed, as designed, and not explained.
+
+
+---
+
+## ☑ 26. The two things §25 left open (v1.0.3, live)
+
+**Run completed 2026-08-26.** The same giant prompt, the same nineteen-module project, the same
+model. §25 ended with two findings recorded and undiagnosed. Both turned out to be Pharos, not
+the model and not the backend, which is why neither could be explained by looking harder at the
+run they were found in.
+
+### The hand-off was only ever asked for on the exit that went badly
+
+A part ends two ways. It stops calling tools, or the step limit cuts it off. Only the second was
+ever sent `_HANDOFF_REQUEST` — the instruction that says *NAME each file you changed and say
+what you did to it*. The ordinary exit, which is how almost every part ends, was handed whatever
+the model happened to say alongside its last tool call, and after a nudge that is a reply to the
+nudge.
+
+So the careful instruction was reserved for the exit that went wrong, and the common exit was
+left to luck. §25 abandoned no part, so all six took the unasked path. Two of them answered their
+own last tool result with nothing at all, and an empty string was taken as a hand-off.
+
+A parting message that names none of the part's own work is now asked for one properly, once,
+with no tools offered. Measured on the rerun, against §25 on the same prompt:
+
+| | §25 | §26 |
+|---|---|---|
+| hand-offs expected | 5 | 5 |
+| hand-offs produced | 3 | **5** |
+| of those, had to be asked for | — | 3 |
+| thin | 2 | **2** |
+| `kept_the_thread` | false | false |
+
+The last two rows are the point. Asking did not make continuity green: three parts were asked,
+one of them answered with a hand-off naming its files, and **two still answered with prose
+naming nothing** and are still counted thin. `kept_the_thread` is still false, and now it is
+false for a fact about the model rather than about which exit path the model happened to take.
+What the fix removed was an instrument that ran two different protocols and reported the
+difference between them as a property of the thing it was measuring.
+
+A part that volunteered a real hand-off keeps its own words and costs no extra turn — two did.
+A part that wrote nothing and said `NO CHANGES NEEDED` is left alone: the request forbids that
+phrase, and asking would only talk it out of a true answer.
+
+### Compaction was reported as the backend dropping context
+
+The truncation detector rests on *"a conversation only grows, so the backend's count for it can
+only grow"*. `--compact` is Pharos deliberately making the conversation smaller. Both shipped in
+v1.0, and they met for the first time on a real run.
+
+The rerun reproduced it before the fix landed, in part 1, one line apart:
+
+```
+! part 1 ceiling reached — compacted 983 tokens of stale tool results, back to 13,586 of 14,604
+! part 1 BACKEND TRUNCATED: it counted 13,906 tokens for a conversation it counted 14,357 for
+  earlier — the loaded window is smaller than the one this run measured
+```
+
+Pharos removed 983 tokens and then warned the user that their backend was dropping context.
+This is the one warning in the project that must never cry wolf.
+
+Every one of the run's six warnings was replayed through the fixed detector:
+
+```
+warnings in the run: 6   silenced by the fix: 6   genuine: 0
+```
+
+Six for six, and none of them was hiding a real fall: after each compaction the backend's counts
+ascend monotonically (13,989 → 14,105 → 14,149 → 14,269), which is a conversation growing
+normally from a smaller base. `truncated_parts` goes 2 → 0.
+
+The mark is dropped rather than adjusted by what was reclaimed. That figure is in our vocabulary
+and the mark is in the backend's, so subtracting one from the other leaves a mark wrong by the
+drift between them — and wrong in the direction that cries wolf again, only more quietly. Zero
+rearms on the next tooled request, which costs exactly one request of blindness, at the moment
+the conversation is smallest and truncation least possible.
+
+### The rest of the run
+
+Same prompt, same model, a different roll of the dice — worse in one place and better in another,
+which is what a real model does:
+
+| | §25 | §26 |
+|---|---|---|
+| coverage | 83.3% | 77.8% (15/18 → 14/18) |
+| files that do not parse | 3 | **0** |
+| `%`-operators left | 1 | 27 (26 in one file part 3 did not finish) |
+| native tool calls | 74 | 95 |
+| peak of ceiling | 96.7% | 99.8% |
+| compaction | 1,955 reclaimed, 0 abandoned | 5,073 reclaimed, 0 abandoned |
+| audit | clean | clean |
+| parts blamed for the build | 3 | 1 |
+
+`complete: false` both times, and correctly: this run left `ruff` with an F811 and `pytest` unable
+to collect, both attributed to **part 2** by name. All four coverage misses were files a part had
+opened and left alone — `untouched_but_examined` reported 4 of 4, which is exactly the case that
+feature was added for.
+
+And for the second time, on a separate run, the two files the prompt named in order to forbid
+them:
+
+```
+shop/notifications/templates.py            untouched
+tests/test_shop.py                         untouched
+```

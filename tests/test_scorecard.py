@@ -31,6 +31,7 @@ def _part(
     native_calls: int = 0,
     recovered_calls: int = 0,
     files_read: list[str] | None = None,
+    handoff_requested: bool = False,
 ) -> PartResult:
     return PartResult(
         # None means "a normal hand-off": one that names what the part changed, which is what
@@ -57,6 +58,7 @@ def _part(
         native_calls=native_calls,
         recovered_calls=recovered_calls,
         files_read=files_read or [],
+        handoff_requested=handoff_requested,
     )
 
 
@@ -516,3 +518,34 @@ def test_a_file_opened_and_left_alone_is_not_the_same_miss_as_one_never_opened()
 def test_examined_is_empty_when_nothing_was_opened() -> None:
     card = score([_part(scoped=["a.py"], wrote=[])], handoff_reserve=0)
     assert card.untouched == ["a.py"] and card.examined_untouched == []
+
+
+# --- a hand-off that had to be asked for is still counted, and still not excused -----------------
+
+
+def test_asked_for_handoffs_are_counted_apart_from_the_ones_volunteered() -> None:
+    """A run where every part had to be prompted held the thread only because it was prompted
+    at every step, and that is a different run from one where it did not need to be. The count
+    is reported beside the others and folded into none of them."""
+    parts = [
+        _part(scoped=["a.py"], wrote=["a.py"], handoff_requested=True),
+        _part(scoped=["b.py"], wrote=["b.py"]),
+        _part(scoped=["c.py"], wrote=["c.py"]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.handoffs_expected == 2
+    assert card.handoffs_requested == 1
+    # Asking changed nothing about whether the thread was kept: both replies named their work.
+    assert card.handoffs_produced == 2
+    assert card.kept_the_thread
+
+
+def test_the_last_part_is_not_counted_as_having_been_asked() -> None:
+    """It hands off to nobody, so it is not expected to produce one and cannot be short of it."""
+    parts = [
+        _part(scoped=["a.py"], wrote=["a.py"]),
+        _part(scoped=["b.py"], wrote=["b.py"], handoff_requested=True),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.handoffs_expected == 1
+    assert card.handoffs_requested == 0

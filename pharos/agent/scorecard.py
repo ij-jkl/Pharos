@@ -136,6 +136,10 @@ class Scorecard:
     handoff_reserve: int = 0
     largest_handoff: int = 0
     handoff_overruns: int = 0
+    # Of the hand-offs expected, how many Pharos had to ASK for because the part's parting
+    # message was empty or named none of its own work. Reported beside the others and folded
+    # into none of them: it says how much of the thread the model held on its own.
+    handoffs_requested: int = 0
 
     thin_handoffs: int = 0  # parts that wrote files and then reported almost nothing
 
@@ -438,6 +442,7 @@ def score(
             1 for p in expects_handoff if handoff_reserve and p.handoff_tokens > handoff_reserve
         ),
         thin_handoffs=thin,
+        handoffs_requested=sum(1 for p in expects_handoff if p.handoff_requested),
         ledger_on=ledger_on,
         ledger_files=ledger_files,
         revisits=revisits,
@@ -496,6 +501,7 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             "reserve": card.handoff_reserve,
             "largest": card.largest_handoff,
             "overruns": card.handoff_overruns,
+            "requested": card.handoffs_requested,
         },
         "thin_handoffs": card.thin_handoffs,
         "ledger": {"on": card.ledger_on, "files_carried": card.ledger_files},

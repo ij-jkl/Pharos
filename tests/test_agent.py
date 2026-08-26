@@ -22,6 +22,7 @@ import pytest
 from rich.console import Console
 
 from pharos.agent.cli import _render_footer
+from pharos.agent.ledger import names_its_work
 from pharos.agent.runner import (
     RunOutcome,
     _edit_target,
@@ -1655,3 +1656,197 @@ async def test_a_call_written_as_text_counts_as_recovered_not_native(
     result = await _session(backend, ToolBox(workspace=workspace), budget=8000).run("Look.")
     assert result.native_calls == 0
     assert result.recovered_calls == 1
+
+
+# --- the hand-off is asked for on BOTH exits, not just the bad one --------------------------------
+#
+# A part ends two ways: it stops calling tools, or the step limit cuts it off. Only the second
+# was ever sent _HANDOFF_REQUEST -- the instruction that says NAME each file you changed. The
+# ordinary exit was handed whatever the model happened to say alongside its last tool call.
+# DESKTOP_VALIDATION §25 measured the cost: six parts, none abandoned, so every one of them took
+# the unasked path -- 5 hand-offs expected, 3 produced, 2 of those thin.
+
+
+def _writes(path: str, content: str) -> dict[str, Any]:
+    return {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"function": {"name": "write_file", "arguments": {"path": path, "content": content}}}
+        ],
+    }
+
+
+async def test_a_volunteered_handoff_is_kept_and_costs_nothing(workspace: Workspace) -> None:
+    """A part that named its own work is not asked again. Being asked has a price in tokens
+    and in turns, and a model that did the right thing should not pay it."""
+    backend = FakeBackend(
+        [
+            _writes("src/alpha.py", "alpha = 9\n"),
+            {"role": "assistant", "content": "Rewrote src/alpha.py to use f-strings.",
+             "tool_calls": []},
+        ]
+    )
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
+    assert not result.handoff_requested
+    assert result.text == "Rewrote src/alpha.py to use f-strings."
+    assert len(backend.requests) == 2  # no third turn was spent asking
+
+
+async def test_an_empty_parting_message_is_asked_for_a_handoff(workspace: Workspace) -> None:
+    """The exact shape that produced 3 hand-offs where 5 were expected: the model answers its
+    own last tool result with nothing, and an empty string was taken as the hand-off."""
+    backend = FakeBackend(
+        [
+            _writes("src/alpha.py", "alpha = 9\n"),
+            {"role": "assistant", "content": "", "tool_calls": []},
+            {"role": "assistant", "content": "Changed src/alpha.py: alpha is now 9.",
+             "tool_calls": []},
+        ]
+    )
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
+    assert result.handoff_requested
+    assert result.text == "Changed src/alpha.py: alpha is now 9."
+    assert result.handoff_tokens > 0
+    # Asked with the proper instruction, and with no tools, so it cannot start working again.
+    assert "NAME each file you changed" in json.dumps(backend.requests[-1])
+    assert "tools" not in backend.requests[-1]
+
+
+async def test_a_parting_message_naming_none_of_its_work_is_asked(workspace: Workspace) -> None:
+    """Non-empty is not the same as a hand-off. "Done." is what the scorecard calls thin, and
+    the fix for thin is to ask properly rather than to score it more kindly."""
+    backend = FakeBackend(
+        [
+            _writes("src/alpha.py", "alpha = 9\n"),
+            {"role": "assistant", "content": "Done.", "tool_calls": []},
+            {"role": "assistant", "content": "src/alpha.py now sets alpha to 9.",
+             "tool_calls": []},
+        ]
+    )
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
+    assert result.handoff_requested
+    assert result.text == "src/alpha.py now sets alpha to 9."
+
+
+async def test_a_part_that_declined_the_work_is_not_talked_out_of_it(workspace: Workspace) -> None:
+    """NO CHANGES NEEDED is the honest answer for a part with nothing to do, and the hand-off
+    request explicitly forbids that phrase. Asking here would replace a true answer with a
+    worse one, so a part that wrote nothing is left with its own words."""
+    backend = FakeBackend([{"role": "assistant", "content": "NO CHANGES NEEDED",
+                            "tool_calls": []}])
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Change nothing.")
+    assert not result.handoff_requested
+    assert result.text == "NO CHANGES NEEDED"
+    # It was nudged once, as an unwritten scoped file always is -- but never asked for a
+    # hand-off, which is the one thing that would have overwritten its answer.
+    assert "NAME each file you changed" not in json.dumps(backend.requests)
+
+
+async def test_asking_does_not_make_continuity_green_by_construction(workspace: Workspace) -> None:
+    """The point of the fix is a fair instrument, not a flattering one. A part asked properly
+    that still answers with prose naming nothing is still thin, and still counted as such."""
+    backend = FakeBackend(
+        [
+            _writes("src/alpha.py", "alpha = 9\n"),
+            {"role": "assistant", "content": "", "tool_calls": []},
+            {"role": "assistant", "content": "I have completed the work.", "tool_calls": []},
+        ]
+    )
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
+    assert result.handoff_requested
+    assert result.text == "I have completed the work."
+    assert not names_its_work(result.text, result.files_written)
+
+
+# --- compaction must not be reported as the backend dropping context ------------------------------
+
+
+async def test_compaction_does_not_cry_backend_truncation(workspace: Workspace) -> None:
+    """Both features shipped in v1.0 and met for the first time on a real run.
+
+    The truncation detector rests on "a conversation only grows". Compaction is Pharos
+    deliberately shrinking it, so the backend's next count is legitimately lower -- and was
+    reported as BACKEND TRUNCATED, blaming the user's backend for context Pharos had just
+    dropped itself. DESKTOP_VALIDATION §25 fired it twice off one compaction, and the run
+    carried `truncated_parts: 1` because of it.
+    """
+    backend = ShrinkingBackend([])  # 1000, then 2000, then 1400
+    notes: list[str] = []
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(backend.handler), base_url="http://backend"
+    )
+    session = AgentSession(
+        client=client, model="m", toolbox=_box(workspace, None), count=_count,
+        usable_budget=100_000, handoff_reserve=100, on_event=notes.append, compact=True,
+    )
+    tools = ToolBox(workspace=workspace).catalogue()
+
+    session._messages = [{"role": "user", "content": "one"}]
+    await session._chat(tools)          # 1000
+    session._messages.append({"role": "user", "content": "two"})
+    await session._chat(tools)          # 2000, the high-water mark
+
+    # Pharos shrinks the conversation itself, exactly as --compact does mid-part.
+    session._compactions += 1
+    session._compacted_tokens += 900
+    session._largest_tooled = 0
+
+    session._messages.append({"role": "user", "content": "three"})
+    await session._chat(tools)          # 1400 — lower, and legitimately so
+
+    assert not session.truncated_by_backend
+    assert not any("BACKEND TRUNCATED" in note for note in notes)
+
+
+async def test_a_real_compaction_clears_the_high_water_mark(crowded: Workspace) -> None:
+    """The wiring, not just the invariant: `_compact` itself must drop the mark.
+
+    The two tests around this one set `_largest_tooled` by hand to pin the behaviour. This one
+    runs a part that genuinely fills its window and checks that compacting cleared the mark it
+    invalidated, so the guard cannot be lost by editing `_compact`.
+    """
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    session._largest_tooled = 99_999  # a mark from before the conversation was shrunk
+    result = await session.run("Read all five files.")
+
+    assert result.compactions > 0
+    assert session._largest_tooled < 99_999
+    assert not session.truncated_by_backend
+
+
+async def test_the_detector_rearms_on_the_next_request_after_compacting(
+    workspace: Workspace,
+) -> None:
+    """Dropping the mark costs exactly one request of blindness, not the rest of the part. A
+    backend that really is dropping context has to still be caught after a compaction."""
+    backend = ShrinkingBackend([])
+    backend.counts = [2000, 1400, 1200]  # compact after the first, then a REAL fall
+    notes: list[str] = []
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(backend.handler), base_url="http://backend"
+    )
+    session = AgentSession(
+        client=client, model="m", toolbox=_box(workspace, None), count=_count,
+        usable_budget=100_000, handoff_reserve=100, on_event=notes.append, compact=True,
+    )
+    tools = ToolBox(workspace=workspace).catalogue()
+
+    session._messages = [{"role": "user", "content": "one"}]
+    await session._chat(tools)          # 2000
+    session._largest_tooled = 0         # compacted
+    session._messages.append({"role": "user", "content": "two"})
+    await session._chat(tools)          # 1400 — the new mark, not an alarm
+    assert not session.truncated_by_backend
+
+    session._messages.append({"role": "user", "content": "three"})
+    await session._chat(tools)          # 1200 — a genuine fall, and caught
+    assert session.truncated_by_backend
+    assert any("BACKEND TRUNCATED" in note for note in notes)

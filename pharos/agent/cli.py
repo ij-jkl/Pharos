@@ -757,6 +757,17 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
                 f"[yellow]{card.thin_handoffs} part(s) changed files and reported almost "
                 f"nothing[/]{rescued}",
             )
+        if card.handoffs_requested:
+            # Not a fault, and not folded into the count above it. A part whose parting
+            # message named none of its own work was asked for one properly, and answered; a
+            # run where that happened five times out of five held the thread only because it
+            # was prompted to at every step, which is a different run from one where it did
+            # not need to be.
+            body.add_row(
+                "",
+                f"[dim]{card.handoffs_requested} of {card.handoffs_expected} had to be asked "
+                f"for {chr(183)} the rest were volunteered[/]",
+            )
         if card.handoff_overruns:
             body.add_row("", f"[yellow]{card.handoff_overruns} overran the reserve[/]")
         if card.revisits:
