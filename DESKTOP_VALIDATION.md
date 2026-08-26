@@ -1787,3 +1787,89 @@ Unchanged from v0.4.2 and worth restating now that more of it runs more often. P
 checks your project already configures and reports their exit codes. A defect no configured
 check catches is a defect it does not see, and nothing here reads the diff. `git diff` is
 still the reviewer.
+
+## ☑ 23. What the chat template costs, and remembering it (v0.9, live)
+
+Every run in §20-§22 said the same thing, nine times running:
+
+```
+drift  0.82-0.93x over 22 requests · short by 288-297 tokens, past the 256-token margin
+```
+
+Pharos counts a conversation from the messages it holds. The backend counts it after applying a
+chat template that runs server-side and cannot be seen from here, so the projection is a floor
+by construction and `SAFETY_MARGIN` is a constant guessing how short it falls. On this model it
+guessed low, reproducibly, all day.
+
+A session already corrected most of this for itself: `prompt_eval_count` comes back with every
+response, so from the second request onwards the ceiling was scaled by a measured ratio. The
+`under_counted` docstring named what was left — *"the first request is the one the correction
+cannot cover"* — because a part starts with no responses to learn from.
+
+### Finding: the gap is additive, not multiplicative (the design was rebuilt)
+
+The first version of this remembered the RATIO and scaled the projection by it. That shipped
+nowhere, because the log said otherwise. Seventeen paired requests from one run, grouped by
+part, printed as `backend - ours`:
+
+```
+part 1  [275, 266, 278, 292]
+part 2  [275, 263, 283]
+part 3  [275, 266, 279, 277, 294, 289, 302, 297, 314, 301]
+
+n=17  min=263  max=314  conversation sizes 1,235 .. 3,604 tokens
+```
+
+**Flat.** The conversation triples and the gap does not move. It is the chat template's fixed
+scaffolding — the same handful of role markers and delimiters whatever is between them — and
+the *ratio* it implies falls from 1.22x on the smallest conversation to 1.09x on the largest
+purely because the denominator grew.
+
+A ratio fitted to that data is fitted to the smallest conversation in it. At 1.22x a
+3,604-token conversation reserves 793 tokens to cover 314; at a 60K conversation, which this
+card can hold, it would throw away more than 13,000 tokens of every part's ceiling. So the
+memory stores tokens. The multiplicative version was written, tested, measured against this
+log, and replaced before it went anywhere.
+
+Worth noticing separately: **the worst gap in every part is that part's first request** — the
+exact request nothing was correcting. Not a coincidence, and not a separate finding: with a
+flat gap, the ratio is always worst where the conversation is smallest, and a part's
+conversation is smallest at its start.
+
+### It closes, measured
+
+Two runs of the same task, the store deleted before the first:
+
+| run | remembered | previous runs | **exposed requests** | coverage |
+|---|---|---|---|---|
+| C | — | 0 | **3** | 100% |
+| D | 295 tokens | 1 | **0** | 100% |
+
+Three parts, three uncorrected first requests, down to zero. Run D's opening line:
+
+```
+template memory: qwen3.5:9b counted 295 tokens above our projection over 1 previous run(s)
+                 — every part's ceiling starts corrected
+```
+
+### The shortfall did NOT improve, and that is correct
+
+Run C's worst shortfall was 295 tokens; run D's was 275. Both still read *past the 256-token
+margin*, and nothing here was supposed to change that. `worst_shortfall` is computed from the
+RAW projection on purpose, so the drift line goes on measuring the estimator rather than
+measuring the correction applied to it. A number that improved because Pharos started
+correcting itself would stop being evidence about anything.
+
+What changed is `exposed_requests`, which is a different question: not *is the estimate short*
+— it is, always, by the template's scaffolding — but *was any request enforced against a
+ceiling with nothing behind it*. That is the number this tier drives to zero, and the two are
+reported side by side so neither can be mistaken for the other.
+
+### Known limit: it assumes the template's cost is fixed
+
+Which is what was measured, over a 3x range, on one model. A template whose scaffolding grew
+with conversation length would be under-corrected above the largest conversation yet observed.
+Three things stand under that: the in-session measurement still tracks the gap upward within a
+run, `SAFETY_MARGIN` is still subtracted from every ceiling beneath the remembered offset, and
+the drift line still reports the raw estimator, so a growing shortfall would be visible in the
+scorecard rather than absorbed silently.

@@ -157,6 +157,11 @@ class PharosConfig(BaseModel):
     # and a suite that takes longer than that is one you do not want between parts anyway. Set
     # it to 0 to keep the old behaviour, where only the parser ran per part.
     per_part_check_seconds: float = Field(default=3.0, ge=0.0)
+    # Where `pharos run` remembers what each model's chat template costs: the ratio between
+    # the backend's own token count and Pharos's projection. Counts only, one small record per
+    # model, and it makes runs slightly better rather than being needed for one to happen --
+    # delete it and the next run measures it again from scratch.
+    template_memory_file: str = Field(default="pharos_templates.json", min_length=1)
 
     @model_validator(mode="after")
     def _warn_below_alert(self) -> Self:

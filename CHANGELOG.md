@@ -6,6 +6,56 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v0.9 — "Remember what the template costs"
+
+Every run in `DESKTOP_VALIDATION.md` §20-§22 reported the same line, nine times: *short by
+288-297 tokens, past the 256-token margin*. Pharos counts a conversation from the messages it
+holds; the backend counts it after applying a chat template applied server-side and invisible
+from here, so the projection is a floor by construction and `SAFETY_MARGIN` is a constant
+guessing how short it falls. On this model it guessed low, reproducibly, all day.
+
+A session already fixed most of this for itself: `prompt_eval_count` comes back with every
+response, so from the second request onwards the ceiling is scaled by a measured ratio rather
+than a constant. The `under_counted` docstring named what was left: *"the first request is the
+one the correction cannot cover."* A part starts with no responses to learn from, so with three
+parts that is three requests a run enforced against a bare constant.
+
+- **The ratio is remembered between runs, per model.** Nothing new is measured and nothing new
+  is asked of the backend — it seeds the correction a session was already making for itself,
+  one request earlier. A model's first run learns it; every run after starts corrected.
+- **It is stored in TOKENS, not as a ratio, and that is a measurement.** The first design
+  here multiplied — remember `backend / ours` and scale the projection by it. Seventeen paired
+  requests over conversations from 1,235 to 3,604 tokens said otherwise: the gap was **263-314
+  tokens across the whole range**, flat, while the ratio it implied fell from 1.22x to 1.09x as
+  the conversation grew. It is fixed scaffolding, so a fixed number describes it. A 1.22x
+  factor on a 3,604-token conversation reserves 793 tokens to cover 314, and the waste grows
+  with the window — on a 60K conversation it would throw away more than 13,000 tokens of every
+  part. The multiplicative version was built, measured, and replaced before it shipped.
+- **A median of per-run maxima.** The maximum WITHIN a run, because a ceiling holds at the
+  worst case or it does not hold. The median ACROSS runs, because a maximum across runs
+  ratchets and never comes back down — this project has recorded a 2.57x it could not explain,
+  and storing it would have shrunk every future part for good on the strength of one request.
+  One number per run, so a long run cannot outvote a short one.
+- **Capped at 4,096 tokens, and it says when it hits the cap.** A remembered gap comes straight
+  off every part's ceiling; real chat-template scaffolding is a few hundred tokens, and past
+  that the projection is wrong in a way a constant should not be papering over.
+- **Never below zero.** A backend counting fewer tokens than we did is a sign we were being
+  cautious, not licence to fit more in.
+- **The assumption, stated:** the template's cost does not grow with the conversation. That is
+  what was measured over a 3x range on one model. A template whose scaffolding scaled with
+  length would be under-corrected above the largest conversation yet seen — the live in-session
+  measurement tracks it upward within a run, `SAFETY_MARGIN` sits underneath, and the drift line
+  reports the raw estimator either way.
+- **The new number to watch is `exposed_requests`** — requests sent with nothing correcting
+  their ceiling. It is a different question from `under_counted`, which measures the ESTIMATOR
+  and is expected to read short whatever happens; this asks whether any request was ever
+  actually enforced against a bare constant. Before this it was the first request of every part
+  on every run.
+- **The store is counts only, like the observation store**, and it makes runs slightly better
+  rather than being needed for one: delete it, corrupt it, or point at a read-only path and the
+  next run measures it from scratch and says nothing about it.
+- Config: `template_memory_file` (`pharos_templates.json`, gitignored).
+
 ## v0.8 — "Cheap checks, every part"
 
 v0.7 named the part that broke a file. It watched only the parser, and the limit it shipped

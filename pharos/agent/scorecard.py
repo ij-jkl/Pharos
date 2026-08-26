@@ -163,6 +163,14 @@ class Scorecard:
     # back for it.
     damage: list[Damage] = field(default_factory=list)
     stopped_on_break: str | None = None  # the part the run was halted at, if it was
+    # Requests sent with nothing correcting their ceiling: no measurement yet in that part,
+    # and nothing remembered from an earlier run. A different question from `under_counted`,
+    # which measures the ESTIMATOR and is expected to read short whatever happens -- this asks
+    # whether any request was actually enforced against a bare constant. Before the template
+    # memory it was the first request of every part, on every run.
+    exposed_requests: int = 0
+    template_offset: int | None = None  # tokens earlier runs measured, when they had
+    template_runs: int = 0
     # Parts where the backend's own count FELL mid-conversation: it stopped evaluating
     # everything it was sent. Not a drift statistic — proof that the window Pharos measured is
     # not the window in force, and that context was dropped without anybody being told.
@@ -275,6 +283,8 @@ def score(
     damage: list[Damage] | None = None,
     stopped_on_break: str | None = None,
     planned_files: list[str] | None = None,
+    template_offset: int | None = None,
+    template_runs: int = 0,
 ) -> Scorecard:
     """Reduce a finished run to the five questions above."""
     scoped: list[str] = []
@@ -374,6 +384,9 @@ def score(
         verification=verification,
         damage=list(damage or []),
         stopped_on_break=stopped_on_break,
+        exposed_requests=sum(p.exposed_requests for p in parts),
+        template_offset=template_offset,
+        template_runs=template_runs,
     )
 
 
@@ -412,6 +425,11 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             "requests": card.drift_samples,
         },
         "worst_shortfall_tokens": card.worst_shortfall,
+        "template": {
+            "offset_tokens": card.template_offset,
+            "runs": card.template_runs,
+            "exposed_requests": card.exposed_requests,
+        },
         "truncated_parts": card.truncated_parts,
         "under_counted": card.under_counted,
         "nudged_parts": card.nudged_parts,

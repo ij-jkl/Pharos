@@ -198,6 +198,9 @@ class PartResult:
     # record of the part, independent of anything the part says about itself, and what the
     # run carries to the next part -- see `pharos.agent.ledger`.
     changes: list[FileChange] = field(default_factory=list)
+    # Requests this part sent with no correction to its ceiling at all -- nothing measured
+    # yet in this part, and nothing remembered from an earlier run. See AgentSession.exposed.
+    exposed_requests: int = 0
 
 
 class AgentSession:
@@ -213,6 +216,7 @@ class AgentSession:
         usable_budget: int,
         handoff_reserve: int,
         num_ctx: int | None = None,
+        template_offset: int | None = None,
         on_event: Callable[[str], None] | None = None,
     ) -> None:
         self._client = client
@@ -244,6 +248,11 @@ class AgentSession:
         # The hand-off has to fit AFTER the conversation that produced it, so it comes out of
         # the ceiling up front rather than being hoped for at the end.
         self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN
+        # What previous runs measured this model's chat template to cost, if anything has. A
+        # part starts with no responses of its own, so without this its FIRST request is the
+        # one request of the part enforced against an uncorrected ceiling.
+        self._seed = max(template_offset or 0, 0)
+        self._exposed = 0
         self._messages: list[dict[str, Any]] = []
         self._drift: list[tuple[int, int]] = []
         self._largest_tooled = 0
@@ -282,30 +291,45 @@ class AgentSession:
                 total += self._count(json.dumps(calls, separators=(",", ":")))
         return total
 
-    def _template_factor(self) -> float:
-        """How much larger the backend's count has run than ours, in THIS conversation.
+    def _template_offset(self) -> int:
+        """How many tokens the backend's count has run above ours, for THIS conversation.
 
         The chat template is applied server-side and is invisible from here, so the projection
-        is a floor by construction and ``SAFETY_MARGIN`` is a guess at how short it falls. But
-        the exact answer arrives with every response: ``prompt_eval_count`` is ground truth for
-        this model and this template, and the pairs are already being recorded for the drift
-        line. Using them is what turns a constant calibrated against one template into a
-        measurement of the one actually loaded.
+        is a floor by construction and ``SAFETY_MARGIN`` is a constant guessing how short it
+        falls. The exact answer arrives with every response: ``prompt_eval_count`` is ground
+        truth for the model and template actually loaded, and the pairs are already recorded
+        for the drift line.
 
-        The worst ratio seen is the one that counts -- a ceiling holds at the worst case or it
-        does not hold. Never below 1.0: a backend counting fewer tokens than we did is not
-        licence to fit more in, only a sign we were being cautious.
+        TOKENS, not a ratio, and that is measured rather than assumed. Seventeen paired
+        requests over conversations from 1,235 to 3,604 tokens put the gap at 263-314 tokens
+        across the whole range -- flat, while the ratio it implied fell from 1.22x to 1.09x as
+        the conversation grew. Fixed scaffolding is what a fixed number describes; scaling it
+        would reserve three times what is needed on a large conversation and more on a larger.
+
+        The worst gap seen is the one that counts -- a ceiling holds at the worst case or it
+        does not hold. ``self._seed`` is what earlier runs measured, so the first request of a
+        part is covered too. Never below zero: a backend counting fewer tokens than we did is
+        not licence to fit more in, only a sign we were being cautious.
         """
-        ratios = [
-            reported / projected for projected, reported in self._drift if projected > 0
-        ]
-        return max([1.0, *ratios])
+        gaps = [reported - projected for projected, reported in self._drift if projected > 0]
+        return max([0, self._seed, *gaps])
+
+    @property
+    def exposed(self) -> int:
+        """Requests this part sent with no correction in force at all.
+
+        The number v0.9 exists to drive to zero. It is not the same question as the drift line
+        below, which measures the ESTIMATOR and is expected to read short: this asks whether
+        any request was actually enforced against a ceiling that had nothing but a constant
+        behind it. Before the template memory that was the first request of every part.
+        """
+        return self._exposed
 
     def _projected_for_ceiling(self) -> int:
-        """The projection the ceiling is enforced against: ours, corrected by what the backend
-        has actually been counting. Deliberately not what ``peak_tokens`` reports, which stays
-        the raw estimate so the drift line keeps measuring the estimator rather than itself."""
-        return int(self._projected() * self._template_factor())
+        """The projection the ceiling is enforced against: ours, plus what the backend has
+        actually been counting on top. Deliberately not what ``peak_tokens`` reports, which
+        stays the raw estimate so the drift line keeps measuring the estimator, not itself."""
+        return self._projected() + self._template_offset()
 
     async def run(self, part_body: str) -> PartResult:
         self._messages = [
@@ -362,6 +386,7 @@ class AgentSession:
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
                     changes=self._toolbox.changes(),
+                    exposed_requests=self._exposed,
                     ceiling=self._ceiling,
                     nudges=nudges,
                     scoped=scoped,
@@ -442,6 +467,7 @@ class AgentSession:
                     stopped_early=False,
                     scope_refusals=list(self._toolbox.scope_refusals),
                     changes=self._toolbox.changes(),
+                    exposed_requests=self._exposed,
                     ceiling=self._ceiling,
                     nudges=nudges,
                     scoped=scoped,
@@ -478,6 +504,7 @@ class AgentSession:
             stopped_early=stopped_early,
             scope_refusals=list(self._toolbox.scope_refusals),
             changes=self._toolbox.changes(),
+            exposed_requests=self._exposed,
             ceiling=self._ceiling,
             nudges=nudges,
             scoped=scoped,
@@ -551,6 +578,13 @@ class AgentSession:
         project exists to refuse.
         """
         has_tools = bool(tools)
+        # Counted before the send, because that is when the exposure happens. A factor of
+        # exactly 1.0 means nothing corrected this request's ceiling: no measurement from an
+        # earlier request in this part, and nothing remembered from an earlier run. Only
+        # SAFETY_MARGIN stood behind it, and nine live runs measured that constant ~290 tokens
+        # short on this model.
+        if self._template_offset() <= 0:
+            self._exposed += 1
         room = max(self._ceiling - self._projected(), _MIN_REPLY_ROOM)
         # Paired below with whatever prompt_eval_count comes back for THIS request.
         payload: dict[str, Any] = {

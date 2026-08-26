@@ -8,7 +8,7 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.8** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
+**Status: v0.9** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
 request or a response). Alongside it, three tools outside the request path: what a prompt will
 cost before you paste it (`pharos check`), how to cut it up when it will not fit
 (`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
@@ -494,8 +494,34 @@ task, those were exactly the two cases.
   directly and both measured *under* 1.0. It is left recorded as unexplained rather than given
   a story. Only the low side threatens anything: over-counting wastes room, under-counting
   means a ceiling was enforced against a number below the real prompt. So the scorecard
-  reports the worst shortfall in **tokens** against the safety margin that absorbs it —
-  measured at 60 tokens against a 256-token margin.
+  reports the worst shortfall in **tokens** against the safety margin that absorbs it.
+
+  From **v0.9** the margin is no longer the only thing standing behind it. `prompt_eval_count`
+  is the backend's own count and comes back with every response, so a session already scaled
+  its ceiling by a measured ratio from its second request onwards — and the first request of
+  every part was the one that correction could not cover, because a part starts with nothing
+  to learn from. That ratio is now remembered per model between runs:
+
+  ```
+  template memory: qwen3.5:9b counted 275 tokens above our projection over 4 previous
+                   run(s) — every part's ceiling starts corrected
+  ```
+
+  **In tokens, not as a ratio, and that was measured rather than assumed.** Seventeen paired
+  requests over conversations from 1,235 to 3,604 tokens put the gap at a flat 263–314 tokens
+  while the ratio it implied fell from 1.22x to 1.09x. Fixed scaffolding is what a fixed number
+  describes: a 1.22x factor on a 3,604-token conversation reserves 793 tokens to cover 314, and
+  on a 60K conversation it would throw away more than 13,000 tokens of every part.
+
+  It is a median of per-run maxima: the worst case *within* a run because a ceiling holds at
+  the worst case or it does not, and the median *across* runs because a maximum across runs
+  ratchets and never comes back. Capped at 4,096 tokens, and it says when it hits the cap.
+  Never below zero.
+
+  The number to watch is `exposed_requests`: requests sent with nothing correcting their
+  ceiling at all. It asks a different question from the shortfall above, which measures the
+  *estimator* and is expected to read short whatever happens. The store is counts only, it is
+  gitignored, and deleting it costs one run's worth of relearning and nothing else.
 
 - **Damage** (v0.7) names the part. Every part is parsed the moment it finishes — only the
   files it wrote, only in formats there is a parser for, which costs milliseconds against the

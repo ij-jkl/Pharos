@@ -14,4 +14,4 @@ and has not moved. It refuses rather than truncates, enforces a part's scope in 
 layer rather than the prompt, and will not start without an undo.
 """
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"

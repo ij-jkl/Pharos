@@ -1391,33 +1391,42 @@ def _session_with_drift(
     return session
 
 
-def test_template_factor_is_one_before_any_response(workspace: Workspace) -> None:
-    """Nothing has been counted yet, so there is nothing to correct by — SAFETY_MARGIN alone
-    covers the first request."""
-    assert _session_with_drift(workspace, [])._template_factor() == 1.0
+def test_template_offset_is_zero_before_any_response(workspace: Workspace) -> None:
+    """Nothing has been counted yet and nothing was remembered, so there is nothing to correct
+    by — SAFETY_MARGIN alone covers the first request. v0.9's template memory is what closes
+    this for a model that has been run before."""
+    assert _session_with_drift(workspace, [])._template_offset() == 0
 
 
-def test_template_factor_takes_the_worst_ratio_seen(workspace: Workspace) -> None:
+def test_template_offset_takes_the_worst_gap_seen(workspace: Workspace) -> None:
     """A ceiling holds at the worst case or it does not hold."""
     session = _session_with_drift(workspace, [(1000, 1100), (1000, 1250), (1000, 1050)])
-    assert session._template_factor() == pytest.approx(1.25)
+    assert session._template_offset() == 250
 
 
-def test_template_factor_never_loosens_the_ceiling(workspace: Workspace) -> None:
+def test_template_offset_never_loosens_the_ceiling(workspace: Workspace) -> None:
     """Over-counting wastes room; it is not permission to fit more in."""
     session = _session_with_drift(workspace, [(1000, 800), (1000, 900)])
-    assert session._template_factor() == 1.0
+    assert session._template_offset() == 0
 
 
 def test_ceiling_is_enforced_against_the_corrected_projection(workspace: Workspace) -> None:
-    """The regression: on qwen3.5-9b the backend counted up to 1.23x our estimate, so a part
-    that looked 200 tokens clear of the ceiling was already over it."""
-    session = _session_with_drift(workspace, [(1000, 1230)])
+    """The regression: on qwen3.5-9b the backend counted ~275 tokens above our estimate on
+    every request, so a part that looked 200 tokens clear of the ceiling was already over it."""
+    session = _session_with_drift(workspace, [(1000, 1275)])
     session._messages = [{"role": "user", "content": "x" * 4000}]
     raw = session._projected()
     corrected = session._projected_for_ceiling()
     assert corrected > raw
-    assert corrected == int(raw * 1.23)
+    assert corrected == raw + 275
+
+
+def test_the_correction_does_not_grow_with_the_conversation(workspace: Workspace) -> None:
+    """Measured over a 3x range of conversation sizes: the gap is flat at 263-314 tokens. A
+    ratio fitted to the smallest reserves three times what the largest needs."""
+    session = _session_with_drift(workspace, [(1000, 1275)])
+    session._messages = [{"role": "user", "content": "x" * 40_000}]
+    assert session._projected_for_ceiling() - session._projected() == 275
 
 
 def test_a_tool_is_offered_only_the_room_that_really_remains(workspace: Workspace) -> None:

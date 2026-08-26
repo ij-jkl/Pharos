@@ -666,9 +666,14 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
         # Past the margin no longer means a ceiling was enforced against a number below the
         # real prompt: after the first response the ceiling scales by the ratio measured here.
         # It still means the estimate needs the correction, which is worth seeing.
+        corrected = (
+            "every request corrected"
+            if not card.exposed_requests
+            else f"{card.exposed_requests} request(s) went out uncorrected"
+        )
         note = (
             f"[yellow]short by {card.worst_shortfall:,} tokens, past the "
-            f"{SAFETY_MARGIN}-token margin - ceiling corrected from request 2[/]"
+            f"{SAFETY_MARGIN}-token margin[/] [dim]{chr(183)} {corrected}[/]"
             if card.under_counted
             else f"[dim]worst shortfall {card.worst_shortfall:,} tokens, inside the "
                  f"{SAFETY_MARGIN}-token margin[/]"
@@ -676,6 +681,15 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
         body.add_row(
             "drift",
             f"{span} [dim]over {card.drift_samples} requests[/] {chr(183)} {note}",
+        )
+    if card.template_offset is not None:
+        # What the ceiling was actually enforced against, which the drift line above cannot
+        # say: it reports the raw estimator on purpose, so that it goes on measuring the
+        # estimator rather than the correction applied to it.
+        body.add_row(
+            "template",
+            f"+{card.template_offset:,} tokens [dim]remembered over {card.template_runs} "
+            f"previous run(s) {chr(183)} every part's ceiling started corrected[/]",
         )
     if card.nudged_parts or card.abandoned_parts:
         body.add_row(
@@ -822,6 +836,8 @@ def _render(
         damage=outcome.damage,
         stopped_on_break=outcome.stopped_on_break,
         planned_files=outcome.planned_files,
+        template_offset=outcome.template_cost.offset if outcome.template_cost else None,
+        template_runs=outcome.template_cost.runs if outcome.template_cost else 0,
     )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.

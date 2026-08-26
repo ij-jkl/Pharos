@@ -251,3 +251,156 @@ def _matching(observations: list[Observation], model: str | None) -> list[Observ
     if model is None:
         return list(observations)
     return [o for o in observations if same_model(o.model, model)]
+
+
+
+# --- what the chat template costs -------------------------------------------------------------
+#
+# The second thing this module remembers, and it is learned by `pharos run` rather than by the
+# proxy. Pharos counts a conversation from the messages it holds; the backend counts it after
+# applying a chat template that runs server-side and cannot be seen from here. The gap is real,
+# one-directional and specific to a model.
+#
+# A session already corrects for it within itself: `prompt_eval_count` comes back with every
+# response, so from the second request onwards the ceiling is enforced against a measured gap
+# rather than a constant. The first request of every part is the one that correction cannot
+# cover, because a part starts with no responses to learn from. With three parts that is three
+# requests a run sent against a ceiling with nothing behind it but `SAFETY_MARGIN`, and nine
+# live runs measured that constant 288-297 tokens short.
+#
+# So the gap is remembered between runs. Nothing else changes: it seeds the same correction the
+# session was already making for itself, one request earlier.
+#
+# It is stored as TOKENS, not as a ratio, and that is a measurement rather than a preference.
+# The first design here multiplied: remember `backend / ours` and scale the projection by it.
+# Seventeen paired requests over conversations from 1,235 to 3,604 tokens said otherwise --
+# the gap was 263 to 314 tokens across the whole range, flat, while the ratio it implied fell
+# from 1.22x to 1.09x as the conversation grew. It is fixed scaffolding, so a fixed number is
+# what describes it. A 1.22x factor on a 3,604-token conversation reserves 793 tokens to cover
+# 314, and the waste grows with the window: on a 60K conversation it would throw away more
+# than 13,000 tokens of every part.
+#
+# The assumption that buys, stated plainly: the template's cost does not grow with the
+# conversation. That is what was measured over a 3x range on one model. A template whose
+# scaffolding scaled with length would be under-corrected above the largest conversation yet
+# observed -- and the live in-session measurement tracks it upward within a run, `SAFETY_MARGIN`
+# sits underneath, and the drift line goes on reporting the raw estimator so the shortfall
+# stays visible either way.
+
+_TEMPLATE_SAMPLES = 20  # per-run worst offsets kept per model
+
+# Refused above this. A remembered offset comes straight off every part's ceiling, so one that
+# says the template costs thousands of tokens would shrink every part for good on the strength
+# of a stored number. Real chat-template scaffolding is a few hundred tokens; past this the
+# projection is wrong in a way a constant should not be papering over, and the run should say
+# so rather than quietly lose the room.
+TEMPLATE_OFFSET_CAP = 4096
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateCost:
+    """How many tokens the backend's count runs above ours, for one model."""
+
+    model: str
+    offsets: tuple[int, ...] = ()  # per-RUN worst offsets, oldest first
+    updated: float = 0.0
+
+    @property
+    def offset(self) -> int:
+        """The tokens to seed a session with: the median of per-run worst offsets.
+
+        A median of maxima, and both halves are deliberate. The MAXIMUM within a run, because
+        a ceiling holds at the worst case or it does not hold. The MEDIAN across runs, because
+        the maximum across runs ratchets and never comes back down: one anomalous request --
+        and this project has recorded a 2.57x it could not explain -- would shrink every future
+        part permanently on the strength of one measurement. A median absorbs that and still
+        moves if the model or its template really changes.
+
+        Never below zero. A backend counting fewer tokens than we did is a sign we were being
+        cautious, not licence to fit more in.
+        """
+        if not self.offsets:
+            return 0
+        return min(max(0, round(statistics.median(self.offsets))), TEMPLATE_OFFSET_CAP)
+
+    @property
+    def runs(self) -> int:
+        return len(self.offsets)
+
+    @property
+    def capped(self) -> bool:
+        """The measurement wanted more than the cap allows, and was refused it."""
+        return bool(self.offsets) and statistics.median(self.offsets) > TEMPLATE_OFFSET_CAP
+
+
+def load_template_costs(path: Path) -> dict[str, TemplateCost]:
+    """Read the store. A missing or unreadable file is an empty memory, never an error.
+
+    Same rule as the observation store: this makes runs better when it is there and must never
+    be able to stop one happening. A corrupt file is worth a log line and nothing more.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        _logger.warning("could not read template costs from %s: %s", path, exc)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, TemplateCost] = {}
+    for name, item in (raw.get("models") or {}).items():
+        if not isinstance(item, dict) or not isinstance(name, str):
+            continue
+        offsets = tuple(
+            int(value)
+            for value in (item.get("offsets") or [])
+            if isinstance(value, int | float) and value > 0
+        )
+        out[name] = TemplateCost(
+            model=name,
+            offsets=offsets[-_TEMPLATE_SAMPLES:],
+            updated=float(item.get("updated") or 0.0),
+        )
+    return out
+
+
+def remembered_cost(path: Path, model: str | None) -> TemplateCost | None:
+    """What is known about this model's template, matching names the way the profiler does."""
+    if model is None:
+        return None
+    for name, cost in load_template_costs(path).items():
+        if same_model(name, model) and cost.offsets:
+            return cost
+    return None
+
+
+def remember_run(path: Path, model: str | None, offsets: list[int]) -> TemplateCost | None:
+    """Fold one run's observations into the memory and write it back.
+
+    ``offsets`` is every (backend - ours) gap the run measured. The run contributes ONE number
+    -- its worst -- so a long run cannot outvote a short one, and the median across runs stays
+    a median across runs rather than across requests.
+    """
+    usable = [value for value in offsets if value > 0]
+    if model is None or not usable:
+        return None
+    store = load_template_costs(path)
+    key = next((name for name in store if same_model(name, model)), model)
+    previous = store.get(key)
+    kept = ((previous.offsets if previous else ()) + (max(usable),))[-_TEMPLATE_SAMPLES:]
+    updated = TemplateCost(model=key, offsets=kept, updated=time.time())
+    store[key] = updated
+
+    payload = {
+        "models": {
+            name: {"offsets": list(cost.offsets), "updated": cost.updated}
+            for name, cost in store.items()
+        }
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2) + chr(10), encoding="utf-8")
+    except OSError as exc:
+        _logger.warning("could not write template costs to %s: %s", path, exc)
+    return updated

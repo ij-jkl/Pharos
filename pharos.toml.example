@@ -107,6 +107,14 @@ stop_on_break = false
 # ceiling adds under 10% per part. Set it to 0 to check only that files still parse.
 per_part_check_seconds = 3.0
 
+# Where `pharos run` remembers how many TOKENS the backend's own count runs above its
+# projection, per model -- the cost of a chat template that is applied server-side and cannot
+# be seen from here. Measured flat at 263-314 tokens over a 3x range of conversation sizes,
+# which is why it is a token count and not a ratio. Seeding a part with it means the part's FIRST request is corrected too,
+# which before v0.9 was the one request per part that nothing but the safety margin covered.
+# Counts only, gitignored, and safe to delete: the next run measures it again.
+# template_memory_file = "pharos_templates.json"
+
 # The checks to run. Left unset, Pharos detects the ones this repository configures AND that
 # are installed (ruff, pytest) -- it never invents a build command for a project that did not
 # ask for one. Set this and the list is used verbatim, which is how any other ecosystem is

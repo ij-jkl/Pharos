@@ -61,6 +61,12 @@ from pharos.agent.workspace import (
     current_branch,
     git_guard,
 )
+from pharos.calibration import (
+    TEMPLATE_OFFSET_CAP,
+    TemplateCost,
+    remember_run,
+    remembered_cost,
+)
 from pharos.config import PharosConfig
 from pharos.preflight.check import CheckReport, Verdict, run_check
 from pharos.preflight.split import PartFile, SplitMode, SplitPlan, build_plan
@@ -101,6 +107,14 @@ class RunOutcome:
     # three otherwise reports 100%, because the four files nobody attempted are not in any
     # part's scope. True of a run stopped by an error too, and has been since v0.4.
     planned_files: list[str] = field(default_factory=list)
+    # What earlier runs measured this model's chat template to cost, and whether any request
+    # still went out with nothing correcting its ceiling.
+    # What was IN FORCE during this run, and what the memory holds after it. Two different
+    # facts: the first says how this run's ceilings were computed, the second what the next
+    # run will start from. On a model's first run the seed is None and the memory is not.
+    template_cost: TemplateCost | None = None
+    template_learned: TemplateCost | None = None
+    exposed_requests: int = 0
     via_proxy: bool = True
     # What the project's own checks said afterwards. None when verification was off or
     # the run never got as far as executing anything.
@@ -404,6 +418,26 @@ async def run_task(
     )
     halt_on_break = stop_on_break and watch is not None
 
+    # What previous runs learned about this model's chat template. A part starts with no
+    # responses of its own, so without this its first request is enforced against a ceiling
+    # that has only SAFETY_MARGIN behind it -- and that constant measured 288-297 tokens short
+    # on nine live runs. Seeding costs nothing and is not a new measurement: it is the same
+    # correction the session already makes for itself, one request earlier.
+    memory = Path(config.template_memory_file)
+    known = remembered_cost(memory, model)
+    outcome.template_cost = known
+    seed = known.offset if known else None
+    if known is not None:
+        say(
+            f"template memory: {model} counted {known.offset:,} tokens above our projection "
+            f"over {known.runs} previous run(s) — every part's ceiling starts corrected"
+        )
+        if known.capped:
+            say(
+                f"  that measurement wanted more than the {TEMPLATE_OFFSET_CAP:,}-token cap "
+                f"and was held to it — a gap that size is not template scaffolding"
+            )
+
     handoff: str | None = None
     # Pharos's own account of the run, appended to as each write lands. Off it goes back to
     # v0.5 behaviour, where the model's prose was the only thread between parts — which is
@@ -438,6 +472,7 @@ async def run_task(
                 usable_budget=usable,
                 handoff_reserve=config.handoff_reserve,
                 num_ctx=config.num_ctx,
+                template_offset=seed,
                 on_event=_prefixed(say, label),
             )
             text = _with_handoff(body, carried, index, files, already_done)
@@ -559,6 +594,18 @@ async def run_task(
         # of what it did rather than the model's. Weaker than a diff — a write that restored
         # a file's original bytes still counts here — and much better than silence.
         outcome.files_changed = written_by_parts(outcome.parts)
+
+    outcome.exposed_requests = sum(p.exposed_requests for p in outcome.parts)
+    # Fold this run's measurements back in, so the next one starts corrected. One number per
+    # run -- its worst ratio -- so a long run cannot outvote a short one.
+    gaps = [
+        theirs - ours
+        for part in outcome.parts
+        for ours, theirs in part.drift_samples
+        if ours > 0 and theirs > 0
+    ]
+    if gaps:
+        outcome.template_learned = remember_run(memory, model, gaps)
 
     if config.verify and verify_work:
         say("verifying")
