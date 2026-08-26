@@ -439,8 +439,11 @@ Write-Host '  e.g.  Refactor everything in `pharos/proxy/` following `README.md`
 Write-Host ''
 Write-Host '    s <prompt>   cut it into parts that fit        d   live dashboard' -ForegroundColor DarkGray
 Write-Host '    s! <prompt>  the same, grouped by meaning         q   quit' -ForegroundColor DarkGray
-Write-Host '    r <prompt>   carry it out (WRITES files)   r! same, stop at the first break' -ForegroundColor DarkGray
-Write-Host '    r <prompt>   carry it out (writes files)        q   quit' -ForegroundColor DarkGray
+Write-Host '    r <prompt>   carry it out (WRITES files)' -ForegroundColor DarkGray
+Write-Host '    r! <prompt>  the same, stopping at the first part that breaks a file' -ForegroundColor DarkGray
+Write-Host '    r? <prompt>  the same, and review the diff afterwards (an opinion)' -ForegroundColor DarkGray
+Write-Host ''
+Write-Host '    pharos run also takes --compact, --reserve-reads and --no-audit' -ForegroundColor DarkGray
 
 if ([Console]::IsInputRedirected) {
     Write-Host ''
@@ -494,6 +497,14 @@ while ($true) {
     if ($line -match '^r!\s+(.+)$') {
         Write-Info 'carrying out the task - WRITES files, and stops at the first part that breaks one'
         uv run pharos run $Matches[1] --stop-on-break
+        continue
+    }
+
+    # 'r?' before plain 'r ', same reason again. The review runs after the verdict and
+    # cannot change it; see pharos/agent/review.py.
+    if ($line -match '^r\?\s+(.+)$') {
+        Write-Info 'carrying out the task - WRITES files, then asks the model what it thinks of the diff'
+        uv run pharos run $Matches[1] --review
         continue
     }
 

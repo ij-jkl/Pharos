@@ -6,6 +6,154 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.0 — "Everything it would not say"
+
+Nine versions carried a section headed *What Pharos does NOT do (yet)*. Five entries. This
+release closes four of them and keeps the fifth forever.
+
+> Unlike every tier above it, the numbers in this entry come from the suite and its fixtures
+> rather than from the desktop. v1.0 has not had a live pass; `DESKTOP_VALIDATION.md` §24 is
+> open and says what needs measuring.
+
+The four were not closed by relaxing anything. Each one had a reason it was excluded, and each
+is admitted here only in the shape that survives that reason: a prediction that is labelled a
+prediction and cannot move an exit code, a compaction that cannot touch what a part was asked
+to do, an audit that reports facts and not intent, and an opinion that is checked in code
+before anyone reads it and cannot change the verdict printed above it.
+
+### What the agent opens on its own — the third number
+
+`pharos check` counted what you NAMED: files exactly, into the floor; directories in full, into
+a separate ceiling. What the agent decides to open once it starts working was in neither, and
+`pharos/preflight/extract.py` has carried a note since v0.2 saying that predicting it "is v1.0".
+
+- **It needed no new record.** Between two consecutive requests of one conversation the input
+  grows by three things and no others: what you typed, what the model last said, and whatever
+  the client injected on its own. The first two are already in the observation store, so the
+  third is the remainder — `injected = Δinput − output_prev − Δuser`. That residue is tool
+  results and file reads. It is a count derived from counts, and it names nothing: the store's
+  promise (counts only, never text, no file names, nothing reconstructable) is untouched. A
+  version of this that logged which files an agent read would have been easier and was never
+  on the table.
+- **A median across conversations, with its range printed beside it.** Not a maximum: this is
+  a prediction about a client Pharos has not met yet, and the honest centre is the middle with
+  the spread shown, not the worst case dressed as a budget.
+- **Four kinds of pair are dropped rather than guessed at.** A response that reported no
+  `eval_count` hides the model's own reply inside the growth, and subtracting nothing would
+  bill it to the agent as a file it read. A pair mixing a backend-exact input with an estimated
+  one carries the chat-template offset instead of cancelling it. A pair counted in another
+  model's vocabulary is not commensurable. And only agent-shaped requests count at all — the
+  overhead estimator already learned live what happens when four `curl` pokes are allowed to
+  vote on a number about coding agents.
+- **Clamped at zero, which makes it read LOW on a thinking model.** A reply whose reasoning
+  block is not replayed into the next prompt over-subtracts. The honest floor for "tokens the
+  agent read" is none rather than a negative number, and that is the direction to be wrong in.
+- **Below three usable conversations it says nothing.** Same rule as everywhere else here: a
+  missing number is honest, a made-up one is not. Config: `agent_read_tokens` pins it.
+- **It never changes an exit code.** Those still judge the floor. What is new is that a floor
+  which fits while the expected total does not is now called out — the case every version
+  before this was silent about. `--reserve-reads` on `split` and `run` goes further and takes
+  that room off every part's ceiling before packing.
+
+### Compaction — `--compact`
+
+What fills a part's window is tool results, and most of them are files the model finished with
+long before anything stopped it. Until now the ceiling stopped the part there and asked for the
+hand-off: correct, and expensive.
+
+- **Only tool results are ever touched**, and they are stubbed in place rather than removed. A
+  result deleted out from under the assistant turn that called for it leaves a tool call with
+  no answer — a malformed conversation, not a smaller one. The stub names what was dropped and
+  how big it was, which is the whole difference between compaction and a context silently
+  truncated underneath the model.
+- **The newest results survive, and so do the small ones.** A refusal, a write confirmation and
+  a failed call are all tool results and all tiny. Counting them into the protected window
+  meant three refusals in a row could push the one real file a part had read out of protection
+  and stub it, while carefully preserving three messages saying "there was no room". Measured
+  exactly that way on the first run of this code, and fixed by protecting substance rather than
+  recency alone.
+- **It runs at both moments the window runs out**: when the ceiling is reached before a
+  request, and when a read is refused for space — the commoner shape, and one the ceiling check
+  never sees, because the part is comfortably inside its window and still cannot open the next
+  file. `ToolResult.needed_room` is what tells the two apart from every other reason a call
+  fails.
+- **The ceiling still decides.** Whatever compaction gives back, the projection is measured
+  again against the same number, and a part that still does not fit stops where it would have.
+  Bounded at three rounds, so a part that re-reads what it just dropped cannot grind.
+- **A run WITHOUT the flag now reports what it would have bought.** On the test fixture, five
+  files of 1,834 tokens against an 8,344-token ceiling: without it, three reads land and two
+  are refused for space; with it, two rounds of compaction give back 3,668 tokens and all five
+  land in the same window. Only a run that did NOT use the flag can produce that number, which
+  is why it is reported at all.
+- **The part that runs out of room does not stop.** It is refused a read and carries on, so
+  `stopped_early` is False and the scorecard reported nothing for exactly the case worth
+  reporting. `room_refusals` -- counted after any compaction retry, so it means the window
+  stopped the call rather than that it was briefly tight -- is what the reclaimable figure is
+  now asked about.
+
+### The audit — what the disk says
+
+Every record a run kept was testimony from one witness. The ledger holds what the dispatcher
+saw land, the scorecard counts what the parts reported, the damage list names what stopped
+parsing — all of it Pharos describing its own actions. If a write was reported and never
+landed, or a file changed that no tool of ours touched, none of them could say so.
+
+- **Three snapshots per part**: before it starts, after its tools finish, and after your own
+  checks run. Four findings come out — *unattributed* (changed, nobody claimed it),
+  *absent* (claimed, the disk does not show it), *out of scope* (moved during a part told to
+  leave it alone), and *by your checks* (a formatter in a test command, a snapshot test writing
+  its snapshots — real edits to your tree during a run that nothing recorded before).
+- **Facts, not judgements.** An unattributed change may be perfectly fine. The point is that it
+  stops being invisible, because every coverage figure in the scorecard is computed from
+  claims.
+- **`(size, mtime_ns)`, not a content hash**, and what that gives up is stated exactly rather
+  than glossed: a write is invisible to this only if it leaves the file the same length AND
+  lands on the same timestamp as the snapshot it is compared against. Windows advances its
+  clock about every 15 ms, so that window is milliseconds wide there rather than nanoseconds —
+  and between two of these snapshots sits a whole model round trip.
+- On by default; `--no-audit` turns it off. Prunes the same vcs/venv/cache directories as every
+  other walk in the project, which is why `IGNORED_DIRS` is now public.
+
+### The review — `--review`
+
+The exclusion this project resisted hardest, because an opinion filed next to a column of
+measurements borrows their authority without earning it. So it is admitted, and quarantined.
+
+- **Off unless asked, and it cannot change the verdict.** Coverage, damage, verification, the
+  scorecard and the exit code are all computed before the review runs, and none of them is
+  shown it. It is the last thing computed and the last thing printed, under its own heading,
+  which says what it is every single time.
+- **Every finding is checked in code before you see it** — the same discipline `--semantic`
+  works under. A finding must name a file this run actually changed and point at a line inside
+  a hunk the model was actually shown; the severity must be one of the three asked for; a
+  boolean is not a line number. Anything else is discarded, and **the count of what was
+  discarded is printed**. A model asked to review code will invent a plausible line number, and
+  a plausible line number is exactly what a reader trusts.
+- **A diff too large for one call is left out and named**, never shown in half. Half a diff
+  reviewed as though it were whole is the failure `read_file` already refuses to commit.
+- Works without git too: a workspace that is not a repository already has every original under
+  `.pharos/undo-<timestamp>/`, so the diff is reconstructed from the snapshots.
+- A review that could not happen reads as a review that could not happen, never as a clean bill
+  of health. The two are opposite conclusions and would otherwise print almost identically.
+
+### And the one that stays
+
+**No request mutation, ever.** Everything above writes, asks or decides as an ordinary client
+of the proxy, outside the request path, exactly like Continue or Cursor. `--compact` reclaims
+the window inside a conversation Pharos owns; your agent's history belongs to your agent, and
+trimming it would mean rewriting a request. The proxy has not changed since v0.1 and is not
+going to.
+
+### Also
+
+- `pharos check --json` schema version is **2**: the payload gained `reads` and `expected`, and
+  a plan gained `reads_reserved`. Additive, and the number still moved — a version that never
+  changes tells a consumer nothing it can act on.
+- The launcher gains `r? <prompt>` (run, then review) and names the three flags it has no
+  letter for. It also had a duplicated menu line since v0.7, which is gone.
+- Config: `agent_read_tokens`.
+- **635 tests**, `ruff` and `mypy --strict` clean.
+
 ## v0.9 — "Remember what the template costs"
 
 Every run in `DESKTOP_VALIDATION.md` §20-§22 reported the same line, nine times: *short by

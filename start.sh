@@ -318,7 +318,10 @@ printf '\n  Type a prompt to pre-flight it. Name files and folders in backticks,
 printf '  %se.g.  Refactor everything in `pharos/proxy/` following `README.md`%s\n\n' "$C_GREY" "$C_OFF"
 printf '    %ss <prompt>   cut it into parts that fit        d   live dashboard%s\n' "$C_GREY" "$C_OFF"
 printf '    %ss! <prompt>  the same, grouped by meaning         q   quit%s\n' "$C_GREY" "$C_OFF"
-printf '    %sr <prompt>   carry it out (WRITES files)   r! same, stop at the first break%s\n' "$C_GREY" "$C_OFF"
+printf '    %sr <prompt>   carry it out (WRITES files)%s\n' "$C_GREY" "$C_OFF"
+printf '    %sr! <prompt>  the same, stopping at the first part that breaks a file%s\n' "$C_GREY" "$C_OFF"
+printf '    %sr? <prompt>  the same, and review the diff afterwards (an opinion)%s\n' "$C_GREY" "$C_OFF"
+printf '\n    %spharos run also takes --compact, --reserve-reads and --no-audit%s\n' "$C_GREY" "$C_OFF"
 
 if [ ! -t 0 ]; then
     printf '\n'
@@ -350,6 +353,12 @@ while true; do
         r!\ *)
             info "carrying out the task — WRITES files, and stops at the first part that breaks one"
             uv run pharos run "${line#r! }" --stop-on-break || true
+            continue ;;
+        # `r?` before plain `r `, same reason again. The review runs after the verdict
+        # and cannot change it; see pharos/agent/review.py.
+        r\?\ *)
+            info "carrying out the task — WRITES files, then asks the model what it thinks of the diff"
+            uv run pharos run "${line#r? }" --review || true
             continue ;;
         r\ *)
             info "carrying out the task — this WRITES files; git branch or snapshot is your undo"

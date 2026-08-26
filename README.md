@@ -8,20 +8,34 @@ A transparent, context-aware proxy and live terminal dashboard that sits between
 coding agent and a local LLM backend (Ollama first) — so you can *see* your context and VRAM
 budget in real time and never hit a silent context overflow or OOM again.
 
-**Status: v0.9** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
-request or a response). Alongside it, three tools outside the request path: what a prompt will
+**Status: v1.0** — the proxy stays observe-only and a pure passthrough (Pharos never mutates a
+request or a response). Around it, three tools outside the request path: what a prompt will
 cost before you paste it (`pharos check`), how to cut it up when it will not fit
-(`pharos split`), and carrying those parts out against your local model (`pharos run`) — which
-finishes by re-running your project's own checks and failing the run if it broke them. New in
-v0.8: every part is checked as it finishes — the parser always, and the project's own checks
-too when the baseline measured them as fast enough — so a broken build names the part that
-broke it, and `--stop-on-break` ends a run rather than letting the damage propagate. From
-v0.6: a run
-carries its own record of what has landed on disk from part to part, so context survives a
-hand-off the model wrote badly. From v0.5: `--semantic` lets a model propose *which
-files group together*, and nothing else — every
-projection is still measured, and a proposal that fails any check is discarded for the
-mechanical one.
+(`pharos split`), and carrying those parts out against your local model (`pharos run`).
+
+v1.0 closes the four things this README spent nine versions saying Pharos did not do:
+
+- **it predicts what the agent opens on its own** — a third number, `EXPECTED`, between the
+  floor and the ceiling. Learned from traffic already through the proxy, derived from counts
+  alone, and absent rather than guessed when there is too little to learn from.
+- **it compacts** — `pharos run --compact` gives a part back the window it filled with files
+  it finished with ten steps ago, instead of stopping there and handing off.
+- **it audits the disk** — every part is measured against the filesystem, so a change no tool
+  claimed, a write that never landed, a file touched outside a part's scope, and one your own
+  checks rewrote all get named. On by default.
+- **it reviews the diff** — `pharos run --review` asks the model what it thinks of the code it
+  just wrote. Every finding is checked against the diff before you see it, and the ones that
+  survive are still an *opinion*, printed under a verdict that was settled without them.
+
+The fifth item on that list has not moved and is not going to: **no request mutation, ever.**
+
+Earlier tiers, still true: `pharos run` finishes by re-running your project's own checks and
+fails the run if it broke them (v0.4.2); every part is checked as it finishes, so a broken
+build names the part that broke it and `--stop-on-break` ends the run rather than letting the
+damage propagate (v0.7, v0.8); a run carries its own record of what has landed on disk from
+part to part, so context survives a hand-off the model wrote badly (v0.6); `--semantic` lets a
+model propose *which files group together*, and nothing else (v0.5); and a per-model memory of
+what the chat template costs means a part's first request starts corrected (v0.9).
 
 ![The Pharos dashboard: a context-mismatch banner reading "advertised 262,144, loaded 32,768 (12.5% of capacity)", context and VRAM gauges, and a request event log showing input counts labelled (exact) and (estimate - gguf)](docs/pharos-dashboard.svg)
 
@@ -93,11 +107,13 @@ that detects all of it is already there, skips straight past, and opens the prom
 ```
 pharos> Refactor everything in `pharos/proxy/` following `README.md`
 
-FLOOR   ≥ 5,007 tokens
-CEILING ≤ 14,615 tokens if every named directory is read in full
+FLOOR    ≥ 5,007 tokens
+EXPECTED ≈ 12,400 tokens a prediction, not a bound — what agents on this model usually
+                        opened unprompted
+CEILING  ≤ 14,615 tokens if every named directory is read in full
 ```
 
-Four things you can type there:
+What you can type there:
 
 | | |
 |---|---|
@@ -106,11 +122,13 @@ Four things you can type there:
 | `s! <prompt>` | the same, with the parts grouped by meaning (`--semantic`) |
 | `r <prompt>` | **carry it out** — this writes files |
 | `r! <prompt>` | the same, stopping at the first part that breaks a file (`--stop-on-break`) |
+| `r? <prompt>` | the same, and review the diff afterwards (`--review`) |
 | `d` | the live dashboard |
 
-`q` quits. `r` is the only one that changes anything on disk, and it will not start without a
-way back: a clean git tree and its own branch, or a snapshot of every original if the folder is
-not a repository.
+`q` quits. Every `r` form changes things on disk, and none of them will start without a way
+back: a clean git tree and its own branch, or a snapshot of every original if the folder is not
+a repository. `pharos run` takes three more flags the prompt has no letter for —
+`--compact`, `--reserve-reads` and `--no-audit`, all described below.
 
 Setup is re-detected rather than remembered, so a half-finished first run is repaired by a
 second one, and a `git pull` that moves dependencies re-syncs on its own. `--reinstall` forces
@@ -170,7 +188,8 @@ and end with Ctrl-Z Enter (Windows) / Ctrl-D (Unix). The same is true of `pharos
 client overhead learned from traffic previously observed through the proxy (system prompt,
 tool catalogue — the part that made your 50-token prompt a 20K request), and compares the
 total against the live usable budget. The number is a **floor**: exact for what you named,
-silent about whatever the agent decides to read on its own. Ambiguous, missing, binary and
+and it stays a floor — what the agent opens on its own is the separate `EXPECTED` number
+below, never folded into this one. Ambiguous, missing, binary and
 directory references are listed rather than silently dropped. Exit codes: `0` fits, `1`
 exceeds, `2` no verdict (backend unreachable or no model loaded) — scriptable.
 
@@ -181,17 +200,57 @@ it, no backend still means no verdict: standing in a default would be a guess.
 File references are resolved against `target_folder` from `pharos.toml`. The check runs
 entirely locally and sends nothing to the backend.
 
-### Floor and ceiling
+### Floor, expected and ceiling
 
 Name a **directory** and you get a second number. The floor stays what the prompt guarantees;
-the directory's text files are counted separately and reported as a ceiling:
+the directory's text files are counted separately and reported as a ceiling. Between them sits
+a third number, new in v1.0: what an agent has historically opened *without being told to*.
 
 ```
 pharos/preflight (directory, if fully read)   +15,257   estimate — 5 text files
+what the agent opens on its own                +7,393   prediction — observed · median of 6
+                                                        conversations (2,940-19,100 tokens),
+                                                        41 turn-to-turn measurements
 
-FLOOR   ≥ 1,845 tokens
-CEILING ≤ 17,102 tokens if every named directory is read in full
+FLOOR    ≥ 1,845 tokens
+EXPECTED ≈ 9,238 tokens  a prediction, not a bound
+CEILING  ≤ 17,102 tokens if every named directory is read in full
 ```
+
+#### The third number, and where it comes from
+
+`pharos check` counts what you *named*. What the agent decides to open once it starts working
+was in neither the floor nor the ceiling, and a floor that clears the budget by 2,000 tokens
+looks like a pass right up until the agent opens four files nobody mentioned.
+
+It turns out to be derivable from the observation store exactly as it already stands — which
+is the only reason it exists, because that store's promise is *counts only, never text, no
+file names*. Between two consecutive requests of one conversation the input grows by three
+things and no others: what you typed, what the model last said, and whatever the client
+injected on its own. The first two are already in the record, so the third is the remainder:
+
+```
+injected = (input_n - input_prev) - output_prev - (user_n - user_prev)
+```
+
+That residue is tool results and file reads — what the agent opened unprompted. It is a count
+derived from counts, and it names nothing.
+
+The reported number is the **median across conversations**, with the range it was drawn from
+printed beside it. Pairs that cannot be accounted for are dropped rather than guessed at: a
+response that reported no `eval_count` hides the model's own reply inside the growth; a pair
+mixing a backend-exact input with an estimated one carries the chat-template offset instead of
+cancelling it; a pair counted in another model's vocabulary is not commensurable. Only
+agent-shaped requests count — four `curl` pokes at the endpoint have nothing to say about what
+a coding agent reads. Below three usable conversations the check prints **nothing** and says
+so, rather than standing a small number in the gap. Pin it with `agent_read_tokens` in
+`pharos.toml` if you would rather not wait for it to be learned.
+
+It never changes the exit code — those still judge the floor, as they always have — but a floor
+that fits while the expected total does not is called out explicitly, which is the whole point
+of having it. `pharos split --reserve-reads` (and `pharos run --reserve-reads`) goes further and
+takes that room off every part's ceiling up front: smaller parts, more of them, and each one
+still has somewhere to put the files it decides to open.
 
 Adding those tokens to the floor would turn a lower bound into a guess, so they stay out of
 it — but a floor that fits while the ceiling does not is called out explicitly, because the
@@ -367,6 +426,10 @@ pharos run --dry-run "..."     # plan only; changes nothing
 pharos run --no-split "..."    # one undivided conversation, for comparison
 pharos run --no-ledger "..."   # the model's hand-off as the only thread, as before v0.6
 pharos run --stop-on-break "..."  # halt at the first part that breaks a file it wrote
+pharos run --compact "..."        # reclaim the window from files a part has finished with
+pharos run --reserve-reads "..."  # size the parts against what agents open unprompted
+pharos run --review "..."         # ask the model what it thinks of the diff afterwards
+pharos run --no-audit "..."       # skip indexing the tree around each part
 ```
 
 This is the one part of Pharos that **writes files**, so it will not start without a way back:
@@ -380,9 +443,11 @@ Three properties make this compatible with everything above:
   traffic is observed on the way past, never rewritten.
 - **Overhead is counted, not learned.** Pharos wrote this client, so it counts its own system
   prompt and tool catalogue exactly instead of estimating them from observed traffic.
-- **Nothing is trimmed.** A file too large for the remaining window is *refused*, not
-  truncated, and the model is told the size and the room left. A part that reaches its ceiling
-  stops and hands off rather than silently dropping its earliest context.
+- **Nothing is truncated, and nothing is dropped silently.** A file too large for the remaining
+  window is *refused*, not cut down, and the model is told the size and the room left. By
+  default a part that reaches its ceiling stops and hands off rather than losing its earliest
+  context. `--compact` changes what it does about that, and changes nothing about the silence:
+  see [Compaction](#compaction---compact) below.
 
 Scope is enforced in the tool layer, not merely requested in the prompt: a part told to open
 three files physically cannot open a fourth. That is what turns the splitter's projection from
@@ -401,10 +466,49 @@ files per part that task covered **46%, 62%, 46%**; at two, **92%**. Raise it fo
 finishes more, and watch the scorecard's continuity line, since more parts means more
 hand-offs.
 
-**It does not make the model good.** Pharos proves the task fits and that every part ran; it
-does not check that the code is right. Small local models still invent types, miss files, and
-occasionally answer in prose without editing anything — the report says `wrote nothing` when
-that happens, per part, rather than letting the totals absorb it. `git diff` is your reviewer.
+**It does not make the model good.** Pharos proves the task fits and that every part ran; the
+verdict it prints is not a claim that the code is right. Small local models still invent types,
+miss files, and occasionally answer in prose without editing anything — the report says
+`wrote nothing` when that happens, per part, rather than letting the totals absorb it. `git
+diff` is your reviewer; `--review` will offer you a second opinion and is careful to say that
+is all it is.
+
+### Compaction (`--compact`)
+
+What fills a part's window is tool results, and most of them are files the model finished with
+long before anything stopped it: a `read_file` of a 700-line module is thousands of tokens that
+sit in the conversation for the rest of the part. Until v1.0 the ceiling simply stopped the
+part there and asked for the hand-off — correct, and expensive, because most of what filled the
+window was no longer being used.
+
+`--compact` replaces the **oldest tool results** with a stub naming what was dropped, until
+there is room again. Four rules keep it honest:
+
+- **Only tool results are ever touched.** The system prompt, the part body, every user turn and
+  everything the model itself said stay exactly as they were. Compaction must not be able to
+  change what the part was asked to do.
+- **The message stays in place, stubbed rather than removed.** A tool result deleted out from
+  under the assistant turn that called for it leaves a tool call with no answer — a malformed
+  conversation, not a smaller one. The stub says what was dropped and how big it was, so the
+  model can see that it read something and that the text is gone. That is the whole difference
+  between compaction and a context silently truncated underneath it.
+- **The most recent results are never touched** — they are what the model is working on. Nor
+  are small ones: a refusal, a write confirmation and a failed call are all tool results and
+  all tiny, and letting them occupy the protected slots meant three refusals in a row could
+  push the one real file a part had read out of protection and stub it. Measured exactly that
+  way, on the first run of this code.
+- **Bounded.** A part that compacts, re-reads what it just dropped and compacts again is
+  grinding, so after three rounds the ceiling goes back to stopping the part.
+
+It runs at both moments the window can run out: when the ceiling is reached before a request,
+and when a `read_file` is refused for space — the commoner shape, and one the ceiling check
+never sees, because the part is comfortably inside its window and still cannot open the next
+file. Whatever compaction gives back, the projection is measured again against the same
+ceiling, and a part that still does not fit stops exactly where it would have stopped.
+
+Off unless you ask for it. With it off, a part stopped by its ceiling now reports what
+compaction *would* have given back — the number that decides whether the flag is worth turning
+on for your project, and one only a run without it can produce.
 
 ### Did it work? The scorecard
 
@@ -621,9 +725,58 @@ said "done" while three files were never touched exits 1, and so does one that w
 and stopped the project building — because exiting 0 would flatter precisely the failures this
 tool exists to expose.
 
-Pharos still does not tell you the code is *right*. `git diff` remains the reviewer. What it
-now tells you is whether the code still **builds**, which is a different question with an exact
-answer.
+### What the disk says (the audit)
+
+Every record above is testimony from the same witness. The ledger holds what the dispatcher saw
+land, the scorecard counts what the parts reported, the damage list names what stopped parsing
+— all of it is Pharos describing its own actions. If a write is reported and never lands, or a
+file changes that no tool of ours touched, none of those records can say so: they are not
+looking at the disk, they are looking at us.
+
+So a run indexes the tree — before it starts, after each part's tools have finished, and again
+after your own checks have run. Four things come out of it, and each is a fact rather than a
+judgement:
+
+- **unattributed** — a file changed while the part ran that no tool of that part claimed. An
+  editor left open on the workspace, a git hook, a generated file. Not necessarily wrong;
+  necessarily worth knowing, because every coverage figure above is computed from claims.
+- **absent** — a write the part reported that the disk does not show. The one finding that says
+  the *run* was wrong about itself.
+- **out of scope** — a file that moved during a part that was told to leave it alone.
+- **by your checks** — files your own `verify_commands` rewrote while they ran: a formatter
+  wired into a test command, a snapshot test writing its snapshots. Real edits to your tree,
+  made during a Pharos run, that nothing before v1.0 recorded at all.
+
+Identity is `(size, mtime_ns)`, not a content hash — the question is *did this change*, and a
+run pays for it three times per part. What that gives up is stated exactly in
+`pharos/agent/audit.py`. On by default; `--no-audit` turns it off.
+
+### A second opinion on the diff (`--review`)
+
+Everything above is a measurement. `--review` is not, and the design is mostly about keeping
+the two apart.
+
+It shows the model the diff of what the run changed and asks what it thinks. Three rules:
+
+1. **Off unless asked.**
+2. **It cannot change the verdict.** Coverage, damage, verification, the scorecard's verdict
+   and the exit code are all computed before the review runs, and none of them is shown it. A
+   run that built and covered its files is a passing run whatever the review says.
+3. **Every finding is checked in code before you see it** — the same discipline `--semantic`
+   works under. A finding must name a file this run actually changed and point at a line inside
+   a hunk the model was actually shown; the severity must be one of the three that were asked
+   for. Anything else is discarded, and the count of what was discarded is printed. A model
+   asked to review code will invent a plausible line number, and a plausible line number is
+   exactly what a reader trusts.
+
+What survives is genuinely limited, and the panel says so every time: one local model's
+reaction to a diff, with no repository context, no test run behind it and no memory of why the
+code is the way it is. A file whose diff is too large for one call is left out and named, never
+shown in half. It prints last, under a verdict that was settled without it.
+
+So: Pharos does not tell you the code is *right*, and `--review` does not either — it tells you
+what one model thought, checked for pointing at something real. What Pharos tells you exactly
+is whether the code still **builds**, which is a different question with an exact answer.
 
 ## Ambiguity, notebooks, and JSON
 
@@ -672,36 +825,36 @@ Passthrough is byte-for-byte in both directions: request bodies are forwarded ve
 (Pharos parses only a copy for counting) and responses are re-streamed raw, without
 re-encoding or re-chunking.
 
-## What Pharos does NOT do (yet)
+## What Pharos does NOT do
+
+The heading used to end in *(yet)* and carried five entries. Four of them shipped in v1.0 and
+are documented above. What is left is not a roadmap — it is the shape of the tool.
 
 - **No request mutation, ever.** No fields added or removed, no prompt rewriting, no
-  `stream_options` injection. The proxy remains a pure observer. `pharos check` and
-  `pharos split` are advisory; `pharos run` writes files, and `pharos split --semantic` asks
-  the backend a question — both do so as ordinary clients of the proxy, outside the request
-  path. The constraint applies to what Pharos does to *other people's* traffic, and it has
-  not moved.
-- **No prediction of which files an agent will read** — `pharos check` counts what you named:
-  files exactly, into the floor; directories in full, into a separate ceiling. What the agent
-  decides to open on its own is in neither number. A split part is a floor on the same terms:
-  it holds while the agent respects the scope block it was given.
-- **No history compaction** and no automatic trimming when you approach the budget — it
-  warns; it does not intervene.
-- **No semantic decomposition by default.** `pharos split` cuts by scope and by position, and
-  no model is asked what your task means. `--semantic` (v0.5) is the single exception: a model
-  may propose *which files group together*, and nothing else — every budget, projection and
-  refusal is unchanged, the proposal is checked in code, and a failed check falls back to
-  position packing and says so. Off unless you ask for it.
-- **No review of the work.** `pharos run` re-runs the checks your project already has and
-  reports what broke (see below), and from v0.7 it parses each part as it finishes so a break
-  names the part that caused it — but nothing reads the diff and judges it. Whether the code is
-  *right* is still yours; whether it still *parses*, and whose part stopped it parsing, is now
-  measured.
-- **No change auditing / filesystem watching.**
+  `stream_options` injection. The proxy is a pure observer and this does not expire with a
+  version number. Everything that writes, asks or decides — `pharos run`, `--semantic`,
+  `--review` — does so as an ordinary client of the proxy, outside the request path, exactly
+  like Continue or Cursor. The guarantee is about what Pharos does to *other people's* traffic,
+  and it has not moved once in ten tiers.
+- **No compaction of anybody else's conversation.** `--compact` reclaims the window inside a
+  `pharos run` conversation, which is Pharos's own. Your agent's history belongs to your agent:
+  the proxy watches it fill up and says so, and trimming it would mean rewriting a request.
+  That is the previous bullet, and it is the reason this one exists.
+- **No claim that the code is right.** `--review` is an opinion and is printed as one. The
+  verdict, the coverage and the verification are measurements and are computed without it.
+  Nothing here merges the two.
+- **Prediction is not a bound.** `EXPECTED` says what agents on this model have historically
+  opened unprompted. It is a median with its range printed beside it, it is absent when there
+  is too little to learn from, and it never changes an exit code. The floor is still the only
+  number that promises anything, and a split part is a floor on the same terms: it holds while
+  the agent respects the scope block it was given.
+- **The audit sees changes, not intent.** It reports that a file moved and that nobody claimed
+  it. Whether that was a formatter, a hook, or you in another window is yours to know.
 
-Those belong to later tiers. The contract is simple: what your agent sends is what the
-backend receives, and every number you see is honestly labeled — exact, estimate, heuristic
-or floor. The one file Pharos writes from observed traffic (`pharos_observations.json`)
-contains token counts only, never text.
+The contract is unchanged and now covers more ground: what your agent sends is what the backend
+receives, and every number you see is labelled — exact, estimate, heuristic, floor, prediction,
+or opinion. The two files Pharos writes from observed traffic (`pharos_observations.json` and
+`pharos_templates.json`) contain counts only, never text.
 
 ## Development
 
@@ -711,10 +864,13 @@ uv run mypy pharos
 uv run pytest
 ```
 
-Tokenizer tests against a real GGUF auto-skip unless a model file is present under
-`tests/models/` (gitignored). `CHANGELOG.md` is the tier-by-tier history;
-`DESKTOP_VALIDATION.md` is the working record of every assumption confirmed against a live
-GPU + Ollama machine, including the ones that turned out to be wrong.
+**635 tests**, `ruff` and `mypy --strict` clean. Tokenizer tests against a real GGUF auto-skip
+unless a model file is present under `tests/models/` (gitignored). `CHANGELOG.md` is the
+tier-by-tier history; `DESKTOP_VALIDATION.md` is the working record of every assumption
+confirmed against a live GPU + Ollama machine, including the ones that turned out to be wrong.
+Its §24 is the one open section: v1.0's four features are pinned by the suite and have not
+yet had a live pass, which that section says in the file whose job is recording what was
+actually measured.
 
 `tests/test_end_to_end.py` runs the whole loop against a mocked backend — a coding-agent-shaped
 request through the proxy, the observation it records, the overhead the pre-flight learns from
@@ -723,6 +879,13 @@ That last step is the one that matters: the splitter's projection and the checke
 from different code, and a plan whose parts do not re-check as fitting is fiction. It also
 pins down the scope contract by measuring it — a part read literally, deferred filenames and
 all, costs more than its projection, which is exactly why the part says "do not open these".
+
+The v1.0 suites follow the same rule — the interesting test is the one that throws something
+away. `tests/test_review.py` is mostly findings being *discarded* for naming a file nobody
+changed or a line the diff does not contain; `tests/test_audit.py` is mostly the four ways the
+disk and the run can disagree; `tests/test_calibration.py` pins the pairs the read estimator
+refuses to learn from. A suite that only checks the happy path would pass just as well over a
+version of this that believed everything it was told.
 
 ## Author
 

@@ -1873,3 +1873,83 @@ Three things stand under that: the in-session measurement still tracks the gap u
 run, `SAFETY_MARGIN` is still subtracted from every ceiling beneath the remembered offset, and
 the drift line still reports the raw estimator, so a growing shortfall would be visible in the
 scorecard rather than absorbed silently.
+
+---
+
+## ☐ 24. The four v1.0 features, against a live model (v1.0, NOT YET RUN)
+
+Every tier before this one has a section above it written from a live pass. **This one does
+not**, and the honest thing is to say so in the file whose whole job is recording what was
+actually measured rather than what was expected. v1.0 shipped with its logic pinned by 635
+tests against mocked backends and fixtures; what those cannot tell you is how the numbers
+behave on a real model doing real work.
+
+What is already measured, and where: the compaction figures in `CHANGELOG.md` come from
+`tests/test_agent.py`'s fixture (five files of 1,834 tokens against an 8,344-token ceiling),
+not from a GPU. They are arithmetic, and they are labelled as arithmetic.
+
+Four things need a machine.
+
+### 24.1 — Does the read prediction match what an agent actually reads?
+
+**Run:** point a real coding agent (Continue, Cursor, Cline) at the proxy and work three or
+more whole tasks through it. Then:
+
+```bash
+uv run pharos check "<a task of the same shape>" --json | jq '.reads, .expected'
+```
+
+**Expect:** a `reads` block appearing only after the third conversation, with `sessions` equal
+to the number of whole tasks and `low`/`high` bracketing them.
+
+**The measurement that matters:** run one of those tasks again and compare the tokens the
+agent really pulled in against what `EXPECTED` predicted. The estimator is derived arithmetic
+(`Δinput − output_prev − Δuser`) and has never been checked against a ground truth, because
+there is no ground truth available from counts alone — the only way to get one is to watch a
+real agent and count what it opened.
+
+**A failure means:** if the residue systematically overshoots, something other than file
+content is growing between turns that the subtraction is billing to the agent. If it
+undershoots on a thinking model, that is the documented clamp and is expected — record how
+far under.
+
+### 24.2 — Does compaction let a part finish that would otherwise have stopped?
+
+**Run:** the same task twice, `--no-verify` for speed, once plain and once with `--compact`.
+
+```bash
+uv run pharos run --json "<a task whose parts hit the ceiling>" | jq '.compaction'
+uv run pharos run --json --compact "<the same task>" | jq '.compaction'
+```
+
+**Expect:** the first reporting a non-zero `reclaimable_tokens` and `room_refusals`; the
+second reporting `tokens_reclaimed` and both of the others at zero.
+
+**The real question, which the fixture cannot answer:** does the model cope with a stub where
+a file used to be? It is told the file was dropped and may call the tool again. The failure
+mode to watch for is a part that re-reads what was just compacted and grinds — `compactions`
+is capped at 3 per part precisely because that was the predicted failure, and whether it
+happens at all on a 9B model is unknown.
+
+### 24.3 — Does the audit find anything on a real tree?
+
+**Expect:** on a clean run, `audit.clean = true` and every change claimed.
+
+**What to look for:** `by_checks` entries. If `verify_commands` includes a formatter or a
+snapshot test, this is the first version of Pharos that can see it rewriting your files
+mid-run, and nobody has looked yet. Also worth timing: three tree indexes per part on a
+repository of a few thousand files. If that is perceptible, `--no-audit` exists, but the
+default should be reconsidered.
+
+### 24.4 — Is the review worth reading, and how much of it is invented?
+
+**Run:** `uv run pharos run --review "<a task>"` and read the panel.
+
+**The number to record is `discarded`.** It is the fraction of one model's findings that
+pointed at a file it did not change or a line it was not shown — the measurement of how much
+of a local model's code review is confabulated, which is exactly the thing the checking exists
+to establish. A high count is not a bug in Pharos; it is the finding.
+
+**Then read the ones that survived** and record how many were *right*, which no code can check.
+If that number is near zero on a 9B model, say so here — the feature would still be correctly
+built and not worth turning on, and that is a useful thing for this file to record.
