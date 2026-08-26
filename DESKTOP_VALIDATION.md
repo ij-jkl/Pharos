@@ -2384,3 +2384,31 @@ them:
 shop/notifications/templates.py            untouched
 tests/test_shop.py                         untouched
 ```
+
+### Confirmed end to end, after the refactor
+
+A third full run of the same prompt, on the unified code (one packing loop, one description of
+a finished part, one display path):
+
+| | §25 | §26 first | §26 confirming |
+|---|---|---|---|
+| compactions in the run | 1 | 3 | 3 (3,409 tokens) |
+| `BACKEND TRUNCATED` warnings | 2 | 6 | **0** |
+| `truncated_parts` | 1 | 2 | **0** |
+| hand-offs produced | 3 of 5 | 5 of 5 | **5 of 5** |
+| of those, asked for | — | 3 | 5 |
+| thin | 2 | 2 | **1** |
+
+The truncation warning has stopped firing at Pharos's own footsteps: three compactions, 3,409
+tokens reclaimed, and not one false alarm. Every part's parting message named none of its own
+work, all five were asked properly, and **four of the five then answered with a hand-off naming
+its files**. The one that did not is still counted thin and `kept_the_thread` is still false,
+which is the honest reading and the one this was built to preserve.
+
+The refactor changed nothing observable: audit clean, 88 native tool calls, 0 parts abandoned,
+peak 99.1% of ceiling, and `complete: false` naming parts 2 and 3.
+
+Judged from outside Pharos: 42 f-string interpolations across 13 files, **one `%` operator left
+in the whole tree and it is in `shop/notifications/templates.py`** — the file the prompt forbade,
+untouched for the third run running, along with `tests/test_shop.py`. One file left unparseable,
+`shop/legacy_invoice.py`, which belongs to part 3 — one of the two parts Pharos named.
