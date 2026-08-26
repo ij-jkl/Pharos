@@ -6,6 +6,28 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.0.4 — "The room that was set aside"
+
+The one thin hand-off left after v1.0.3, chased down. It was not the model either.
+
+- **The hand-off was never allowed into the reserve kept for it.** `handoff_reserve` is
+  subtracted from a part's ceiling up front, precisely so the closing summary has somewhere to
+  go. The reply room was then measured against that same ceiling — which hands the hand-off
+  everything *except* the space set aside for it. It was also charged for a tool catalogue it
+  does not carry, the request going out with no tools at all.
+
+  Both together: a part that ended at 99% of its ceiling was asked for its hand-off with
+  **443 tokens against a 500-token reserve**, and answered with nothing. On the same part the
+  fix gives it about **1,379** — the 443, plus the 500 reserved, plus the ~436 the catalogue
+  was costing it. `SAFETY_MARGIN` still stands behind the whole thing untouched.
+
+- **Pharos's own words were being counted as the model's hand-off.** A reply cut off at its
+  token limit gets a note appended saying so. A reply cut off before it produced a single
+  character is then made *entirely* of that note — and it reads as a hand-off: non-empty, in
+  the part's own text field, counted as produced. It is Pharos talking to itself. `produced`
+  now asks what the model said, so the count got stricter rather than kinder, and a hand-off
+  that is only a note is asked for again.
+
 ## v1.0.3 — "Both halves of a hand-off"
 
 The two things §25 left open, diagnosed. Neither was a property of the model, which is what

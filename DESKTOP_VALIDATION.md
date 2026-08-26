@@ -2412,3 +2412,75 @@ Judged from outside Pharos: 42 f-string interpolations across 13 files, **one `%
 in the whole tree and it is in `shop/notifications/templates.py`** — the file the prompt forbade,
 untouched for the third run running, along with `tests/test_shop.py`. One file left unparseable,
 `shop/legacy_invoice.py`, which belongs to part 3 — one of the two parts Pharos named.
+
+
+---
+
+## ☑ 27. The last thin hand-off (v1.0.4, live)
+
+**Run completed 2026-08-26.** §26 left one part still handing off nothing useful out of five.
+Reading what that part actually said settled it in one line:
+
+```
+part 3  wrote=[legacy_invoice.py, carriers.py, parcels.py]
+        handoff='[Pharos] This reply was cut off at the 443-token limit — what remains of the window.'
+```
+
+The model produced **zero characters**. Every word recorded as that part's hand-off was Pharos's
+own note saying the reply had been cut off. Two separate faults, both ours.
+
+### The hand-off was never allowed into the reserve kept for it
+
+`handoff_reserve` is subtracted from a part's ceiling up front, precisely so the closing summary
+has somewhere to go:
+
+```python
+self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN
+```
+
+and then the reply room was measured against that same ceiling — which hands the hand-off
+everything **except** the space set aside for it. It was also charged for a tool catalogue it
+does not carry, the hand-off request going out with no tools at all.
+
+On this part the two together cost it almost everything it had:
+
+| | before | after |
+|---|---|---|
+| room for the hand-off | 443 | **~1,379** |
+| the reserve it was owed | 500 | 500 |
+| the catalogue it does not send | ~436 charged | not charged |
+
+`SAFETY_MARGIN` still stands behind the whole thing untouched, and a tooled request's room is
+arithmetically unchanged — `ceiling + 0`, projected with the catalogue, exactly as before.
+
+### Pharos's own words were counted as the model's hand-off
+
+A reply cut off at its limit gets a note appended saying so. A reply cut off before it produced
+one character is then made *entirely* of that note — and it reads as a hand-off: non-empty, in
+the part's own text field, counted as produced. `produced` now asks what the MODEL said, so the
+count got stricter rather than kinder, and a hand-off that is only a note is asked for again.
+
+### The result
+
+Same prompt, same project, same model:
+
+| | §25 | §26 | §27 |
+|---|---|---|---|
+| hand-offs produced | 3 of 5 | 5 of 5 | 5 of 5 |
+| thin | 2 | 1 | **0** |
+| `kept_the_thread` | false | false | **true** |
+| `truncated_parts` | 1 | 0 | 0 |
+
+The first time continuity has been held on a six-part run. Part 3, which recorded Pharos's note
+last time, now hands off *"**Hand-off for Part 4:** Converted percent-formatting to …"*, naming
+its files.
+
+**Two parts hit the window ceiling and handed off early**, where the previous run had none. That
+is the ceiling doing its job, not a regression: this run's model took 19 and 32 tool rounds where
+the last took 14 and 12, and the room a TOOLED request gets is unchanged by this fix. It is also
+the strongest form of the result — the two parts that ran out of window are exactly the two that
+most need their hand-off, and they are the ones that now get the room reserved for it.
+
+The work itself was worse this time and Pharos said so: coverage 72.2%, `complete: false`, three
+parts named for breaking the build, audit clean. `shop/notifications/templates.py` and
+`tests/test_shop.py` untouched for the fourth run running.

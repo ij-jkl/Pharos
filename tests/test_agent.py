@@ -1882,3 +1882,69 @@ async def test_every_exit_reports_the_work_the_part_had_already_done(
     assert result.native_calls == 1
     assert result.scoped == ["src/alpha.py"]
     assert not result.handoff_requested  # it never got as far as one
+
+
+# --- the hand-off gets the room that was reserved for it ------------------------------------------
+
+
+async def test_the_handoff_request_may_generate_into_the_reserve(workspace: Workspace) -> None:
+    """`handoff_reserve` is subtracted from the ceiling so the hand-off has somewhere to go.
+
+    Measuring the reply room against that same ceiling then hands the hand-off everything
+    EXCEPT the space set aside for it -- and it is the one request that space exists for. It
+    is not charged for the tool catalogue either, which it does not carry.
+
+    Live consequence: a part that ended at 99% of its ceiling was asked for its hand-off with
+    443 tokens against a 500-token reserve, and answered with nothing at all.
+
+    Both requests go out over the IDENTICAL conversation, because comparing two requests sent
+    at different points compares the growth between them as well.
+    """
+    backend = FakeBackend([{"role": "assistant", "content": "ok", "tool_calls": []}])
+    session = _session(backend, _box(workspace, None), budget=100_000)  # reserve 100
+    session._messages = [{"role": "user", "content": "hello"}]
+    tools = ToolBox(workspace=workspace).catalogue()
+
+    await session._chat(tools)
+    await session._chat(None)
+
+    tooled, toolless = backend.requests[-2], backend.requests[-1]
+    assert toolless["options"]["num_predict"] == (
+        tooled["options"]["num_predict"] + 100 + session.catalogue_tokens
+    )
+
+
+# --- Pharos's own words are not the model's hand-off ----------------------------------------------
+
+
+def test_pharos_notes_are_stripped_from_what_the_model_said() -> None:
+    from pharos.agent.session import model_words
+
+    cut = "I changed src/alpha.py.\n\n[Pharos] This reply was cut off at the 443-token limit."
+    assert model_words(cut) == "I changed src/alpha.py."
+
+
+def test_a_reply_that_is_only_a_pharos_note_is_not_a_handoff() -> None:
+    """A reply cut off before it produced one character is made ENTIRELY of the note saying
+    so. Unexamined it reads as a hand-off: non-empty, in the part's own text field. It is
+    Pharos talking to itself, and a real run recorded exactly this as a part's hand-off."""
+    from pharos.agent.session import model_words
+
+    only_note = "[Pharos] This reply was cut off at the 443-token limit — what remains."
+    assert model_words(only_note) == ""
+
+
+async def test_a_handoff_made_only_of_a_pharos_note_is_asked_again(workspace: Workspace) -> None:
+    backend = FakeBackend(
+        [
+            _writes("src/alpha.py", "alpha = 9\n"),
+            {"role": "assistant",
+             "content": "[Pharos] This reply was cut off at the 443-token limit.",
+             "tool_calls": []},
+            {"role": "assistant", "content": "src/alpha.py sets alpha to 9.", "tool_calls": []},
+        ]
+    )
+    box = _box(workspace, {"src/alpha.py": ScopeEntry("src/alpha.py")})
+    result = await _session(backend, box, budget=100_000).run("Set alpha to 9.")
+    assert result.handoff_requested
+    assert result.text == "src/alpha.py sets alpha to 9."

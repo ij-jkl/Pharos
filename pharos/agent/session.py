@@ -64,6 +64,9 @@ _PER_MESSAGE_TOKENS = 8
 # the ceiling check has already decided there is room to work.
 _MIN_REPLY_ROOM = 256
 
+# How Pharos marks its own words inside a model's reply, so they can be told apart again.
+_PHAROS_NOTE = "[Pharos]"
+
 # --- compaction -------------------------------------------------------------------------------
 #
 # What a part spends its window on is overwhelmingly tool results: a read_file of a 700-line
@@ -308,6 +311,8 @@ class AgentSession:
         # The hand-off has to fit AFTER the conversation that produced it, so it comes out of
         # the ceiling up front rather than being hoped for at the end.
         self._ceiling = usable_budget - handoff_reserve - SAFETY_MARGIN
+        # Kept, because the hand-off request is allowed to generate INTO it -- see _chat.
+        self._handoff_reserve = max(handoff_reserve, 0)
         # What previous runs measured this model's chat template to cost, if anything has. A
         # part starts with no responses of its own, so without this its FIRST request is the
         # one request of the part enforced against an uncorrected ceiling.
@@ -844,7 +849,8 @@ class AgentSession:
         out of a true answer.
         """
         text = str(message.get("content") or "").strip()
-        if text and names_its_work(text, self._toolbox.files_written):
+        said = model_words(text)
+        if said and names_its_work(said, self._toolbox.files_written):
             return text, reported, False
         asked, reported = await self._request_handoff(reported)
         return (asked or text), reported, True
@@ -883,7 +889,20 @@ class AgentSession:
         # short on this model.
         if self._template_offset() <= 0:
             self._exposed += 1
-        room = max(self._ceiling - self._projected(), _MIN_REPLY_ROOM)
+        # Two things the tool-less hand-off request must not be charged for.
+        #
+        # The catalogue is not sent with it, so projecting one costs it room that will
+        # genuinely be free. And the ceiling has ``handoff_reserve`` subtracted already,
+        # precisely so the hand-off has somewhere to go -- measuring the reply against the
+        # ceiling hands it everything EXCEPT the space set aside for it, which is the one
+        # request that space exists for.
+        #
+        # Both together are why a part that ended at 99% of its ceiling was asked for its
+        # hand-off with 443 tokens against a 500-token reserve, and answered with nothing at
+        # all: the reply was cut off before a word of it arrived, and what the run recorded as
+        # that part's hand-off was Pharos's own note saying so (DESKTOP_VALIDATION §27).
+        limit = self._ceiling + (0 if has_tools else self._handoff_reserve)
+        room = max(limit - self._projected(with_tools=has_tools), _MIN_REPLY_ROOM)
         # Paired below with whatever prompt_eval_count comes back for THIS request.
         payload: dict[str, Any] = {
             "model": self._model,
@@ -1047,6 +1066,22 @@ def _loggable(arguments: dict[str, Any]) -> dict[str, Any]:
         else:
             trimmed[key] = value
     return trimmed
+
+
+def model_words(text: str) -> str:
+    """``text`` with Pharos's own annotations stripped -- what the MODEL actually said.
+
+    A reply cut off at its token limit gets a note appended saying so, and a reply cut off
+    before it produced a single character is then made ENTIRELY of that note. Left unexamined
+    it reads as a hand-off: non-empty, in the part's own text field, counted as produced. It
+    is Pharos talking to itself.
+
+    Used wherever the question is about the model rather than about the run. Nothing is
+    removed from what gets displayed or carried -- the note is the useful part for a person
+    reading the log.
+    """
+    kept = [line for line in text.splitlines() if not line.lstrip().startswith(_PHAROS_NOTE)]
+    return chr(10).join(kept).strip()
 
 
 def _request_options(room: int, num_ctx: int | None) -> dict[str, Any]:

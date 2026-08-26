@@ -549,3 +549,22 @@ def test_the_last_part_is_not_counted_as_having_been_asked() -> None:
     card = score(parts, handoff_reserve=500)
     assert card.handoffs_expected == 1
     assert card.handoffs_requested == 0
+
+
+def test_a_handoff_made_only_of_a_pharos_note_did_not_produce_one() -> None:
+    """A reply cut off before it produced a character is made entirely of Pharos's note
+    saying so. Counting that as a hand-off flatters the one number here that is about the
+    model holding the thread, and a real six-part run recorded exactly this."""
+    parts = [
+        _part(
+            scoped=["a.py"],
+            wrote=["a.py"],
+            handoff="[Pharos] This reply was cut off at the 443-token limit — what remains.",
+        ),
+        _part(scoped=["b.py"], wrote=["b.py"]),
+    ]
+    card = score(parts, handoff_reserve=500)
+    assert card.handoffs_expected == 1
+    assert card.handoffs_produced == 0
+    assert card.thin_handoffs == 1
+    assert not card.kept_the_thread

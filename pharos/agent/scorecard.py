@@ -81,7 +81,7 @@ from dataclasses import dataclass, field
 
 from pharos.agent.audit import PartAudit
 from pharos.agent.ledger import names_its_work
-from pharos.agent.session import SAFETY_MARGIN, PartResult
+from pharos.agent.session import SAFETY_MARGIN, PartResult, model_words
 from pharos.agent.tools import normalise
 from pharos.agent.verify import Damage, Verification
 
@@ -391,7 +391,10 @@ def score(
     # run AFTER the plan and hand off to nobody either — they are a sweep, not a continuation,
     # so holding them to the thread would penalise a run for the mechanism that rescued it.
     expects_handoff = planned_parts[:-1] if len(planned_parts) > 1 else []
-    produced = [p for p in expects_handoff if p.text.strip()]
+    # The MODEL's words, not the run's. A reply cut off before it produced a character is made
+    # entirely of Pharos's note saying it was cut off, and counting that as a hand-off flatters
+    # the one number here that is about the model holding the thread.
+    produced = [p for p in expects_handoff if model_words(p.text)]
 
     # A hand-off from a part that CHANGED something has to describe it. From a part that did
     # nothing, brevity is the honest answer, so silence there is not held against continuity.
