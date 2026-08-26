@@ -64,6 +64,39 @@ _PER_MESSAGE_TOKENS = 8
 # the ceiling check has already decided there is room to work.
 _MIN_REPLY_ROOM = 256
 
+# --- compaction -------------------------------------------------------------------------------
+#
+# What a part spends its window on is overwhelmingly tool results: a read_file of a 700-line
+# module is thousands of tokens that stay in the conversation for the rest of the part, long
+# after the model has finished editing that file. Until v1.0 the ceiling simply stopped the
+# part there and asked for the hand-off -- correct, and expensive, because most of what filled
+# the window was no longer being used.
+#
+# `--compact` replaces the OLDEST tool results with a stub naming what was dropped, oldest
+# first, until the projection clears the ceiling again. Four rules keep it honest:
+#
+#   * only tool results are ever touched. The system prompt, the part body, every user turn
+#     and everything the model itself said stay exactly as they were: compaction must not be
+#     able to change what the part was asked to do.
+#   * the message stays in place, stubbed rather than removed. A tool result deleted out from
+#     under the assistant turn that called for it leaves a tool_call with no answer, which is
+#     a malformed conversation, not a smaller one.
+#   * the most recent results are never touched -- they are what the model is working on.
+#   * bounded. A part that compacts, re-reads what it just dropped, and compacts again is
+#     grinding, so after _MAX_COMPACTIONS rounds the ceiling goes back to stopping the part.
+#
+# The stub says what was dropped, which is the whole difference between compaction and a
+# silently truncated context: the model can see that it read something and that the text is
+# gone, rather than quietly losing the middle of its own history.
+_COMPACT_KEEP_RECENT = 2
+_MAX_COMPACTIONS = 3
+# Below this a stub is not worth the confusion it causes: it costs tokens of its own, and a
+# result small enough to be near it was never what filled the window.
+_COMPACT_MIN_RECLAIM = 200
+# The shape a tool result takes when the model's template could not emit a structured call;
+# shared with _execute so the two spellings cannot drift apart.
+_TOOL_RESULT_PREFIX = "TOOL RESULT ("
+
 # The estimate is a floor and the chat template adds scaffolding it cannot see, so the ceiling
 # stays this far clear of the real budget. Roughly one long tool result of slack.
 SAFETY_MARGIN = 256
@@ -201,6 +234,18 @@ class PartResult:
     # Requests this part sent with no correction to its ceiling at all -- nothing measured
     # yet in this part, and nothing remembered from an earlier run. See AgentSession.exposed.
     exposed_requests: int = 0
+    # Compaction, both halves. ``compacted_tokens`` is what stubbing stale tool results
+    # actually gave back; ``reclaimable_tokens`` is what it WOULD have given back on a part
+    # that hit the ceiling with --compact off, so the run can say what it declined to do.
+    compacted_tokens: int = 0
+    compactions: int = 0
+    reclaimable_tokens: int = 0
+    compacted: list[str] = field(default_factory=list)  # what was stubbed, in order
+    # Tool calls the window actually stopped -- refused for room, and still refused after any
+    # compaction retry. Kept apart from every other refusal because it is the case the ceiling
+    # check never sees: the part is comfortably inside its window and cannot open the next
+    # file all the same, so it does NOT stop early, and the scorecard reported it as nothing.
+    room_refusals: int = 0
 
 
 class AgentSession:
@@ -217,6 +262,7 @@ class AgentSession:
         handoff_reserve: int,
         num_ctx: int | None = None,
         template_offset: int | None = None,
+        compact: bool = False,
         on_event: Callable[[str], None] | None = None,
     ) -> None:
         self._client = client
@@ -253,7 +299,16 @@ class AgentSession:
         # one request of the part enforced against an uncorrected ceiling.
         self._seed = max(template_offset or 0, 0)
         self._exposed = 0
+        self._compact_enabled = compact
         self._messages: list[dict[str, Any]] = []
+        # message index -> the path that tool call was about, so a stub can name it. Kept
+        # beside the conversation rather than inside it: self._messages goes on the wire
+        # verbatim, and a private key of ours has no business in somebody's request body.
+        self._result_paths: dict[int, str] = {}
+        self._compacted: list[str] = []
+        self._compacted_tokens = 0
+        self._compactions = 0
+        self._room_refusals = 0
         self._drift: list[tuple[int, int]] = []
         self._largest_tooled = 0
         self.truncated_by_backend = False
@@ -338,6 +393,11 @@ class AgentSession:
         ]
         self._drift = []
         self._largest_tooled = 0
+        self._result_paths = {}
+        self._compacted = []
+        self._compacted_tokens = 0
+        self._compactions = 0
+        self._room_refusals = 0
         nudges = 0
         written_at_last_nudge = 0
         read_at_last_nudge = 0
@@ -365,11 +425,31 @@ class AgentSession:
         while steps < _MAX_STEPS:
             projected = self._projected()
             peak = max(peak, projected)
+            if self._projected_for_ceiling() > self._ceiling and self._compact_enabled:
+                # Compaction runs BEFORE the refusal and cannot skip it: whatever it gives
+                # back, the projection is measured again against the same ceiling, and a part
+                # that still does not fit stops exactly where it would have stopped.
+                reclaimed = self._compact()
+                if reclaimed:
+                    projected = self._projected()
+                    peak = max(peak, projected)
+                    self._on_event(
+                        f"ceiling reached — compacted {reclaimed:,} tokens of stale tool "
+                        f"results, back to {projected:,} of {self._ceiling:,}"
+                    )
             if self._projected_for_ceiling() > self._ceiling:
                 # Refusing BEFORE the send is the guarantee: nothing that has not been proven
                 # to fit is ever put on the wire.
+                stale = 0 if self._compact_enabled else self._reclaimable()
+                offer = (
+                    f" — {stale:,} of it is tool results this part finished with; --compact "
+                    f"would give them back"
+                    if stale
+                    else ""
+                )
                 self._on_event(
-                    f"window ceiling reached ({projected:,} of {self._ceiling:,}) — handing off"
+                    f"window ceiling reached ({projected:,} of {self._ceiling:,}) — "
+                    f"handing off{offer}"
                 )
                 stopped_early = True
                 break
@@ -388,6 +468,11 @@ class AgentSession:
                     changes=self._toolbox.changes(),
                     exposed_requests=self._exposed,
                     ceiling=self._ceiling,
+                    compacted_tokens=self._compacted_tokens,
+                    compactions=self._compactions,
+                    reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
+                    compacted=list(self._compacted),
+                    room_refusals=self._room_refusals,
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
@@ -469,6 +554,11 @@ class AgentSession:
                     changes=self._toolbox.changes(),
                     exposed_requests=self._exposed,
                     ceiling=self._ceiling,
+                    compacted_tokens=self._compacted_tokens,
+                    compactions=self._compactions,
+                    reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
+                    compacted=list(self._compacted),
+                    room_refusals=self._room_refusals,
                     nudges=nudges,
                     scoped=scoped,
                     drift_samples=list(self._drift),
@@ -506,6 +596,11 @@ class AgentSession:
             changes=self._toolbox.changes(),
             exposed_requests=self._exposed,
             ceiling=self._ceiling,
+            compacted_tokens=self._compacted_tokens,
+            compactions=self._compactions,
+            reclaimable_tokens=(0 if self._compact_enabled else self._reclaimable()),
+            compacted=list(self._compacted),
+            room_refusals=self._room_refusals,
             nudges=nudges,
             scoped=scoped,
             drift_samples=list(self._drift),
@@ -529,6 +624,22 @@ class AgentSession:
 
         room = max(self._ceiling - self._projected_for_ceiling(), 0)
         result = self._toolbox.dispatch(name, arguments, room=room, count=self._count)
+        if self._compact_enabled and not result.ok and result.needed_room is not None:
+            # The commonest shape of the problem, and the one the ceiling check never sees:
+            # the part is comfortably inside its window and still cannot open the next file,
+            # because the window is full of files it finished with ten steps ago.
+            reclaimed = self._compact(headroom=result.needed_room)
+            if reclaimed:
+                self._on_event(
+                    f"no room for {name} — compacted {reclaimed:,} tokens and retried"
+                )
+                room = max(self._ceiling - self._projected_for_ceiling(), 0)
+                result = self._toolbox.dispatch(name, arguments, room=room, count=self._count)
+        # Counted AFTER any retry, so it means "the window stopped this call" rather than
+        # "the window was tight for a moment". With --compact on and a retry that went
+        # through, nothing was refused and nothing should be reported as refused.
+        if not result.ok and result.needed_room is not None:
+            self._room_refusals += 1
         detail = result.wrote or arguments.get("path") or ""
         self._on_event(f"{'ok ' if result.ok else '!! '}{name} {detail}".rstrip())
         if result.ok:
@@ -545,11 +656,105 @@ class AgentSession:
             # A model whose template never emitted a structured call will not reliably render
             # a "tool" turn back either, so the result goes in as ordinary user text. Same
             # content, a shape the template definitely understands.
-            body = f"TOOL RESULT ({name}):\n{result.text}"
+            body = f"{_TOOL_RESULT_PREFIX}{name}):\n{result.text}"
             self._messages.append({"role": "user", "content": body})
         else:
             self._messages.append({"role": "tool", "tool_name": name, "content": result.text})
+        self._result_paths[len(self._messages) - 1] = str(arguments.get("path") or "")
         return result.ok
+
+    # --- compaction ---------------------------------------------------------------------
+
+    def _tool_result_indices(self) -> list[int]:
+        """Where the tool results sit, in order. Both shapes a result can take count."""
+        found: list[int] = []
+        for index, message in enumerate(self._messages):
+            role = message.get("role")
+            content = str(message.get("content") or "")
+            if role == "tool" or (role == "user" and content.startswith(_TOOL_RESULT_PREFIX)):
+                found.append(index)
+        return found
+
+    def _compactable(self) -> list[int]:
+        """Tool results old enough AND large enough to stub.
+
+        Size first, and it is not an optimisation. Not every tool result is a file: a refusal
+        for space, a write confirmation, a failed call are all tool results and all tiny.
+        Counting them into the "most recent" window meant three consecutive refusals could
+        push the one real file the part had read out of protection and get it stubbed, while
+        the three messages saying "there was no room" were carefully preserved. Measured
+        exactly that way on the first run of this code.
+        """
+        substantial = [
+            index
+            for index in self._tool_result_indices()
+            if self._count(str(self._messages[index].get("content") or ""))
+            > _COMPACT_MIN_RECLAIM
+        ]
+        if len(substantial) <= _COMPACT_KEEP_RECENT:
+            return []
+        return substantial[:-_COMPACT_KEEP_RECENT]
+
+    def _reclaimable(self) -> int:
+        """What compaction would give back right now, without doing it.
+
+        Reported when --compact is off and the ceiling has just stopped a part, because "your
+        window filled up" and "your window filled up with files you finished with eleven steps
+        ago" are different things to be told.
+        """
+        total = 0
+        for index in self._compactable():
+            content = str(self._messages[index].get("content") or "")
+            total += max(self._count(content) - self._count(self._stub(index, 0)), 0)
+        return total
+
+    def _stub(self, index: int, dropped: int) -> str:
+        """What replaces a tool result: what it was, how big it was, and that it can be had
+        again. A model that can see it read something and that the text is gone can decide
+        what to do about it; a context silently truncated underneath it cannot."""
+        message = self._messages[index]
+        name = str(message.get("tool_name") or "") or _result_tool_name(message)
+        about = f"{name} {self._result_paths.get(index, '')}".strip() or "a tool call"
+        body = (
+            f"[pharos dropped the {dropped:,}-token result of {about} to make room in the "
+            f"window. It was read earlier in this part. Call it again only if you still need "
+            f"its contents.]"
+        )
+        if message.get("role") == "tool":
+            return body
+        # Keep the prefix, so the message still reads as a tool result to everything above.
+        return f"{_TOOL_RESULT_PREFIX}{name or 'tool'}):\n{body}"
+
+    def _compact(self, headroom: int = 0) -> int:
+        """Stub stale tool results until there is room again. Returns the tokens reclaimed.
+
+        ``headroom`` is what has to fit ON TOP of the conversation afterwards: zero when the
+        ceiling itself has been reached, and the size of the file when a read was refused for
+        space. Both are the same question asked at two moments.
+
+        Oldest first, and it stops the moment there is enough: a part that needed 300 tokens
+        does not lose the last four files it read to get them.
+        """
+        if self._compactions >= _MAX_COMPACTIONS:
+            return 0
+        reclaimed = 0
+        for index in self._compactable():
+            if self._projected_for_ceiling() + headroom <= self._ceiling:
+                break
+            message = self._messages[index]
+            before = self._count(str(message.get("content") or ""))
+            stub = self._stub(index, before)
+            saved = before - self._count(stub)
+            if saved < _COMPACT_MIN_RECLAIM:
+                continue
+            message["content"] = stub
+            reclaimed += saved
+            name = str(message.get("tool_name") or "") or _result_tool_name(message)
+            self._compacted.append(f"{name} {self._result_paths.get(index, '')}".strip())
+        if reclaimed:
+            self._compactions += 1
+            self._compacted_tokens += reclaimed
+        return reclaimed
 
     async def _request_handoff(self, reported: int | None) -> tuple[str, int | None]:
         """Ask for the closing summary, with no tools offered so it cannot start working again."""
@@ -724,6 +929,15 @@ def recover_tool_calls(content: str, known: set[str]) -> list[dict[str, Any]]:
             if isinstance(name, str) and name in known and isinstance(arguments, dict):
                 calls.append({"function": {"name": name, "arguments": arguments}})
     return calls
+
+
+def _result_tool_name(message: dict[str, Any]) -> str:
+    """The tool a user-shaped result came from: the name inside `TOOL RESULT (name):`."""
+    content = str(message.get("content") or "")
+    if not content.startswith(_TOOL_RESULT_PREFIX):
+        return ""
+    closing = content.find(")", len(_TOOL_RESULT_PREFIX))
+    return content[len(_TOOL_RESULT_PREFIX) : closing] if closing > 0 else ""
 
 
 def _loggable(arguments: dict[str, Any]) -> dict[str, Any]:

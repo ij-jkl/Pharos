@@ -41,6 +41,10 @@ class PharosConfig(BaseModel):
     # catalogue, injected context). When set it overrides the value learned from observed
     # traffic; when neither exists the pre-flight floor omits overhead and says so.
     client_overhead_tokens: int | None = Field(default=None, ge=0)
+    # Pre-flight: tokens the agent pulls in ON ITS OWN over one task, beyond the prompt and
+    # the model's own replies. When set it overrides the value learned from observed traffic;
+    # when neither exists the check prints FLOOR and CEILING and says the middle is unknown.
+    agent_read_tokens: int | None = Field(default=None, ge=0)
     # Where the proxy records per-request token counts (counts only, never text) so the
     # pre-flight check can calibrate against real observed traffic.
     observations_file: str = Field(default="pharos_observations.json", min_length=1)

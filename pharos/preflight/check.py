@@ -20,6 +20,8 @@ from pathlib import Path
 from pharos.calibration import (
     Observation,
     OverheadEstimate,
+    ReadEstimate,
+    estimate_agent_reads,
     estimate_client_overhead,
     estimate_typical_output,
     load_observations,
@@ -95,6 +97,8 @@ class CheckReport:
     reserve_warning: str | None
     directories: list[ExpandedDirectory] = field(default_factory=list)
     directory_warning: str | None = None  # set when the floor fits but the directories do not
+    reads: ReadEstimate | None = None  # what an agent historically opened on its own
+    expected_warning: str | None = None  # set when the floor fits but the expected total does not
 
     @property
     def directory_tokens(self) -> int:
@@ -104,6 +108,19 @@ class CheckReport:
     def ceiling(self) -> int:
         """Floor plus every named directory read in full — the other end of the range."""
         return self.floor + self.directory_tokens
+
+    @property
+    def expected(self) -> int | None:
+        """Floor plus what an agent usually opens unprompted — None when nothing is known.
+
+        Between the two bounds and neither of them: the floor is what the prompt guarantees,
+        the ceiling is what reading every named directory in full would cost, and this is what
+        traffic through the proxy says actually tends to happen. It is the only number in the
+        report that is a prediction, and it is labelled one everywhere it appears.
+        """
+        if self.reads is None:
+            return None
+        return self.floor + self.reads.tokens
 
 
 async def run_check(
@@ -166,9 +183,11 @@ async def run_check(
     overhead = _overhead(config, observations, model)
     floor = prompt_tokens + sum(f.tokens for f in files) + (overhead.tokens if overhead else 0)
 
+    reads = _reads(config, observations, model)
     verdict, detail = _verdict(floor, profile, target)
     reserve_warning = _reserve_warning(config, observations, model)
     directory_warning = _directory_warning(floor, directories, profile)
+    expected_warning = _expected_warning(floor, reads, profile, target)
 
     return CheckReport(
         root=root,
@@ -187,6 +206,8 @@ async def run_check(
         reserve_warning=reserve_warning,
         directories=directories,
         directory_warning=directory_warning,
+        reads=reads,
+        expected_warning=expected_warning,
     )
 
 
@@ -278,6 +299,57 @@ def _overhead(
             provenance="configured (client_overhead_tokens in pharos.toml)",
         )
     return estimate_client_overhead(observations, model)
+
+
+def _reads(
+    config: PharosConfig, observations: list[Observation], model: str | None
+) -> ReadEstimate | None:
+    """What the agent adds unprompted: pinned in config, else learned, else unknown."""
+    if config.agent_read_tokens is not None:
+        pinned = config.agent_read_tokens
+        return ReadEstimate(
+            tokens=pinned,
+            sessions=0,
+            low=pinned,
+            high=pinned,
+            provenance="configured (agent_read_tokens in pharos.toml)",
+        )
+    return estimate_agent_reads(observations, model)
+
+
+def _expected_warning(
+    floor: int,
+    reads: ReadEstimate | None,
+    profile: EnvironmentProfile | None,
+    target: int | None,
+) -> str | None:
+    """Flag the case the floor was always silent about: it fits, and the work still will not.
+
+    This is the whole reason the third number exists. A floor that clears the budget by 2,000
+    tokens looks like a pass right up until the agent opens the four files it was not told
+    about, and every version before this one had no way to say so.
+    """
+    if reads is None or reads.tokens <= 0:
+        return None
+    budget = target
+    if budget is None:
+        if profile is None:
+            return None
+        budget = profile.budget.usable_budget
+    if budget is None or floor > budget or floor + reads.tokens <= budget:
+        return None
+    source = (
+        f"agents on this model have historically opened another ~{reads.tokens:,} tokens on "
+        f"their own ({reads.low:,}-{reads.high:,} across {reads.sessions} conversations)"
+        if reads.learned
+        else (
+            f"agent_read_tokens says an agent adds another {reads.tokens:,} tokens on its own"
+        )
+    )
+    return (
+        f"the floor fits, but {source}, which would put the request "
+        f"{floor + reads.tokens - budget:,} over — split it, or name the files you want read"
+    )
 
 
 def _verdict(

@@ -343,7 +343,7 @@ def test_json_output_is_parseable_and_complete(
     payload = json.loads(capsys.readouterr().out)
 
     assert code in {0, 1}
-    assert payload["schema"] == 1
+    assert payload["schema"] == 2
     assert payload["tokenizer"] == "heuristic-chars-4"
     assert payload["ceiling"] > payload["floor"]
     assert payload["directories"][0]["path"] == "src"

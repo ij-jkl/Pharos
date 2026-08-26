@@ -8,11 +8,13 @@ assertion about token arithmetic is reproducible on any machine.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from pharos.accountant import Accountant
+from pharos.calibration import ReadEstimate
 from pharos.config import PharosConfig
 from pharos.preflight.check import run_check
 from pharos.preflight.cli import main as check_main
@@ -348,3 +350,39 @@ def test_check_cli_still_exits_on_the_verdict(tree: Path, monkeypatch: pytest.Mo
     # The probe may or may not find a live backend on the host, so the verdict is not fixed;
     # what must hold is that `check` still runs unchanged and returns a scriptable code.
     assert check_main(["Refactor `src/alpha.py`."]) in {0, 1, 2}
+
+
+# --- room for what the agent opens on its own (--reserve-reads) -----------------------------
+
+
+async def test_reserve_reads_takes_the_prediction_off_every_part(tree: Path) -> None:
+    """The room comes out of the ceiling once, before anything is packed against it."""
+    prompt = "Refactor `src/alpha.py`, `src/beta.py` and `src/gamma.py` consistently."
+    config = _config(tree)
+    report = await run_check(config, prompt, profile=_profile(tree, loaded_ctx=4096))
+    plain = build_plan(config, prompt, report)
+    learned = replace(report, reads=ReadEstimate(500, 4, 300, 700, "observed · test"))
+    reserved = build_plan(config, prompt, learned, reserve_reads=True)
+
+    assert reserved.target_per_part == plain.target_per_part - 500
+    assert reserved.reads_reserved == 500
+    assert any("held back from every part" in note for note in reserved.notes)
+    assert len(reserved.parts) >= len(plain.parts)
+
+
+async def test_reserve_reads_with_nothing_learned_says_so_and_packs_as_usual(tree: Path) -> None:
+    prompt = "Refactor `src/alpha.py`, `src/beta.py` and `src/gamma.py` consistently."
+    config = _config(tree)
+    report = await run_check(config, prompt, profile=_profile(tree, loaded_ctx=4096))
+    plain = build_plan(config, prompt, report)
+    asked = build_plan(config, prompt, report, reserve_reads=True)
+
+    assert asked.target_per_part == plain.target_per_part
+    assert asked.reads_reserved == 0
+    assert any("cannot size yet" in note for note in asked.notes)
+
+
+async def test_reserve_reads_without_a_split_is_rejected_not_ignored(tree: Path) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        check_main(["a prompt", "--reserve-reads"])
+    assert exit_info.value.code == 2

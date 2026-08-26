@@ -301,3 +301,46 @@ async def test_target_overrides_a_live_budget(tmp_path: Path) -> None:
     report = await run_check(config, "Refactor big.py", profile=profile, target=300)
     assert report.verdict is Verdict.EXCEEDS
     assert "requested target" in report.verdict_detail
+
+
+# --- the third number (v1.0) ----------------------------------------------------------------
+
+
+async def test_a_pinned_prediction_is_not_described_as_something_agents_did(
+    tmp_path: Path,
+) -> None:
+    """A configured number has no conversations behind it, and the prose must not pretend."""
+    (tmp_path / "one.py").write_text("x = 1\n" * 200, encoding="utf-8")
+    config = _config(tmp_path, agent_read_tokens=3000)
+    report = await run_check(config, "Refactor `one.py`", skip_profile=True, target=1000)
+
+    assert report.reads is not None and not report.reads.learned
+    assert report.expected == report.floor + 3000
+    assert report.expected_warning is not None
+    assert "historically" not in report.expected_warning
+    assert "0 conversations" not in report.expected_warning
+    assert "agent_read_tokens" in report.expected_warning
+
+
+async def test_with_nothing_learned_the_check_prints_two_numbers_not_three(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "one.py").write_text("x = 1\n", encoding="utf-8")
+    report = await run_check(
+        _config(tmp_path), "Refactor `one.py`", skip_profile=True, target=100_000
+    )
+    assert report.reads is None
+    assert report.expected is None
+    assert report.expected_warning is None
+
+
+async def test_the_expected_warning_only_fires_when_the_floor_itself_fits(
+    tmp_path: Path,
+) -> None:
+    """A floor that already exceeds is a plain EXCEEDS; adding "and it gets worse" to it is
+    noise on top of a verdict that has already been given."""
+    (tmp_path / "one.py").write_text("x = 1\n" * 200, encoding="utf-8")
+    config = _config(tmp_path, agent_read_tokens=3000)
+    report = await run_check(config, "Refactor `one.py`", skip_profile=True, target=10)
+    assert report.verdict is Verdict.EXCEEDS
+    assert report.expected_warning is None

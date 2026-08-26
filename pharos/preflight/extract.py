@@ -53,7 +53,9 @@ DIRECTORY_FILE_CAP = 300
 # The `--resolve REF=*` answer: count every candidate rather than choose between them.
 ALL_CANDIDATES = "*"
 
-_IGNORED_DIRS = frozenset({
+# Public since v1.0: `pharos.agent.audit` walks the same tree and must prune it the same
+# way, or a run would report every .pyc it compiled as a change nobody claimed.
+IGNORED_DIRS = frozenset({
     ".git", ".hg", ".svn", ".venv", "venv", "node_modules", "__pycache__",
     ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist", "build", ".idea", ".vscode",
 })
@@ -127,7 +129,7 @@ def expand_directory(directory: Path, *, cap: int = DIRECTORY_FILE_CAP) -> Direc
     skipped = 0
     truncated = False
     for dirpath, dirnames, filenames in os.walk(directory):
-        dirnames[:] = sorted(d for d in dirnames if d not in _IGNORED_DIRS)
+        dirnames[:] = sorted(d for d in dirnames if d not in IGNORED_DIRS)
         for name in sorted(filenames):
             if not _has_text_extension(name):
                 skipped += 1
@@ -265,7 +267,7 @@ def _index_tree(root: Path) -> dict[str, list[Path]]:
     """
     index: dict[str, list[Path]] = {}
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _IGNORED_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
         for name in filenames:
             index.setdefault(name.casefold(), []).append(Path(dirpath) / name)
     return index

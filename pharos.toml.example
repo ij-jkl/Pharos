@@ -140,6 +140,12 @@ verify_timeout_seconds = 300
 # set this to pin it manually (it then takes precedence over the learned value).
 # client_overhead_tokens = 10000
 
+# Tokens the agent pulls in ON ITS OWN over one task -- the files it opens that nobody
+# named. `pharos check` prints this as EXPECTED, between the FLOOR and the CEILING, and it
+# is normally learned from whole agent conversations seen by the proxy (three or more, or
+# it says it does not know rather than guessing). Set this to pin it.
+# agent_read_tokens = 8000
+
 # Where the proxy records per-request token counts for that calibration. Counts only — no
 # prompt text, file names or any reconstructable content is ever written.
 observations_file = "pharos_observations.json"

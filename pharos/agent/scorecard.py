@@ -79,6 +79,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from pharos.agent.audit import PartAudit
 from pharos.agent.ledger import names_its_work
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import normalise
@@ -179,6 +180,43 @@ class Scorecard:
     nudged_parts: int = 0
     abandoned_parts: int = 0
     failed_parts: int = 0
+    # Compaction, both sides of it. ``compacted_tokens`` is window that was actually given
+    # back by stubbing tool results a part had finished with; ``reclaimable_tokens`` is what
+    # --compact WOULD have given back to parts that hit the ceiling without it. The second
+    # number is the one that says whether the flag is worth turning on for this project.
+    compacted_tokens: int = 0
+    compacted_parts: int = 0
+    reclaimable_tokens: int = 0
+    # Tool calls the window stopped outright. The reason `reclaimable_tokens` can be non-zero
+    # on a run where every part finished: a read refused for space does not end a part.
+    room_refusals: int = 0
+    # What the DISK said, part by part, against what each part said about itself. Empty when
+    # the audit was off. See `pharos.agent.audit` for what each of these can mean.
+    audits: list[PartAudit] = field(default_factory=list)
+
+    @property
+    def unattributed_changes(self) -> list[str]:
+        """Files that changed while a part ran, that no tool of that part claimed."""
+        return sorted({path for a in self.audits for path in a.unattributed})
+
+    @property
+    def absent_writes(self) -> list[str]:
+        """Writes a part reported that the disk does not show. A write that did not land."""
+        return sorted({path for a in self.audits for path in a.absent})
+
+    @property
+    def out_of_scope_changes(self) -> list[str]:
+        """Files that moved during a part that was told to leave them alone."""
+        return sorted({path for a in self.audits for path in a.out_of_scope})
+
+    @property
+    def check_writes(self) -> list[str]:
+        """Files the project's own checks rewrote while they ran — formatters, snapshots."""
+        return sorted({path for a in self.audits for path in a.by_checks.paths})
+
+    @property
+    def audit_clean(self) -> bool:
+        return bool(self.audits) and all(a.clean for a in self.audits)
 
     @property
     def plan_coverage(self) -> float | None:
@@ -285,6 +323,7 @@ def score(
     planned_files: list[str] | None = None,
     template_offset: int | None = None,
     template_runs: int = 0,
+    audits: list[PartAudit] | None = None,
 ) -> Scorecard:
     """Reduce a finished run to the five questions above."""
     scoped: list[str] = []
@@ -379,6 +418,17 @@ def score(
         worst_shortfall=max(shortfall, 0),
         truncated_parts=sum(1 for p in parts if p.truncated),
         nudged_parts=sum(1 for p in parts if p.nudged),
+        compacted_tokens=sum(p.compacted_tokens for p in parts),
+        compacted_parts=sum(1 for p in parts if p.compactions),
+        room_refusals=sum(p.room_refusals for p in parts),
+        # Only from parts the window actually got in the way of. A part that finished
+        # comfortably also has old tool results in it, and reporting what could have been
+        # reclaimed from a part that needed nothing would be advertising, not measurement.
+        # Two shapes qualify: the ceiling stopped it, or a read was refused for space -- and
+        # the second does NOT stop a part, which is why it has to be asked about separately.
+        reclaimable_tokens=sum(
+            p.reclaimable_tokens for p in parts if p.stopped_early or p.room_refusals
+        ),
         abandoned_parts=sum(1 for p in parts if p.stopped_early),
         failed_parts=sum(1 for p in parts if p.error),
         verification=verification,
@@ -387,6 +437,7 @@ def score(
         exposed_requests=sum(p.exposed_requests for p in parts),
         template_offset=template_offset,
         template_runs=template_runs,
+        audits=list(audits or []),
     )
 
 
@@ -429,6 +480,36 @@ def to_dict(card: Scorecard) -> dict[str, object]:
             "offset_tokens": card.template_offset,
             "runs": card.template_runs,
             "exposed_requests": card.exposed_requests,
+        },
+        "audit": (
+            None
+            if not card.audits
+            else {
+                "parts": [
+                    {
+                        "part": a.part,
+                        "changed": list(a.changed.paths),
+                        "claimed": list(a.claimed),
+                        "unattributed": list(a.unattributed),
+                        "absent": list(a.absent),
+                        "out_of_scope": list(a.out_of_scope),
+                        "by_checks": list(a.by_checks.paths),
+                        "truncated": a.truncated,
+                    }
+                    for a in card.audits
+                ],
+                "unattributed": card.unattributed_changes,
+                "absent": card.absent_writes,
+                "out_of_scope": card.out_of_scope_changes,
+                "by_checks": card.check_writes,
+                "clean": card.audit_clean,
+            }
+        ),
+        "compaction": {
+            "tokens_reclaimed": card.compacted_tokens,
+            "parts": card.compacted_parts,
+            "reclaimable_tokens": card.reclaimable_tokens,
+            "room_refusals": card.room_refusals,
         },
         "truncated_parts": card.truncated_parts,
         "under_counted": card.under_counted,

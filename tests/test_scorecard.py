@@ -26,6 +26,8 @@ def _part(
     stopped: bool = False,
     error: str | None = None,
     drift_samples: list[tuple[int, int]] | None = None,
+    reclaimable_tokens: int = 0,
+    room_refusals: int = 0,
 ) -> PartResult:
     return PartResult(
         # None means "a normal hand-off": one that names what the part changed, which is what
@@ -47,6 +49,8 @@ def _part(
         scoped=scoped,
         handoff_tokens=handoff_tokens,
         drift_samples=drift_samples or [],
+        reclaimable_tokens=reclaimable_tokens,
+        room_refusals=room_refusals,
     )
 
 
@@ -430,3 +434,16 @@ def test_the_run_json_says_how_the_parts_were_grouped() -> None:
     ]
     # Bodies are deliberately absent: several KB each, and already executed by now.
     assert "body" not in summary["parts"][0]
+
+
+def test_only_parts_the_window_got_in_the_way_of_report_reclaimable_room() -> None:
+    """A part that finished comfortably also holds old tool results. Advertising what could
+    have been reclaimed from a part that needed nothing would be a sales pitch, not a
+    measurement."""
+    comfortable = _part(scoped=["a.py"], wrote=["a.py"], reclaimable_tokens=9_000)
+    refused = _part(scoped=["b.py"], wrote=["b.py"], reclaimable_tokens=1_500, room_refusals=2)
+    stopped = _part(scoped=["c.py"], wrote=["c.py"], reclaimable_tokens=2_500, stopped=True)
+
+    assert score([comfortable], handoff_reserve=0).reclaimable_tokens == 0
+    assert score([comfortable, refused], handoff_reserve=0).reclaimable_tokens == 1_500
+    assert score([refused, stopped], handoff_reserve=0).reclaimable_tokens == 4_000

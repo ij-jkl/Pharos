@@ -33,7 +33,9 @@ from typing import Any
 
 import httpx
 
+from pharos.agent.audit import PartAudit, TreeIndex, audit_part, diff_trees, index_tree
 from pharos.agent.ledger import LEDGER_SHARE, Ledger
+from pharos.agent.review import Finding, Review, ask, batches, collect, parse, validate
 from pharos.agent.session import SAFETY_MARGIN, AgentSession, PartResult
 from pharos.agent.tools import (
     ToolBox,
@@ -116,6 +118,12 @@ class RunOutcome:
     template_learned: TemplateCost | None = None
     exposed_requests: int = 0
     via_proxy: bool = True
+    # What the DISK says each part did, against what the part said it did. Empty when the
+    # audit was turned off; see `pharos.agent.audit`.
+    audits: list[PartAudit] = field(default_factory=list)
+    # One model's opinion of the diff, when --review asked for one. Deliberately the last
+    # thing computed and the last thing printed: nothing above it may depend on it.
+    review: Review | None = None
     # What the project's own checks said afterwards. None when verification was off or
     # the run never got as far as executing anything.
     verification: Verification | None = None
@@ -255,6 +263,10 @@ async def run_task(
     verify_work: bool = True,
     divide: bool = True,
     semantic: bool = False,
+    reserve_reads: bool = False,
+    compact: bool = False,
+    audit: bool = True,
+    review: bool = False,
     use_ledger: bool = True,
     stop_on_break: bool = False,
     on_event: Callable[[str], None] | None = None,
@@ -314,6 +326,10 @@ async def run_task(
         # report can say what it declined, but paying a backend call to arrange parts nobody
         # will run is a round trip for a footnote.
         semantic=semantic and divide,
+        # Size the parts against what agents opened unprompted on past runs, not only against
+        # what this part names. Off by default: it is the one input to a plan that is a
+        # prediction rather than a measurement of the part in front of it.
+        reserve_reads=reserve_reads and divide,
     )
     outcome.plan = plan
     bodies: list[tuple[str, list[PartFile] | None]]
@@ -443,6 +459,28 @@ async def run_task(
     # v0.5 behaviour, where the model's prose was the only thread between parts — which is
     # what the coverage figures in DESKTOP_VALIDATION were measured against.
     record = Ledger()
+    # label -> (tree before the part, tree after its tools). Closed out once the project's own
+    # checks have run, because a check command that rewrites files is doing so during the run
+    # and nothing before v1.0 noticed.
+    pending: dict[str, tuple[TreeIndex, TreeIndex]] = {}
+
+    def close_audit(label: str, result: PartResult) -> None:
+        snapshots = pending.pop(label, None)
+        if snapshots is None:
+            return
+        before, after_tools = snapshots
+        after_checks = index_tree(root)
+        outcome.audits.append(
+            audit_part(
+                label,
+                changed=diff_trees(before, after_tools),
+                claimed=list(result.files_written),
+                scoped=list(result.scoped) or None,
+                by_checks=diff_trees(after_tools, after_checks),
+                truncated=before.truncated or after_tools.truncated,
+            )
+        )
+
     ledger_on = config.handoff_ledger and use_ledger and divide
     outcome.ledger_on = ledger_on
     ledger_text = ""
@@ -473,11 +511,20 @@ async def run_task(
                 handoff_reserve=config.handoff_reserve,
                 num_ctx=config.num_ctx,
                 template_offset=seed,
+                # Reclaim the window a part filled with files it has finished with, rather
+                # than stopping it there. Off unless asked: it changes what the model can see
+                # of its own history, and everything else a part does is additive.
+                compact=compact,
                 on_event=_prefixed(say, label),
             )
             text = _with_handoff(body, carried, index, files, already_done)
             _logger.info("%s body: %s", label, text)
+            before = index_tree(root) if audit else TreeIndex()
             result = await session.run(text)
+            if audit:
+                # Taken here, BEFORE the checks run, so this diff is the part's own doing.
+                # What the checks themselves write is a separate question, asked below.
+                pending[label] = (before, index_tree(root))
             _logger.info(
                 "%s finished: steps=%d wrote=%s handoff=%r",
                 label, result.steps, result.files_written, result.text,
@@ -514,6 +561,7 @@ async def run_task(
                 if watch is not None
                 else False
             )
+            close_audit(f"part {index}", result)
             if result.error:
                 say(f"  [part {index}] failed: {result.error}")
                 failed = True
@@ -570,6 +618,7 @@ async def run_task(
                             root=root, checks=per_part_checks,
                             check_timeout=config.verify_timeout_seconds,
                         )
+                    close_audit(label, result)
                     record.record(label, result.changes)
                     ledger_text, _, _, _ = _carry(
                         record, "", config.handoff_reserve, count, ledger=ledger_on
@@ -620,7 +669,93 @@ async def run_task(
         )
         for check in outcome.verification.newly_broken:
             say(f"  {check.name} FAILED - it passed before this run")
+
+    # LAST, and after the verdict is already settled. Everything above this line is a
+    # measurement; what follows is an opinion, and it is not allowed to touch any of them.
+    if review and not outcome.files_changed:
+        # Asked for and not silently skipped. A flag that produces no output when the answer
+        # is "there was nothing to look at" is indistinguishable from one that failed.
+        outcome.review = Review(note="the run changed no files, so there was no diff to read")
+    elif review:
+        say("reviewing the diff (an opinion — it changes nothing above)")
+        outcome.review = await asyncio.to_thread(
+            review_run,
+            config,
+            root,
+            model,
+            outcome.files_changed,
+            count,
+            usable,
+            undo=undo,
+        )
+        found = outcome.review
+        if found is not None and found.findings:
+            say(f"  {len(found.findings)} finding(s) survived checking")
     return outcome
+
+
+def review_run(
+    config: PharosConfig,
+    root: Path,
+    model: str,
+    changed: list[str],
+    count: Callable[[str], int],
+    usable: int,
+    *,
+    undo: Undo | None = None,
+) -> Review:
+    """Collect the run's diff, put it to the backend in batches, and check what comes back.
+
+    Every failure lands in the same place: a Review carrying a note and no findings. A review
+    that could not happen must read as a review that could not happen, never as a clean bill
+    of health -- the two are opposite conclusions and would print almost identically.
+    """
+    originals = (
+        {key: undo.original(key) for key in undo.saved} if undo is not None else None
+    )
+    diffs = collect(root, changed, originals=originals)
+    if not diffs:
+        return Review(
+            unreviewed=list(changed),
+            note="no diff could be read for the files this run changed",
+        )
+    # The same halving the planner uses, for the same reason: the diff goes in and the
+    # findings come back out of the same window.
+    budget = max(usable // 2, 1)
+    packed, oversized = batches(diffs, budget, count)
+    findings: list[Finding] = []
+    reviewed: list[str] = []
+    discarded = 0
+    problems: list[str] = []
+    for batch in packed:
+        reply, error = ask(config, batch, model)
+        if error is not None or reply is None:
+            problems.append(error or "no reply")
+            continue
+        raw, parse_error = parse(reply)
+        if parse_error is not None:
+            problems.append(parse_error)
+            continue
+        kept, dropped = validate(raw, batch)
+        findings.extend(kept)
+        discarded += dropped
+        reviewed.extend(diff.display for diff in batch)
+    note = None
+    if oversized:
+        note = (
+            f"{len(oversized)} file(s) had a diff too large to review in one call and were "
+            f"left out rather than shown in half: {', '.join(oversized[:3])}"
+        )
+    if problems:
+        detail = "; ".join(sorted(set(problems))[:2])
+        note = f"{note + ' — ' if note else ''}{len(problems)} batch(es) failed: {detail}"
+    return Review(
+        findings=findings,
+        reviewed=sorted(set(reviewed)),
+        unreviewed=sorted(set(oversized)),
+        discarded=discarded,
+        note=note,
+    )
 
 
 def _edit_target(config: PharosConfig, usable: int, overhead: int) -> int:

@@ -85,6 +85,19 @@ class Undo:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
 
+    def original(self, key: str) -> str:
+        """What this file held before the run, from the snapshot. Empty when it did not exist.
+
+        Empty is the right answer for a file the run CREATED: diffed against nothing, it
+        reads as wholly added, which is exactly what happened to it.
+        """
+        if not self.saved.get(key, False):
+            return ""
+        try:
+            return (self.directory / key).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
     def restore_hint(self) -> str:
         created = [name for name, existed in self.saved.items() if not existed]
         lines = [f"Originals saved in {self.directory}"]

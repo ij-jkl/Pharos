@@ -133,6 +133,7 @@ class SplitPlan:
     indeterminate: bool = False  # no plan because there was no budget to plan against
     grouping: Grouping = Grouping.POSITION  # which one produced these parts
     grouping_note: str | None = None  # why, whenever a model was asked — accepted or not
+    reads_reserved: int = 0  # room held back for what the agent opens unprompted (--reserve-reads)
 
     @property
     def ok(self) -> bool:
@@ -149,6 +150,7 @@ def build_plan(
     target: int | None = None,
     max_files: int | None = None,
     semantic: bool = False,
+    reserve_reads: bool = False,
 ) -> SplitPlan:
     """Plan a split of ``prompt`` given its pre-flight ``report``.
 
@@ -167,6 +169,13 @@ def build_plan(
     the projections and the refusals are identical either way, and a proposal that fails any
     check in ``pharos.preflight.semantic`` is discarded for the mechanical one. Turning it on
     can therefore change how a plan reads, never whether it is honest.
+
+    ``reserve_reads`` takes what agents on this model historically opened unprompted (see
+    ``pharos.calibration.estimate_agent_reads``) off the per-part ceiling, so a part still has
+    room once the agent starts pulling in files nobody named. Off by default, and deliberately:
+    every other number a part carries is a measurement of the part itself, and this one is a
+    prediction about a client Pharos has not met yet. It buys smaller parts that survive
+    contact, at the cost of more of them.
     """
     ceiling, label = _ceiling(report, target)
     if ceiling is None:
@@ -179,6 +188,24 @@ def build_plan(
                 "is resident. Load the model, or pass --target N to plan against N tokens."
             ),
             indeterminate=True,
+        )
+
+    reads_reserved = 0
+    reads_note: str | None = None
+    if reserve_reads and report.reads is not None and report.reads.tokens > 0:
+        reads_reserved = report.reads.tokens
+        ceiling -= reads_reserved
+        label = f"{label} less what the agent opens on its own"
+        reads_note = (
+            f"{reads_reserved:,} tokens held back from every part for what the agent opens "
+            f"unprompted — {report.reads.provenance}. A prediction, not a measurement of these "
+            f"parts: a run that stays inside its scope block simply finishes with room spare."
+        )
+    elif reserve_reads:
+        reads_note = (
+            "--reserve-reads asked for room the store cannot size yet: what an agent opens on "
+            "its own is learned from whole conversations through the proxy, and there are not "
+            "three to learn from. Parts are packed against the full ceiling, as usual."
         )
 
     # A prompt whose FLOOR fits can still need splitting: name a directory and the request is
@@ -223,30 +250,47 @@ def build_plan(
         )
 
     if report.prompt_tokens + fixed <= ceiling:
-        return _plan_scope(
-            prompt,
-            report,
-            count,
-            ceiling,
-            label,
-            config.handoff_reserve,
-            max_files,
-            config=config if semantic else None,
+        return _reserving(
+            _plan_scope(
+                prompt,
+                report,
+                count,
+                ceiling,
+                label,
+                config.handoff_reserve,
+                max_files,
+                config=config if semantic else None,
+            ),
+            reads_reserved,
+            reads_note,
         )
     if semantic:
         # A text split cuts a pasted blob on paragraph boundaries. There is no set of files to
         # group, so there is nothing for a proposal to be about — said plainly rather than
         # letting --semantic look like it did something.
-        return _with_note(
-            _plan_text(prompt, report, count, ceiling, label),
-            "semantic grouping does not apply to a text split: the parts are ordered segments "
-            "of one oversized input, and their order is the input's own",
+        return _reserving(
+            _with_note(
+                _plan_text(prompt, report, count, ceiling, label),
+                "semantic grouping does not apply to a text split: the parts are ordered "
+                "segments of one oversized input, and their order is the input's own",
+            ),
+            reads_reserved,
+            reads_note,
         )
-    return _plan_text(prompt, report, count, ceiling, label)
+    return _reserving(
+        _plan_text(prompt, report, count, ceiling, label), reads_reserved, reads_note
+    )
 
 
 def _with_note(plan: SplitPlan, note: str) -> SplitPlan:
     return replace(plan, grouping_note=note)
+
+
+def _reserving(plan: SplitPlan, reserved: int, note: str | None) -> SplitPlan:
+    """Record that the ceiling these parts were packed against had room taken out of it."""
+    if note is None:
+        return plan
+    return replace(plan, reads_reserved=reserved, notes=[*plan.notes, note])
 
 
 # --------------------------------------------------------------------------- scope mode

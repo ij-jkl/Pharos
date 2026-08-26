@@ -284,7 +284,9 @@ class FakeBackend:
         return httpx.Response(200, content=ndjson.encode())
 
 
-def _session(backend: FakeBackend, box: ToolBox, *, budget: int) -> AgentSession:
+def _session(
+    backend: FakeBackend, box: ToolBox, *, budget: int, compact: bool = False
+) -> AgentSession:
     client = httpx.AsyncClient(
         transport=httpx.MockTransport(backend.handler), base_url="http://backend"
     )
@@ -295,6 +297,7 @@ def _session(backend: FakeBackend, box: ToolBox, *, budget: int) -> AgentSession
         count=_count,
         usable_budget=budget,
         handoff_reserve=100,
+        compact=compact,
     )
 
 
@@ -1464,3 +1467,152 @@ def test_no_git_reports_what_it_wrote_rather_than_nothing() -> None:
     # Deduplicated across parts, and one spelling: a repair part rewrites what a plan part did.
     got = written_by_parts([part(r"src\a.py", "src/b.py"), part("src/a.py")])
     assert got == ["src/a.py", "src/b.py"]
+
+
+# --- compaction (v1.0) --------------------------------------------------------------------
+#
+# What fills a part's window is tool results, and most of them are files the model finished
+# with long before anything stopped it. These tests pin the four rules: only tool results are
+# touched, the message stays where it is, the newest results survive, and the ceiling is
+# still the ceiling afterwards.
+
+
+@pytest.fixture
+def crowded(tmp_path: Path) -> Workspace:
+    """Five files of 1,834 stand-in tokens each, 1,878 once line numbers are added.
+
+    Sized against the 8,344-token ceiling the tests below run at so that exactly three of
+    them fit and the fourth is refused for space — the situation compaction exists for.
+    """
+    (tmp_path / "src").mkdir()
+    for name in ("one", "two", "three", "four", "five"):
+        (tmp_path / "src" / f"{name}.py").write_text("x = 1\n" * 667, encoding="utf-8")
+    return Workspace(tmp_path)
+
+
+def _read_every_file() -> list[dict[str, Any]]:
+    turns: list[dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"function": {"name": "read_file", "arguments": {"path": f"src/{name}.py"}}}
+            ],
+        }
+        for name in ("one", "two", "three", "four", "five")
+    ]
+    turns.append({"role": "assistant", "content": "Read them. NO CHANGES NEEDED."})
+    return turns
+
+
+def _tool_texts(session: AgentSession) -> list[str]:
+    return [
+        str(m.get("content") or "")
+        for m in session._messages  # noqa: SLF001 — the conversation IS what is under test
+        if m.get("role") == "tool"
+    ]
+
+
+def _refusals(session: AgentSession) -> int:
+    return sum(text.startswith("Refused:") for text in _tool_texts(session))
+
+
+async def test_a_full_window_refuses_the_remaining_reads_when_compaction_is_off(
+    crowded: Workspace,
+) -> None:
+    """The v0.9 behaviour, pinned: three files in, two refused, nothing given back."""
+    session = _session(FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700)
+    result = await session.run("Read all five files.")
+
+    assert _refusals(session) == 2
+    assert result.compacted_tokens == 0
+
+
+async def test_compaction_gets_every_file_read_in_the_same_window(crowded: Workspace) -> None:
+    """Same model, same window, same five files — the only change is what it forgets."""
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    result = await session.run("Read all five files.")
+
+    assert _refusals(session) == 0
+    assert result.compacted_tokens > 0
+    assert result.compactions >= 1
+    assert result.compacted[0].startswith("read_file src")
+
+
+async def test_a_stub_says_what_was_dropped_and_stays_where_it_was(crowded: Workspace) -> None:
+    """A stubbed result is still a result: the assistant turn that called for it keeps its
+    answer, and the model can see that something it read is no longer in front of it."""
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    await session.run("Read all five files.")
+
+    texts = _tool_texts(session)
+    stubs = [text for text in texts if text.startswith("[pharos dropped")]
+    assert stubs
+    assert "read_file src/one.py" in stubs[0]
+    assert "-token result of read_file" in stubs[0]
+    # Five calls, five answers: compaction rewrote content and removed nothing.
+    assert len(texts) == 5
+
+
+async def test_compaction_never_touches_the_system_prompt_or_the_part_body(
+    crowded: Workspace,
+) -> None:
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    body = "Read all five files, carefully."
+    await session.run(body)
+
+    messages = session._messages  # noqa: SLF001
+    assert messages[0]["role"] == "system" and "workspace root" in messages[0]["content"]
+    assert messages[1] == {"role": "user", "content": body}
+
+
+async def test_compaction_keeps_the_results_the_model_is_working_on(crowded: Workspace) -> None:
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    await session.run("Read all five files.")
+
+    newest = _tool_texts(session)[-2:]
+    assert not any(text.startswith("[pharos dropped") for text in newest)
+
+
+async def test_compaction_is_bounded_so_a_part_cannot_grind(crowded: Workspace) -> None:
+    """Re-reading what was just dropped is a loop; after three rounds the ceiling wins."""
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    result = await session.run("Read all five files.")
+    assert result.compactions <= 3
+
+
+async def test_a_part_that_ran_out_of_room_reports_what_compaction_would_have_bought(
+    crowded: Workspace,
+) -> None:
+    """The number that decides whether the flag is worth turning on here — and only a run
+    WITHOUT it can produce that number.
+
+    Note what this part did NOT do: stop early. It was refused two reads for space and then
+    finished normally, which is the commonest shape of the problem and the one the scorecard
+    reported as zero until `room_refusals` existed to ask about it.
+    """
+    session = _session(FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700)
+    result = await session.run("Read all five files.")
+    assert not result.stopped_early
+    assert result.room_refusals == 2
+    assert result.reclaimable_tokens > 1000
+
+
+async def test_compaction_leaves_nothing_to_reclaim_and_no_room_refusals(
+    crowded: Workspace,
+) -> None:
+    session = _session(
+        FakeBackend(_read_every_file()), ToolBox(workspace=crowded), budget=8700, compact=True
+    )
+    result = await session.run("Read all five files.")
+    assert result.room_refusals == 0
+    assert result.reclaimable_tokens == 0

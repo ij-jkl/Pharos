@@ -404,3 +404,164 @@ def remember_run(path: Path, model: str | None, offsets: list[int]) -> TemplateC
     except OSError as exc:
         _logger.warning("could not write template costs to %s: %s", path, exc)
     return updated
+
+
+# --- what the agent opens on its own ----------------------------------------------------------
+#
+# The third number, and the one this project spent nine versions refusing to print. `pharos
+# check` counts what you NAMED: files exactly, into the floor; directories in full, into a
+# separate ceiling. What the agent decides to open once it starts working was in neither, and
+# `preflight/extract.py` has carried a note since v0.2 saying that predicting it "is v1.0".
+#
+# It turns out to be derivable from the store exactly as it already stands, which is the only
+# reason it is allowed to exist. Between two consecutive requests of one conversation the input
+# grows by three things and no others: what you typed, what the model last said, and whatever
+# the client injected on its own -- tool results, file reads, retrieved context. The first two
+# are already in the record, so the third is the remainder:
+#
+#     injected = (input_n - input_prev) - output_prev - (user_n - user_prev)
+#
+# That residue is what the agent opened without being told to. It is a COUNT derived from
+# counts, and it names nothing: the store's promise -- counts only, never text, no file names,
+# nothing reconstructable -- is untouched. A version of this that logged which files an agent
+# read would have been easier and is not on the table.
+#
+# What the number is NOT: a bound. The floor stays the guarantee and the ceiling stays the
+# worst case; this sits between them and says what usually happened. It is reported with the
+# range it was drawn from precisely because one session is not the next.
+
+_SESSION_GAP_S = 1800.0  # 30 minutes of silence ends a conversation
+
+# Below this the median is a coincidence rather than a measurement, and the check says it has
+# nothing to tell you instead of standing a guess in the gap. Same rule as everywhere else
+# here: a missing number is honest, a made-up one is not.
+_MIN_READ_SESSIONS = 3
+
+
+@dataclass(frozen=True, slots=True)
+class ReadEstimate:
+    """How many tokens a client pulled in on its own over one task, learned from traffic."""
+
+    tokens: int  # the number to plan against: median of per-session totals
+    sessions: int  # how many conversations it was measured over
+    low: int  # smallest session total
+    high: int  # largest session total
+    provenance: str
+
+    @property
+    def learned(self) -> bool:
+        """True when this was measured from traffic, False when it was pinned in config.
+
+        The distinction has to survive into the prose: a configured number has no
+        conversations behind it and no range, and describing it as what agents "historically"
+        did across "0 conversations" would be a sentence this project has no business writing.
+        """
+        return self.sessions > 0
+
+
+def estimate_agent_reads(
+    observations: list[Observation], model: str | None
+) -> ReadEstimate | None:
+    """What a client historically added on its own, beyond the prompt and the model's replies.
+
+    Agent-shaped records only. A bare `curl` at the endpoint opens no files, and the overhead
+    estimator already learned once — live, on real traffic — what happens when a handful of
+    pokes are allowed to vote on a number about coding agents.
+
+    Returns None rather than a small number when there is nothing to learn from.
+    """
+    shaped = [o for o in _matching(observations, model) if o.agent_shaped]
+    if not shaped:
+        return None
+    totals: list[int] = []
+    pairs = 0
+    for session in _sessions(shaped):
+        injected = 0
+        usable = 0
+        for previous, current in zip(session, session[1:], strict=False):
+            measured = _injected(previous, current)
+            if measured is None:
+                continue
+            injected += measured
+            usable += 1
+        if usable and injected > 0:
+            totals.append(injected)
+            pairs += usable
+    if len(totals) < _MIN_READ_SESSIONS:
+        return None
+    return ReadEstimate(
+        tokens=int(statistics.median(totals)),
+        sessions=len(totals),
+        low=min(totals),
+        high=max(totals),
+        provenance=(
+            f"observed · median of {len(totals)} conversations "
+            f"({min(totals):,}-{max(totals):,} tokens), {pairs} turn-to-turn measurements"
+        ),
+    )
+
+
+def _sessions(records: list[Observation]) -> list[list[Observation]]:
+    """Cut a flat record list into conversations, by the only signals counts can carry.
+
+    A request continues the one before it when it went to the same endpoint, arrived inside
+    ``_SESSION_GAP_S``, and GREW in all three ways a continuing conversation must: more
+    messages, more input, and no less user-authored content than before. A fresh conversation
+    restarts at a low message count and breaks the chain on the first test.
+
+    The assumption, stated: one conversation is one task. Two agents talking to the proxy at
+    once would interleave into nonsense here — the guards would mostly break them apart rather
+    than merge them, but nothing in a counts-only record can prove which client sent what.
+    """
+    out: list[list[Observation]] = []
+    current: list[Observation] = []
+    for record in sorted(records, key=lambda o: o.ts):
+        if current and _continues(current[-1], record):
+            current.append(record)
+            continue
+        if len(current) > 1:
+            out.append(current)
+        current = [record]
+    if len(current) > 1:
+        out.append(current)
+    return out
+
+
+def _continues(previous: Observation, current: Observation) -> bool:
+    return (
+        current.endpoint == previous.endpoint
+        and 0 <= current.ts - previous.ts <= _SESSION_GAP_S
+        and current.messages > previous.messages
+        and current.input_tokens > previous.input_tokens
+        and current.user_tokens >= previous.user_tokens
+    )
+
+
+def _injected(previous: Observation, current: Observation) -> int | None:
+    """Tokens the client added between two turns that were neither typed nor generated.
+
+    None for a pair that cannot be accounted for, and three cases qualify:
+
+    * the previous response reported no ``eval_count`` — the model's own reply is then an
+      unknown quantity sitting inside the growth, and subtracting nothing would bill it to the
+      agent as a file it read;
+    * one input is backend-exact and the other an estimate — the difference of those two
+      carries the chat-template offset instead of cancelling it (see the template section
+      below, where that same offset is the thing being measured);
+    * either side counted its user content in another model's vocabulary, which makes the
+      ``user`` term of the subtraction incommensurable with the rest.
+
+    Clamped at zero. A reply that is not replayed verbatim into the next prompt — a thinking
+    model whose reasoning block is dropped from the history — over-subtracts, and the honest
+    floor for "tokens the agent read" is none rather than a negative number. That direction
+    makes this estimate read LOW on such a model, which is the direction to be wrong in.
+    """
+    if previous.output_tokens is None:
+        return None
+    if previous.input_exact != current.input_exact:
+        return None
+    if previous.user_exact is False or current.user_exact is False:
+        return None
+    growth = current.input_tokens - previous.input_tokens
+    typed = current.user_tokens - previous.user_tokens
+    return max(growth - previous.output_tokens - typed, 0)

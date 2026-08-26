@@ -88,6 +88,10 @@ class ToolResult:
     ok: bool = True
     wrote: str | None = None  # display path, set only on a successful write
     refused_scope: str | None = None  # the out-of-scope path, when that is why it failed
+    # Tokens the result needed, when the refusal was purely about room. Set so the session can
+    # tell "there is no space for this" apart from every other reason a call fails: the first
+    # is answerable by compacting what the part has finished with, and the rest are not.
+    needed_room: int | None = None
 
 
 @dataclass
@@ -310,6 +314,7 @@ class ToolBox:
                 f"told was partial is how a wrong answer gets written confidently. Work with "
                 f"what you have already read, and note this file in your hand-off.",
                 ok=False,
+                needed_room=size,
             )
         total = len(text.splitlines())
         return ToolResult(

@@ -33,6 +33,8 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
+from pharos.agent.audit import FILE_CAP
+from pharos.agent.review import SEVERITIES, Review
 from pharos.agent.runner import RunOutcome, run_task
 from pharos.agent.scorecard import Scorecard, score, to_dict
 from pharos.agent.session import SAFETY_MARGIN, PartResult
@@ -84,6 +86,30 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="let the model group the files into parts instead of packing them in the order "
         "they were named; the projections and refusals are unchanged either way",
+    )
+    parser.add_argument(
+        "--reserve-reads",
+        action="store_true",
+        help="size the parts against what agents on this model historically opened on their "
+        "own, not just against what the part names",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        help="after the run, show the diff to the model and print what it says. An opinion, "
+        "printed under the verdict and unable to change it",
+    )
+    parser.add_argument(
+        "--no-audit",
+        action="store_true",
+        help="skip indexing the tree around each part (you lose the report of changes no "
+        "tool of the run claimed, and of what your own checks rewrote)",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="when a part fills its window, stub the tool results it has finished with and "
+        "keep going, instead of stopping there and handing off",
     )
     parser.add_argument(
         "--no-verify",
@@ -170,6 +196,10 @@ def main(argv: list[str] | None = None) -> int:
                     verify_work=not args.no_verify,
                     divide=not args.no_split,
                     semantic=args.semantic,
+                    reserve_reads=args.reserve_reads,
+                    compact=args.compact,
+                    audit=not args.no_audit,
+                    review=args.review,
                     use_ledger=not args.no_ledger,
                     stop_on_break=args.stop_on_break or config.stop_on_break,
                     on_event=report,
@@ -502,6 +532,58 @@ def _render_parts(console: Console, outcome: RunOutcome) -> None:
     console.print(table)
 
 
+def _add_audit_row(body: Table, card: Scorecard) -> None:
+    """What the filesystem said, against what the run said about itself.
+
+    Silent when it agrees, which is the common case and not worth a line. Everything it can
+    report is a fact about the disk, and none of it is a judgement of the code: a change
+    nobody claimed may be perfectly fine, and the point is that it stops being invisible.
+    """
+    if not card.audits:
+        return
+    findings: list[str] = []
+    if card.absent_writes:
+        findings.append(
+            f"[red]{len(card.absent_writes)} write(s) reported that the disk does not "
+            f"show[/]  [dim]{_first_few(card.absent_writes)}[/]"
+        )
+    if card.out_of_scope_changes:
+        findings.append(
+            f"[yellow]{len(card.out_of_scope_changes)} file(s) changed outside the part's "
+            f"scope[/]  [dim]{_first_few(card.out_of_scope_changes)}[/]"
+        )
+    if card.unattributed_changes:
+        findings.append(
+            f"[yellow]{len(card.unattributed_changes)} change(s) no tool of the run "
+            f"claimed[/]  [dim]{_first_few(card.unattributed_changes)}[/]"
+        )
+    if card.check_writes:
+        findings.append(
+            f"{len(card.check_writes)} file(s) your own checks rewrote  "
+            f"[dim]{_first_few(card.check_writes)} {chr(183)} a formatter or a snapshot "
+            f"test, not the model[/]"
+        )
+    if any(a.truncated for a in card.audits):
+        findings.append(
+            f"[dim]the tree was too large to index in full ({FILE_CAP:,} files) {chr(183)} "
+            f"anything past the cap is outside this report[/]"
+        )
+    if not findings:
+        changed = sum(len(a.changed.paths) for a in card.audits)
+        body.add_row(
+            "audit",
+            f"[green]{chr(10003)}[/] [dim]{changed} file change(s), every one of them "
+            f"claimed by the part that made it[/]",
+        )
+        return
+    body.add_row("audit", chr(10).join(findings))
+
+
+def _first_few(paths: list[str], limit: int = 3) -> str:
+    shown = ", ".join(paths[:limit])
+    return shown if len(paths) <= limit else f"{shown} and {len(paths) - limit} more"
+
+
 def _add_verification_row(body: Table, verification: Verification | None) -> None:
     """What the project's own checks said, and which of them this run actually broke.
 
@@ -697,6 +779,23 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             f"[dim]{card.nudged_parts} part(s) needed a reminder, "
             f"{card.abandoned_parts} stopped early[/]",
         )
+    if card.compacted_tokens:
+        body.add_row(
+            "compaction",
+            f"{card.compacted_tokens:,} tokens reclaimed [dim]across "
+            f"{card.compacted_parts} part(s) {chr(183)} tool results those parts had "
+            f"finished with, stubbed rather than dropped[/]",
+        )
+    elif card.reclaimable_tokens:
+        # The number that decides whether --compact is worth turning on here, and it can only
+        # be known by a run that did NOT use it.
+        body.add_row(
+            "compaction",
+            f"[yellow]not asked for[/] [dim]{chr(183)} {card.reclaimable_tokens:,} tokens of "
+            f"the window that stopped a part were tool results it had finished with; "
+            f"--compact would have given them back[/]",
+        )
+    _add_audit_row(body, card)
     _add_verification_row(body, card.verification)
 
     console.print()
@@ -746,6 +845,93 @@ def _render_footer(console: Console, outcome: RunOutcome) -> None:
     for line in lines:
         console.print(f"  {line}" if line else "")
     console.print()
+
+
+def _review_summary(review: Review | None) -> dict[str, object] | None:
+    """The review as plain data. Its own key, so nothing consuming the scorecard picks it up
+    by accident and starts gating on a model's opinion of somebody's code."""
+    if review is None:
+        return None
+    return {
+        "ran": review.ran,
+        "findings": [
+            {"file": f.file, "line": f.line, "severity": f.severity, "note": f.note}
+            for f in review.findings
+        ],
+        "by_severity": review.by_severity,
+        "reviewed": list(review.reviewed),
+        "unreviewed": list(review.unreviewed),
+        "discarded": review.discarded,
+        "note": review.note,
+        "advisory": True,
+    }
+
+
+def _render_review(console: Console, review: Review | None) -> None:
+    """The opinion, printed last and labelled as one.
+
+    The heading says what it is every single time. A finding here has been checked for
+    pointing at a real changed line and for nothing else — it has not been checked for being
+    RIGHT, and there is no way to check that from here.
+    """
+    if review is None:
+        return
+    console.print()
+    if not review.ran:
+        detail = review.note or "there was nothing to review"
+        console.print(f"  [bold]Review[/] [dim]{chr(183)} not run: {detail}[/]")
+        console.print()
+        return
+
+    lines: list[str] = []
+    ordered = sorted(
+        review.findings, key=lambda f: (SEVERITY_ORDER.index(f.severity), f.file, f.line)
+    )
+    for finding in ordered:
+        colour = {"bug": "red", "risk": "yellow", "note": "cyan"}[finding.severity]
+        lines.append(
+            f"[{colour}]{finding.severity:<4}[/] {finding.file}:{finding.line}  {finding.note}"
+        )
+    if not lines:
+        lines.append(
+            f"[dim]nothing reported across {len(review.reviewed)} changed file(s)[/]"
+        )
+    footnotes: list[str] = []
+    if review.discarded:
+        # Said out loud rather than swallowed: it is the measurement of how much of this
+        # particular answer was invented, and it is the reason the check exists.
+        footnotes.append(
+            f"{review.discarded} finding(s) discarded — they named a file this run did not "
+            f"change, or a line the diff does not contain"
+        )
+    if review.unreviewed:
+        footnotes.append(f"not reviewed: {', '.join(review.unreviewed[:4])}")
+    if review.note:
+        footnotes.append(review.note)
+    for note in footnotes:
+        lines.append(f"[dim]{note}[/]")
+
+    console.print(
+        Padding(
+            Panel(
+                chr(10).join(lines),
+                title="Review — one model's opinion, not a measurement",
+                title_align="left",
+                border_style="dim",
+                padding=(1, 2),
+                expand=False,
+            ),
+            (0, 0, 0, 2),
+        )
+    )
+    console.print(
+        "  [dim]It did not decide anything above. The verdict, the coverage and the "
+        "verification were settled before it was asked.[/]"
+    )
+    console.print()
+
+
+SEVERITY_ORDER = list(SEVERITIES)
 
 
 def _plan_summary(outcome: RunOutcome) -> dict[str, object] | None:
@@ -838,15 +1024,19 @@ def _render(
         planned_files=outcome.planned_files,
         template_offset=outcome.template_cost.offset if outcome.template_cost else None,
         template_runs=outcome.template_cost.runs if outcome.template_cost else 0,
+        audits=outcome.audits,
     )
     if as_json:
         # stdout belongs to the payload alone, exactly as `pharos check --json` treats it.
         payload: dict[str, object] = dict(to_dict(card))
         payload["plan"] = _plan_summary(outcome)
+        # Beside the scorecard, never inside it: nothing in `card` was allowed to see this.
+        payload["review"] = _review_summary(outcome.review)
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         return 0 if card.complete else 1
 
     _render_parts(console, outcome)
     _render_scorecard(console, card)
+    _render_review(console, outcome.review)
     _render_footer(console, outcome)
     return 0 if card.complete else 1

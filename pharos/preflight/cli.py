@@ -31,7 +31,10 @@ from pharos.preflight.split import Grouping, SplitMode, SplitPlan, build_plan
 _EXIT_BY_VERDICT = {Verdict.FITS: 0, Verdict.EXCEEDS: 1, Verdict.INDETERMINATE: 2}
 # Bumped when a field is removed or its meaning changes, so a wrapper can refuse politely
 # rather than silently misread a number. Added fields do not bump it.
-_JSON_SCHEMA_VERSION = 1
+# 2 since v1.0: the payload gained `reads` and `expected` (what an agent opens on its
+# own), and a plan gained `reads_reserved`. Additive, and the number still moved --
+# a version that never changes tells a consumer nothing it can act on.
+_JSON_SCHEMA_VERSION = 2
 
 
 def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
@@ -99,6 +102,13 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
         + ("" if always_split else " (requires --split)"),
     )
     parser.add_argument(
+        "--reserve-reads",
+        action="store_true",
+        help="hold back room in every part for what agents on this model historically opened "
+        "on their own, learned from traffic through the proxy. Smaller parts, more of them"
+        + ("" if always_split else " (requires --split)"),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="emit the report (and plan) as JSON on stdout instead of a table",
@@ -108,6 +118,8 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
     # An accepted flag that does nothing is worse than a rejected one: it looks like it worked.
     if args.semantic and not want_split:
         parser.error("--semantic groups the parts of a split, so it needs --split")
+    if args.reserve_reads and not want_split:
+        parser.error("--reserve-reads sizes the parts of a split, so it needs --split")
 
     # With --json, stdout belongs to the payload alone: prompts, warnings and the picker menu
     # go to stderr, or a caller piping into `jq` gets a parse error instead of a report.
@@ -176,7 +188,14 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
             )
         return _EXIT_BY_VERDICT[report.verdict]
 
-    plan = build_plan(config, prompt, report, target=args.target, semantic=args.semantic)
+    plan = build_plan(
+        config,
+        prompt,
+        report,
+        target=args.target,
+        semantic=args.semantic,
+        reserve_reads=args.reserve_reads,
+    )
     if args.json:
         _emit_json({**report_to_dict(report), "plan": plan_to_dict(plan)})
     elif args.quiet:
@@ -324,6 +343,18 @@ def report_to_dict(report: CheckReport) -> dict[str, object]:
         ),
         "floor": report.floor,
         "ceiling": report.ceiling,
+        "reads": (
+            None
+            if report.reads is None
+            else {
+                "tokens": report.reads.tokens,
+                "sessions": report.reads.sessions,
+                "low": report.reads.low,
+                "high": report.reads.high,
+                "provenance": report.reads.provenance,
+            }
+        ),
+        "expected": report.expected,
         "budget": (
             None
             if budget is None or budget.usable_budget is None
@@ -336,7 +367,11 @@ def report_to_dict(report: CheckReport) -> dict[str, object]:
         ),
         "verdict": report.verdict.value,
         "verdict_detail": report.verdict_detail,
-        "warnings": [w for w in (report.directory_warning, report.reserve_warning) if w],
+        "warnings": [
+            w
+            for w in (report.directory_warning, report.expected_warning, report.reserve_warning)
+            if w
+        ],
         "uncounted": {
             "ambiguous": {
                 raw: [str(p) for p in paths]
@@ -369,6 +404,7 @@ def plan_to_dict(plan: SplitPlan) -> dict[str, object]:
         "target_per_part": plan.target_per_part,
         "target_label": plan.target_label,
         "handoff_reserve": plan.handoff_reserve,
+        "reads_reserved": plan.reads_reserved,
         "grouping": plan.grouping.value,
         "grouping_note": plan.grouping_note,
         "parts": [
@@ -436,13 +472,26 @@ def _render(console: Console, report: CheckReport) -> None:
         table.add_row(
             f"{directory.display} (directory, if fully read)", f"+{directory.tokens:,}", detail
         )
+    if report.reads is not None and report.reads.tokens:
+        table.add_row(
+            "what the agent opens on its own",
+            f"+{report.reads.tokens:,}",
+            f"prediction — {report.reads.provenance}",
+        )
     console.print(table)
 
     console.print()
-    console.print(f"[bold]FLOOR   ≥ {report.floor:,} tokens[/]")
+    console.print(f"[bold]FLOOR    ≥ {report.floor:,} tokens[/]")
+    expected = report.expected
+    if expected is not None and report.reads is not None and report.reads.tokens:
+        console.print(
+            f"[bold]EXPECTED ≈ {expected:,} tokens[/] "
+            f"[dim]a prediction, not a bound — what agents on this model usually "
+            f"opened unprompted[/]"
+        )
     if report.directory_tokens:
         console.print(
-            f"[bold]CEILING ≤ {report.ceiling:,} tokens[/] "
+            f"[bold]CEILING  ≤ {report.ceiling:,} tokens[/] "
             f"[dim]if every named directory is read in full[/]"
         )
     lower_bound_note = (
@@ -458,11 +507,19 @@ def _render(console: Console, report: CheckReport) -> None:
             "[dim]Client overhead unknown — run traffic through the Pharos proxy to calibrate "
             "it, or set client_overhead_tokens in pharos.toml. The floor omits it.[/]"
         )
+    if report.reads is None:
+        console.print(
+            "[dim]What the agent opens on its own is unknown — it is learned from whole agent "
+            "conversations seen by the proxy, and there are not yet three to learn from. Set "
+            "agent_read_tokens in pharos.toml to pin it.[/]"
+        )
 
     console.print()
     _render_budget(console, report)
     if report.directory_warning:
         console.print(f"[yellow]⚠ {report.directory_warning}[/]")
+    if report.expected_warning:
+        console.print(f"[yellow]⚠ {report.expected_warning}[/]")
     if report.reserve_warning:
         console.print(f"[yellow]⚠ {report.reserve_warning}[/]")
     _render_uncounted(console, report)
