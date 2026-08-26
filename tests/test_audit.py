@@ -34,7 +34,7 @@ from pharos.agent.runner import RunOutcome
 from pharos.agent.scorecard import Scorecard
 from pharos.agent.session import PartResult
 from pharos.config import PharosConfig
-from pharos.preflight.check import run_check
+from pharos.preflight.check import Verdict, run_check
 from pharos.profiler.types import BackendInfo, EnvironmentProfile, GpuInfo
 
 _TICK = itertools.count(1)
@@ -461,3 +461,40 @@ def test_the_undo_directory_is_not_walked_at_all(tmp_path: Path) -> None:
 
     indexed = index_tree(tmp_path, ignore=ignore)
     assert set(indexed.entries) == {"src/alpha.py", "src/beta.py"}
+
+
+# --- a run that cannot get a verdict still reports what it found ----------------------------------
+
+
+async def test_an_indeterminate_run_still_carries_its_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run_task` fills in `outcome.report` three times on the way down, and the first two are
+    not redundant: an indeterminate verdict returns between them.
+
+    Without those assignments the caller gets an outcome with an error and no report at all,
+    and `pharos run` prints a bare failure where it should print the pre-flight that produced
+    it. Nothing else in the suite covered the early return, and it is the kind of line that
+    reads like a leftover -- so this pins it.
+    """
+    config = PharosConfig(  # type: ignore[call-arg]
+        model="test-model",
+        target_folder=str(tmp_path),
+        observations_file=str(tmp_path / "obs.json"),
+        template_memory_file=str(tmp_path / "templates.json"),
+        verify=False,
+    )
+    # No profile and no target: there is no window to judge the floor against.
+    report = await run_check(config, "Do a thing", skip_profile=True)
+    assert report.verdict is Verdict.INDETERMINATE
+
+    async def _check(*args: object, **kwargs: object) -> object:
+        return report
+
+    monkeypatch.setattr(runner, "run_check", _check)
+    monkeypatch.setattr(runner, "_load_and_recheck", _check)
+    outcome = await runner.run_task(config, "Do a thing", use_git=False)
+
+    assert outcome.error is not None and "no verdict" in outcome.error
+    assert outcome.report is report
+    assert outcome.counts_exact == report.counts_exact

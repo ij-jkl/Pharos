@@ -24,6 +24,7 @@ from rich.text import Text
 
 from pharos.config import ConfigError, load_config
 from pharos.console import force_utf8
+from pharos.paths import display_path
 from pharos.preflight.check import CheckReport, CountedFile, Verdict, run_check
 from pharos.preflight.extract import ALL_CANDIDATES, DIRECTORY_FILE_CAP
 from pharos.preflight.split import Grouping, SplitMode, SplitPlan, build_plan
@@ -301,7 +302,7 @@ def _pick_interactively(
     for raw, candidates in report.extraction.ambiguous.items():
         console.print(f"\n[bold]{raw}[/] matches {len(candidates)} files:")
         for i, candidate in enumerate(candidates, start=1):
-            console.print(f"  [bold]{i}[/]  {_display(candidate, report.root)}")
+            console.print(f"  [bold]{i}[/]  {display_path(candidate, report.root)}")
         console.print(f"  [bold]a[/]  all {len(candidates)}")
         try:
             answer = ask(f"  which one? [1-{len(candidates)}, a=all, blank to skip] ").strip()
@@ -316,13 +317,6 @@ def _pick_interactively(
             continue
         chosen[raw] = str(candidates[int(answer) - 1])
     return chosen
-
-
-def _display(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root))
-    except ValueError:
-        return str(path)
 
 
 def _emit_json(payload: dict[str, object]) -> None:
@@ -579,14 +573,14 @@ def _render_uncounted(console: Console, report: CheckReport) -> None:
             f"({directory.skipped_non_text} non-text skipped)[/]"
         )
     for raw, candidates in ex.ambiguous.items():
-        shown = " · ".join(_display(c, report.root) for c in candidates[:4])
+        shown = " · ".join(display_path(c, report.root) for c in candidates[:4])
         more = f" (+{len(candidates) - 4} more)" if len(candidates) > 4 else ""
         console.print(f"  {raw}  [dim]ambiguous: {shown}{more}[/]")
     if ex.ambiguous:
         example = next(iter(ex.ambiguous))
         console.print(
             f"  [dim]resolve with --pick, "
-            f"--resolve {example}={_display(ex.ambiguous[example][0], report.root)}, "
+            f"--resolve {example}={display_path(ex.ambiguous[example][0], report.root)}, "
             f"or --resolve {example}=* to count them all[/]"
         )
     for raw in ex.missing:

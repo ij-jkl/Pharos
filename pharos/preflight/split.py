@@ -233,7 +233,7 @@ def build_plan(
         )
 
     count, _ = build_counter(config, report.model)
-    overhead = report.overhead.tokens if report.overhead is not None else 0
+    overhead = report.overhead_tokens
     fixed = overhead + _SCAFFOLD_RESERVE
 
     # Room a part has for content once the overhead and the scaffold are paid for.
@@ -311,7 +311,7 @@ def _plan_scope(
     ``config`` is passed only when a semantic grouping was asked for; it carries the backend
     to ask and the ceilings to hold the answer to.
     """
-    overhead = report.overhead.tokens if report.overhead is not None else 0
+    overhead = report.overhead_tokens
     notes: list[str] = []
 
     # The scaffold carries one line per file, so its cost depends on how the files were cut —
@@ -763,20 +763,7 @@ def _slice_file(
 
     start = 0
     while start < len(lines):
-        end = start
-        predicted = 0.0
-        while end < len(lines) and predicted + ratio * len(lines[end]) <= budget:
-            predicted += ratio * len(lines[end])
-            end += 1
-        if end == start:
-            end = start + 1  # a single line wider than the budget still has to go somewhere
-
-        tokens = count("".join(lines[start:end]))
-        for _ in range(8):  # proportional shrink; converges fast, bounded regardless
-            if tokens <= budget or end - start <= 1:
-                break
-            end = start + max(1, int((end - start) * budget / tokens))
-            tokens = count("".join(lines[start:end]))
+        end, tokens = _fit_span(lines, start, ratio, budget, count)
 
         if tokens > budget:
             note = (
@@ -795,6 +782,41 @@ def _slice_file(
         )
         start = end
     return out, note
+
+
+def _fit_span(
+    items: list[str], start: int, ratio: float, budget: int, count: Callable[[str], int]
+) -> tuple[int, int]:
+    """How far past ``start`` fits inside ``budget``, and what that span actually costs.
+
+    The one packing loop in the project. It was written twice -- once to cut a file into
+    line ranges and once to cut free text into segments -- and the two copies were identical
+    but for what they did with the answer. This is the arithmetic the whole promise rests on,
+    so it is the last thing that should exist in two versions capable of drifting apart.
+
+    Two passes, because a character ratio is a guess and a token count is not. The first grows
+    the span while the PREDICTED cost fits, which is cheap and usually close. The second
+    measures what was actually chosen and shrinks it proportionally if the guess was
+    optimistic -- bounded at eight rounds, though it converges in two or three, and each round
+    strictly decreases the span so it terminates regardless.
+
+    An item wider than the whole budget still has to go somewhere, so a span is never empty.
+    The caller is the one that notices ``tokens > budget`` and says so.
+    """
+    end = start
+    predicted = 0.0
+    while end < len(items) and predicted + ratio * len(items[end]) <= budget:
+        predicted += ratio * len(items[end])
+        end += 1
+    if end == start:
+        end = start + 1
+    tokens = count("".join(items[start:end]))
+    for _ in range(8):
+        if tokens <= budget or end - start <= 1:
+            break
+        end = start + max(1, int((end - start) * budget / tokens))
+        tokens = count("".join(items[start:end]))
+    return end, tokens
 
 
 def _render_scope_part(
@@ -873,7 +895,7 @@ def _plan_text(
     label: str,
 ) -> SplitPlan:
     """The pasted text itself is the problem: cut it into ordered segments."""
-    overhead = report.overhead.tokens if report.overhead is not None else 0
+    overhead = report.overhead_tokens
     # The text scaffold is fixed-size, so one probe render measures it exactly.
     scaffold = count(_render_text_part("", 1, 9)) + _SCAFFOLD_SLACK
     per_part_content = ceiling - overhead - scaffold
@@ -938,22 +960,8 @@ def _segment_text(
     note: str | None = None
     start = 0
     while start < len(atoms):
-        end = start
-        predicted = 0.0
-        while end < len(atoms) and predicted + ratio * len(atoms[end]) <= budget:
-            predicted += ratio * len(atoms[end])
-            end += 1
-        if end == start:
-            end = start + 1
-
+        end, tokens = _fit_span(atoms, start, ratio, budget, count)
         segment = "".join(atoms[start:end])
-        tokens = count(segment)
-        for _ in range(8):  # proportional shrink; strictly decreasing, so it terminates
-            if tokens <= budget or end - start <= 1:
-                break
-            end = start + max(1, int((end - start) * budget / tokens))
-            segment = "".join(atoms[start:end])
-            tokens = count(segment)
 
         if tokens > budget:
             note = (
@@ -1031,7 +1039,7 @@ def _finalise(
     ``carried`` is input the part does not contain but will arrive with — the previous part's
     hand-off, pasted above it.
     """
-    overhead = report.overhead.tokens if report.overhead is not None else 0
+    overhead = report.overhead_tokens
     projected = overhead + count(body) + sum(f.tokens for f in files) + carried
     over = max(0, projected - ceiling)
     return Part(

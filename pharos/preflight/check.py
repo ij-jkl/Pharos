@@ -27,7 +27,7 @@ from pharos.calibration import (
     load_observations,
 )
 from pharos.config import PharosConfig
-from pharos.paths import normalise_display
+from pharos.paths import display_path, normalise_display
 from pharos.preflight.content import BinaryFile, read_countable
 from pharos.preflight.extract import (
     Extraction,
@@ -109,6 +109,16 @@ class CheckReport:
         return sum(d.tokens for d in self.directories)
 
     @property
+    def overhead_tokens(self) -> int:
+        """What the client wraps around the prompt, or nothing when it has never been seen.
+
+        Unwrapped by hand in four places, all identically. Nothing measured yet is a real
+        answer here and it has to be zero rather than a guess -- a floor that quietly invents
+        an overhead is a floor that lies in the direction that matters.
+        """
+        return self.overhead.tokens if self.overhead is not None else 0
+
+    @property
     def ceiling(self) -> int:
         """Floor plus every named directory read in full — the other end of the range."""
         return self.floor + self.directory_tokens
@@ -171,7 +181,7 @@ async def run_check(
     skipped_binary: list[str] = []
     excluded: list[str] = []
     for ref in extraction.files:
-        display = _display_path(ref.path, root)
+        display = display_path(ref.path, root)
         if _is_excluded(display, dropped):
             excluded.append(display)
             continue
@@ -259,7 +269,7 @@ def _expand(
     for path in contents.files:
         if path in claimed:
             continue  # named explicitly as well: counted once, in the floor
-        display_here = _display_path(path, root)
+        display_here = display_path(path, root)
         if _is_excluded(display_here, dropped):
             # An exclusion has to reach inside an expanded directory too, or "everything in
             # src/ except the generated file" is a sentence Pharos cannot honour.
@@ -274,7 +284,7 @@ def _expand(
         claimed.add(path)
         counted.append(
             CountedFile(
-                display=_display_path(path, root),
+                display=display_path(path, root),
                 tokens=count(countable.text),
                 found_by_search=False,
                 path=path,
@@ -282,7 +292,7 @@ def _expand(
             )
         )
     return ExpandedDirectory(
-        display=_display_path(ref.path, root),
+        display=display_path(ref.path, root),
         files=counted,
         truncated=contents.truncated,
         skipped_non_text=contents.skipped_non_text,
@@ -456,8 +466,3 @@ def _reserve_warning(
     )
 
 
-def _display_path(path: Path, root: Path) -> str:
-    try:
-        return str(path.relative_to(root.resolve()))
-    except ValueError:
-        return str(path)

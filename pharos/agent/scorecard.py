@@ -358,18 +358,13 @@ def score(
     audits: list[PartAudit] | None = None,
 ) -> Scorecard:
     """Reduce a finished run to the five questions above."""
-    scoped: list[str] = []
-    for part in parts:
-        for path in part.scoped:
-            if path not in scoped:
-                scoped.append(path)
     # Coverage is "of the files the PLAN assigned", so the denominator is the plan when one
     # is given -- not the parts that happened to execute. A run halted after part 1 of three
     # otherwise reports 100%, because the files nobody attempted are in no part's scope: the
     # denominator shrinks along with the numerator and the bar stays full. True of a run
     # stopped by a failed part too, which it has been since v0.4 and nobody noticed until
     # --stop-on-break made a short run an ordinary outcome rather than an accident.
-    scoped_set = {normalise(path) for path in scoped} | {
+    scoped_set = {normalise(path) for part in parts for path in part.scoped} | {
         normalise(path) for path in (planned_files or [])
     }
 
@@ -395,7 +390,6 @@ def score(
     # The last part hands off to nobody, so it is not expected to produce one. Repair parts
     # run AFTER the plan and hand off to nobody either — they are a sweep, not a continuation,
     # so holding them to the thread would penalise a run for the mechanism that rescued it.
-    planned_parts = parts[: len(parts) - repair_parts] if repair_parts else parts
     expects_handoff = planned_parts[:-1] if len(planned_parts) > 1 else []
     produced = [p for p in expects_handoff if p.text.strip()]
 

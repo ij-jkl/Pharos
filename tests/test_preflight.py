@@ -428,3 +428,33 @@ def test_excluding_something_nobody_named_changes_nothing(tmp_path: Path) -> Non
     report = await_check(tmp_path, "Refactor `keep.py`", exclude=["absent.py"])
     assert [f.display for f in report.files] == ["keep.py"]
     assert report.excluded == []
+
+
+# --- one display path, after two copies had already drifted ---------------------------------------
+
+
+def test_a_path_inside_the_workspace_is_shown_relative(tmp_path: Path) -> None:
+    from pharos.paths import display_path
+
+    assert display_path(tmp_path / "src" / "a.py", tmp_path) == str(Path("src/a.py"))
+
+
+def test_a_path_outside_the_workspace_is_left_absolute(tmp_path: Path) -> None:
+    """Never a misleading relative answer: `../../elsewhere/a.py` reads like a project file."""
+    from pharos.paths import display_path
+
+    outside = tmp_path.parent / "elsewhere" / "a.py"
+    assert display_path(outside, tmp_path / "work") == str(outside)
+
+
+def test_display_survives_a_root_that_needs_resolving(tmp_path: Path) -> None:
+    """The two copies of this disagreed on exactly this point -- one resolved the root before
+    comparing and the other did not, so the same file could appear by name in the verdict and
+    by absolute path in the plan printed beside it."""
+    from pharos.paths import display_path
+
+    root = tmp_path / "work"
+    (root / "src").mkdir(parents=True)
+    target = (root / "src" / "a.py").resolve()
+    # A root the user typed that is not in resolved form: both spellings must agree.
+    assert display_path(target, root) == display_path(target, root.resolve())

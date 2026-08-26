@@ -30,6 +30,13 @@ handoff_reserve = 500
 # Set it to false to see what the model's own hand-offs achieve alone.
 handoff_ledger = true
 
+# After the plan has run, go back over any assigned file that no part actually changed, in a
+# fresh conversation holding only the leftovers. One round, never more: a second would be
+# chasing a model that has declined the same work twice, and an unbounded repair loop is how a
+# run stops having a knowable cost. Set it to false to see what the plan alone achieves —
+# which is what the coverage figures in the scorecard measure.
+repair_pass = true
+
 # The window `pharos run` asks the backend to load the model with. Ollama picks a cautious
 # VRAM-based default (4,096 on a 12 GB card), and that is too small for agentic work: the part
 # scaffold alone fills it before a single file can be scoped in. Leave it commented out and

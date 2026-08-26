@@ -35,7 +35,7 @@ from rich.text import Text
 
 from pharos.agent.audit import FILE_CAP
 from pharos.agent.review import SEVERITIES, Review
-from pharos.agent.runner import RunOutcome, run_task
+from pharos.agent.runner import RunOutcome, first_line, run_task
 from pharos.agent.scorecard import Scorecard, score, to_dict
 from pharos.agent.session import SAFETY_MARGIN, PartResult
 from pharos.agent.tools import workspace_root
@@ -694,16 +694,6 @@ def _add_verification_row(body: Table, verification: Verification | None) -> Non
     body.add_row("verification", chr(10).join(lines))
 
 
-def _first_line(detail: str) -> str:
-    """A command check's detail is an excerpt of several lines; a damage row has room for one.
-
-    The full text is not lost -- the same failure appears in the verification block below with
-    its head and tail -- so this is the summary, not the record.
-    """
-    first = next((line for line in detail.splitlines() if line.strip()), "")
-    return first if len(first) <= 96 else first[:95] + chr(8230)
-
-
 def _render_scorecard(console: Console, card: Scorecard) -> None:
     """The five questions, in the order they matter when a run disappoints."""
     word, style, qualifier = _headline(card)
@@ -796,7 +786,7 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             body.add_row(
                 "damage" if entry is card.damage[0] else "",
                 f"[{colour}]{entry.label} broke {escape(entry.subject)}[/]{fixed}\n"
-                f"  [dim]{escape(_first_line(entry.error))}[/]",
+                f"  [dim]{escape(first_line(entry.error, 96))}[/]",
             )
         if len(card.damage) > 4:
             body.add_row("", f"[dim]... {len(card.damage) - 4} more[/]")

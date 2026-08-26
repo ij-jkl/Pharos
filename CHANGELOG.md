@@ -39,6 +39,25 @@ both had been recorded as.
   because that figure is in our vocabulary and the mark is in the backend's, and subtracting
   one from the other only cries wolf more quietly.
 
+- **Written once, where it had been written twice.** No behaviour change, and the plan for a
+  real nineteen-file prompt comes out identical part for part. Each of these was two copies
+  that could drift apart, and two of them already had:
+  - The **packing loop** — grow a span while the predicted cost fits, then shrink it against
+    the measured one — existed once for cutting a file into line ranges and once for cutting
+    free text into segments. This is the arithmetic the whole promise rests on.
+  - **A finished part** was described by hand at three of its four exits, twenty-odd identical
+    fields each. That is how `files_read` and `handoff_requested` each reached some exits and
+    not others in a single afternoon.
+  - **The relative display path** had drifted: one copy resolved the workspace root before
+    comparing and the other did not, so the same file could be named in the verdict and shown
+    absolute in the plan beside it. It now lives in `pharos/paths.py`, which exists because
+    this project has paid for two copies of a path comparison once already.
+  - The one-token **model load** request, the first-line **truncator**, and the four-times
+    unwrapping of a client overhead that may not have been measured yet.
+
+- **`repair_pass` was missing from `pharos.toml.example`.** It is the one config key the
+  example never listed.
+
 - **A test asserted that a binary was on your PATH.** `detect_commands` is configuration AND
   installation, and the test for it failed on this machine purely for being invoked from a
   shell where the virtualenv was not activated. It skips when the tool is not installed.

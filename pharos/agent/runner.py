@@ -203,13 +203,7 @@ async def _ensure_window(
         f"— reloading the model"
     )
     try:
-        async with httpx.AsyncClient(base_url=config.backend_url) as client:
-            response = await client.post(
-                "/api/chat",
-                json=_load_payload(config),
-                timeout=httpx.Timeout(connect=5.0, read=900.0, write=60.0, pool=5.0),
-            )
-            response.raise_for_status()
+        await _post_load(config)
     except httpx.HTTPError as exc:
         say(f"could not reload at num_ctx={config.num_ctx}: {exc}")
         return report
@@ -237,14 +231,8 @@ async def _load_and_recheck(
         return report
 
     say(f"no model resident — loading {config.model} (a large model takes a while the first time)")
-    payload = _load_payload(config)
     try:
-        async with httpx.AsyncClient(base_url=config.backend_url) as client:
-            response = await client.post(
-                "/api/chat", json=payload, timeout=httpx.Timeout(connect=5.0, read=900.0,
-                                                                 write=60.0, pool=5.0)
-            )
-            response.raise_for_status()
+        await _post_load(config)
     except httpx.HTTPError as exc:
         say(f"could not load {config.model}: {exc}")
         return report
@@ -918,15 +906,43 @@ async def _broke(
         )
     found = watch.after_part(label, written, ran)
     for entry in found:
-        say(f"  [{label}] BROKE {entry.subject}: {_one_line(entry.error)}")
+        say(f"  [{label}] BROKE {entry.subject}: {first_line(entry.error, 120)}")
     outcome.damage = watch.damage
     return bool(found)
 
 
-def _one_line(detail: str) -> str:
-    """A tool's excerpt is several lines; a progress line is one."""
+async def _post_load(config: PharosConfig) -> None:
+    """Send the one-token request that makes the backend load the model at this num_ctx.
+
+    Both callers -- the first load and the reload after a window change -- sent an identical
+    request with an identical timeout, written out twice. They differ only in what they say
+    when it fails, which is why each keeps its own `except` around this.
+
+    The read timeout is long on purpose: this is a cold model load off disk, which on a 9B at
+    16K has taken minutes here, and it produces nothing observable until it is done.
+    """
+    async with httpx.AsyncClient(base_url=config.backend_url) as client:
+        response = await client.post(
+            "/api/chat",
+            json=_load_payload(config),
+            timeout=httpx.Timeout(connect=5.0, read=900.0, write=60.0, pool=5.0),
+        )
+        response.raise_for_status()
+
+
+def first_line(detail: str, width: int) -> str:
+    """The first line of a check's excerpt, capped.
+
+    A command check's detail runs to several lines and two places need one: a progress line
+    while the run is going (wide), and a damage row in the report afterwards (narrower). It
+    was written out twice, identical but for the number, which is how a fix to one of them
+    silently misses the other.
+
+    The full text is never lost either way -- the same failure appears in the verification
+    block with its head and tail -- so this is the summary, not the record.
+    """
     first = next((line for line in detail.splitlines() if line.strip()), "")
-    return first if len(first) <= 120 else first[:119] + chr(8230)
+    return first if len(first) <= width else first[: width - 1] + chr(8230)
 
 
 def _carry(
