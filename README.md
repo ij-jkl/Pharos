@@ -868,9 +868,12 @@ uv run pytest
 unless a model file is present under `tests/models/` (gitignored). `CHANGELOG.md` is the
 tier-by-tier history; `DESKTOP_VALIDATION.md` is the working record of every assumption
 confirmed against a live GPU + Ollama machine, including the ones that turned out to be wrong.
-Its §24 is the one open section: v1.0's four features are pinned by the suite and have not
-yet had a live pass, which that section says in the file whose job is recording what was
-actually measured.
+Its §24 is v1.0's live pass, on a purpose-built project of real classes: `--compact` turned
+two parts abandoned at the ceiling into none and gave back 1,459 tokens; the read prediction
+was checked against a known quantity and landed inside 1% of it; `--review` named the right
+file, line and cause of a real syntax error with nothing discarded; and the audit matched
+every part's claims against the disk. It also records two defects the pass found, which is
+the other half of what that file is for.
 
 `tests/test_end_to_end.py` runs the whole loop against a mocked backend — a coding-agent-shaped
 request through the proxy, the observation it records, the overhead the pre-flight learns from

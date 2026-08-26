@@ -1876,80 +1876,222 @@ scorecard rather than absorbed silently.
 
 ---
 
-## ☐ 24. The four v1.0 features, against a live model (v1.0, NOT YET RUN)
+## ☑ 24. The four v1.0 features, against a live model (v1.0, live)
 
-Every tier before this one has a section above it written from a live pass. **This one does
-not**, and the honest thing is to say so in the file whose whole job is recording what was
-actually measured rather than what was expected. v1.0 shipped with its logic pinned by 635
-tests against mocked backends and fixtures; what those cannot tell you is how the numbers
-behave on a real model doing real work.
+**Run completed 2026-08-26** on the same RTX 3060 12GB, Ollama 0.31.1, against a purpose-built
+target project — ten modules of real classes (`Money`, `Product`/`DigitalProduct`, `Order`,
+four `Payment` subclasses, a `CheckoutService`, a `SalesReport`, and a deliberately large
+legacy `InvoiceRenderer`), 12 passing tests and a clean `ruff` baseline before every run. The
+task was the same every time: **convert every `%`-format string to an f-string**, which is
+mechanical, touches every file, and is judged from outside Pharos by `ruff --select UP031`.
 
-What is already measured, and where: the compaction figures in `CHANGELOG.md` come from
-`tests/test_agent.py`'s fixture (five files of 1,834 tokens against an 8,344-token ceiling),
-not from a GPU. They are arithmetic, and they are labelled as arithmetic.
+Four runs. A and B at `num_ctx` 16,384; C1 and C2 at 8,192 with a 1,483-token module in scope,
+which is what finally produced real window pressure.
 
-Four things need a machine.
+### 24.0 The finding that came first: not every coding model can drive a run
 
-### 24.1 — Does the read prediction match what an agent actually reads?
+`qwen2.5-coder:7b` produced **coverage 0%** — three parts and three repair parts, every one of
+them `steps=0`, 17 seconds for the whole run. It was not a Pharos failure and not a context
+failure. Asked with a tool catalogue, the model writes the call **as text**:
 
-**Run:** point a real coding agent (Continue, Cursor, Cline) at the proxy and work three or
-more whole tasks through it. Then:
-
-```bash
-uv run pharos check "<a task of the same shape>" --json | jq '.reads, .expected'
+```
+tool_calls: null
+content: {"name": "read_file", "arguments": {"path": "shop/money.py"}}
 ```
 
-**Expect:** a `reads` block appearing only after the third conversation, with `sessions` equal
-to the number of whole tasks and `low`/`high` bracketing them.
+Probed directly, on Ollama 0.31.1:
 
-**The measurement that matters:** run one of those tasks again and compare the tokens the
-agent really pulled in against what `EXPECTED` predicted. The estimator is derived arithmetic
-(`Δinput − output_prev − Δuser`) and has never been checked against a ground truth, because
-there is no ground truth available from counts alone — the only way to get one is to watch a
-real agent and count what it opened.
+| model | native `tool_calls` |
+|---|---|
+| `qwen3.5:9b` | **yes** |
+| `qwen3.5-9b-heretic` | **yes** |
+| `qwen2.5-coder:7b` | no — JSON as text |
+| `qwen2.5-coder:14b` | no — JSON as text |
 
-**A failure means:** if the residue systematically overshoots, something other than file
-content is growing between turns that the subtraction is billing to the agent. If it
-undershoots on a thinking model, that is the documented clamp and is expected — record how
-far under.
+`recover_tool_calls` exists for exactly this and does fire when the model emits a bare JSON
+call, but a model that instead answers in prose ("I have read `shop/checkout.py` … they do not
+contain any %-format strings") gives it nothing to recover. **The coder models cannot run
+`pharos run` on this machine; the qwen3.5 family can.** Every run below is `qwen3.5:9b`.
 
-### 24.2 — Does compaction let a part finish that would otherwise have stopped?
+### 24.1 The read prediction, against a known quantity — ☑ and it lands
 
-**Run:** the same task twice, `--no-verify` for speed, once plain and once with `--compact`.
+After the four runs the store held 42 records, all `user_exact: True`. The estimator cut them
+into **7 conversations** (the runs had 3 and 4 parts, each part its own conversation), and
+found 31 usable turn-to-turn pairs out of 32.
 
-```bash
-uv run pharos run --json "<a task whose parts hit the ceiling>" | jq '.compaction'
-uv run pharos run --json --compact "<the same task>" | jq '.compaction'
+```
+conv 1:  2 turns,  1/1 pairs,   922 injected
+conv 2:  4 turns,  3/3 pairs, 1,492
+conv 3:  2 turns,  0/1 pairs,     — dropped, unaccountable pair
+conv 4:  7 turns,  6/6 pairs, 2,935
+conv 5:  6 turns,  5/5 pairs, 3,101
+conv 6:  9 turns,  8/8 pairs, 2,016
+conv 7:  9 turns,  8/8 pairs, 1,920
+
+ReadEstimate(tokens=1,968, sessions=6, low=922, high=3,101)
 ```
 
-**Expect:** the first reporting a non-zero `reclaimable_tokens` and `room_refusals`; the
-second reporting `tokens_reclaimed` and both of the others at zero.
+**The check that mattered.** The estimator is derived arithmetic and had never been compared to
+a ground truth, because counts alone cannot supply one. A live agent can. Conversation 4
+measured **2,935 tokens injected**; the part it belongs to scoped `shop/legacy_invoice.py`,
+which `pharos check` counts at **1,448–1,483 tokens** — and the log shows that part reading it
+**twice**. Two reads of that file is 2,896–2,966 tokens. The residue lands inside ~1% of a
+quantity measured independently, by a different code path, from the other end.
 
-**The real question, which the fixture cannot answer:** does the model cope with a stub where
-a file used to be? It is told the file was dropped and may call the tool again. The failure
-mode to watch for is a part that re-reads what was just compacted and grinds — `compactions`
-is capped at 3 per part precisely because that was the predicted failure, and whether it
-happens at all on a 9B model is unknown.
+`pharos check` on the same task now prints:
 
-### 24.3 — Does the audit find anything on a real tree?
+```
+what the agent opens on its own  +1,920   prediction — observed · median of 7 conversations
+FLOOR    ≥ 3,585 tokens
+EXPECTED ≈ 5,505 tokens
+```
 
-**Expect:** on a clean run, `audit.clean = true` and every change claimed.
+Two supporting observations:
 
-**What to look for:** `by_checks` entries. If `verify_commands` includes a formatter or a
-snapshot test, this is the first version of Pharos that can see it rewriting your files
-mid-run, and nobody has looked yet. Also worth timing: three tree indexes per part on a
-repository of a few thousand files. If that is perceptible, `--no-audit` exists, but the
-default should be reconsidered.
+* **The client-overhead estimator can still be captured by one poke.** A single `curl` carrying
+  a system prompt counts as `agent_shaped`, and while it was the only record the overhead read
+  **19 tokens**. Real agent traffic corrected it to **1,097** on the next check. Nothing was
+  wrong — the minimum over the fewest-message records is doing what it says — but "has a system
+  prompt" is a weak proxy for "is a coding agent".
+* **A vocabulary mismatch starves this estimator silently.** The first run was made with the
+  proxy still bound to a different model's GGUF. Pharos caught it — 22 of 23 records came back
+  `user_exact: False`, and the overhead line said so in its provenance — but `_injected` drops
+  those pairs outright, so `reads` stayed `None` while the check reported the reason as *"there
+  are not yet three to learn from"*. See the open item at the end.
 
-### 24.4 — Is the review worth reading, and how much of it is invented?
+### 24.2 Compaction, A/B on the same task and window — ☑ and it changes the outcome
 
-**Run:** `uv run pharos run --review "<a task>"` and read the panel.
+C1 and C2 are the same prompt, the same 8,192-token window, the same three files. The only
+difference is the flag.
 
-**The number to record is `discarded`.** It is the fraction of one model's findings that
-pointed at a file it did not change or a line it was not shown — the measurement of how much
-of a local model's code review is confabulated, which is exactly the thing the checking exists
-to establish. A high count is not a bug in Pharos; it is the finding.
+| | C1 · no `--compact` | C2 · `--compact` |
+|---|---|---|
+| parts | 4 | 4 |
+| coverage | 100% | 100% |
+| peak of ceiling | 98.1% | 96.3% |
+| **parts abandoned at the ceiling** | **2** | **0** |
+| `room_refusals` | 1 | 6 |
+| `tokens_reclaimed` | 0 | **1,459** |
+| `reclaimable_tokens` (what it would have bought) | **1,952** | 0 |
+| parts that broke the build | 3 | 1 |
+| wall time | 5m05s | 5m53s |
 
-**Then read the ones that survived** and record how many were *right*, which no code can check.
-If that number is near zero on a 9B model, say so here — the feature would still be correctly
-built and not worth turning on, and that is a useful thing for this file to record.
+**Both trigger paths fired, in the same part:**
+
+```
+· part 2 no room for read_file — compacted 766 tokens and retried
+! part 2 ceiling reached — compacted 693 tokens of stale tool results, back to …
+```
+
+The second is the one the ceiling check sees. The first is the one it never does — the part
+was comfortably inside its window and still could not open the next file — and it is the
+commoner of the two.
+
+The number that decides the flag is `reclaimable_tokens`, and only C1 could produce it:
+**1,952 tokens of a 6,412-token ceiling were tool results those parts had finished with.** With
+the flag, two parts that would have stopped ran to the end instead, at a cost of 48 seconds.
+
+`room_refusals` going *up* (1 → 6) is not a regression: C1's parts died early and stopped
+asking. C2's kept working, exhausted the three-round compaction bound, and were then refused
+like any other part. That is the bound doing its job.
+
+### 24.3 The audit — ☑ clean on the real signal, noisy on Pharos's own files
+
+Across all four runs, **every part's claimed writes matched the disk exactly**:
+
+```
+part 1 | changed shop/errors.py, shop/money.py     | claimed shop/errors.py, shop/money.py
+part 2 | changed shop/catalogue.py, shop/orders.py | claimed shop/catalogue.py, shop/orders.py
+part 3 | changed shop/checkout.py, shop/payments.py| claimed shop/checkout.py, shop/payments.py
+```
+
+`absent` was empty on every part of every run: nothing was ever reported as written that the
+disk did not show.
+
+**Cost**, measured directly: 1.6 ms to index the 16-file target, **8.1 ms** to index the Pharos
+repository (95 files after `.venv`, `__pycache__` and the rest are pruned). Three of those per
+part is ~25 ms against a part that takes a minute — 0.04%. The default being on is right, and
+`--no-audit` is for trees far larger than anything measured here.
+
+**The one flaw is ours**, and it is in every run's report — see the open item below.
+
+### 24.4 The review — ☑ and on this diff it was right
+
+C2 reviewed three changed files and returned **two findings, zero discarded**:
+
+```
+[bug]  shop/legacy_invoice.py:19  Syntax error: f-string contains invalid expression
+                                  int(self.quantity)<4d.
+[risk] shop/legacy_invoice.py:20  f-string formatting may produce incorrect alignment or
+                                  truncation for currency values.
+```
+
+Line 19 of that file, after the run:
+
+```python
+return f"{self.description:<30} {int(self.quantity)<4d} x {float('%.2f' % …
+```
+
+```
+SyntaxError: invalid decimal literal
+```
+
+Right file, right line, right cause. Pharos's own parser found the same defect independently
+and attributed it to part 1 — two mechanisms, no shared code, same answer.
+
+That is one diff on one model and is not a discard rate; it is a single observation that the
+checking did not have to throw anything away. Run B's review, over a smaller two-file diff,
+returned **no findings and no discards**, which the panel reports as "nothing reported" rather
+than as a pass.
+
+### What the runs said about everything below v1.0
+
+Not the point of the exercise, and worth recording anyway, because it is the first live pass
+since v0.9:
+
+* **The context-mismatch banner fired**: advertised 32,768, loaded 16,384, "50.0% of capacity".
+* **The KV rate was derived, not configured**: 55 MiB/1K for `qwen2.5-coder:7b` against the
+  56.6 MiB/1K measured in §16 — 2.8% under, inside the 1–4% the README claims.
+* **The chat-template gap is flat, on a second model.** Run A recorded 22 drift pairs from
+  (1,020 → 1,080) to (5,299 → 5,638): gaps of 60, 275, 265, 345, 333, 350, 339 across a 5x
+  range in conversation size. Flat, not proportional — which is the v0.9 measurement,
+  reproduced on `qwen3.5:9b` rather than on the model it was taken from.
+* **The template memory closed the exposure it was built for.** Run A was this model's first:
+  `exposed_requests 3`, one per part, and it left `offsets: [417]` behind. **Every run after it
+  reported `exposed_requests 0`**, with the offset settling to 346 and then 329 over three runs.
+* **Coverage is a flattering measure and the verification catches it.** Run A wrote 6 files of
+  6 — coverage 100% — and still broke the build, and `complete` was False. `ruff` and `pytest`
+  were reported **skipped by name with the reason** ("not on PATH") rather than as passes; once
+  pointed at real executables they ran, and `pytest -q` was cheap enough (0.6s baseline) to run
+  after every part.
+* **Damage was attributed, every time**: part 3 in run A; parts 1, 2 and 4 in C1; part 1 in C2 —
+  each with the file and the parser's own message.
+* **`pharos run` refused rather than faked one plan.** At `num_ctx` 6,144 it exited 2 with *"the
+  task text plus the part scaffold and the client overhead (1,083) already fill the requested
+  target (1,786) — there is no room left to put a file in"*, and told the user what to change.
+* **Continuity held**: 2 hand-offs expected, 2 produced, largest 380 tokens against the
+  500-token reserve, no overruns, no thin hand-offs, no invented paths, no revisits.
+
+### ☐ Open: two defects this pass found
+
+**1. The audit reports Pharos's own bookkeeping as an unclaimed change.** Every run's audit
+carried the same two entries, in three categories at once:
+
+```
+unattributed: ['pharos.log', 'pharos_observations.json']
+out_of_scope:  ['pharos.log', 'pharos_observations.json']
+by_checks:     ['pharos.log', 'pharos_observations.json']
+```
+
+Those are Pharos's own files, written into `target_folder` by the run that is auditing itself.
+They are **configured paths** (`log_file`, `observations_file`, `template_memory_file`), so
+excluding them is exact rather than a heuristic. Until that lands, every real finding arrives
+next to two false ones, which is precisely the noise that gets a check ignored.
+
+**2. "Not enough conversations" can be the wrong reason.** When every pair is dropped for a
+vocabulary mismatch, `reads` is `None` and the check says *"it is learned from whole agent
+conversations seen by the proxy, and there are not yet three to learn from"* — when the truth
+is that there were plenty and all of them were discarded. The overhead estimator handles the
+same condition by falling back **and saying so in its provenance**; the read estimator should
+distinguish "nothing to learn from" from "everything was refused", the way the rest of this
+project distinguishes a missing number from a rejected one.

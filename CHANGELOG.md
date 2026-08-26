@@ -11,9 +11,13 @@ RTX 3060 12 GB running Ollama — and the record of how is in that file rather t
 Nine versions carried a section headed *What Pharos does NOT do (yet)*. Five entries. This
 release closes four of them and keeps the fifth forever.
 
-> Unlike every tier above it, the numbers in this entry come from the suite and its fixtures
-> rather than from the desktop. v1.0 has not had a live pass; `DESKTOP_VALIDATION.md` §24 is
-> open and says what needs measuring.
+> The compaction figures below come from the suite's fixtures. The live pass is
+> `DESKTOP_VALIDATION.md` §24, run afterwards on an RTX 3060 against `qwen3.5:9b` and a
+> project of real classes: same task, same window, `--compact` took parts abandoned at the
+> ceiling from **2 to 0** and reclaimed **1,459 tokens**; the read prediction was corroborated
+> against a file read twice, to within ~1%; `--review` named the right file, line and cause
+> of a real syntax error with **0 findings discarded**. That section also lists two defects
+> the pass found.
 
 The four were not closed by relaxing anything. Each one had a reason it was excluded, and each
 is admitted here only in the shape that survives that reason: a prediction that is labelled a
