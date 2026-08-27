@@ -55,11 +55,12 @@ so the windows behind it are visible rather than implied.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from pharos.store import read_json, write_json
 
 _BYTES_PER_MIB = 1024 * 1024
 
@@ -213,10 +214,7 @@ def _slope(points: list[tuple[int, int]]) -> float | None:
 
 
 def _read(path: Path) -> dict[str, dict[str, object]]:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
+    raw = read_json(path, {})
     if not isinstance(raw, dict):
         return {}
     models = raw.get("models")
@@ -226,5 +224,4 @@ def _read(path: Path) -> dict[str, dict[str, object]]:
 
 
 def _write(path: Path, store: dict[str, dict[str, object]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"models": store}, indent=2), encoding="utf-8")
+    write_json(path, {"models": store}, indent=2)

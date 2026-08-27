@@ -209,7 +209,7 @@ else {
 
     # --- dependencies ----------------------------------------------------------------------
 
-    Write-Step 'Installing dependencies (this fetches Python 3.12 the first time - give it a minute)'
+    Write-Step 'Installing dependencies (this fetches Python the first time - give it a minute)'
 
     uv sync
     if ($LASTEXITCODE -ne 0) {

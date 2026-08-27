@@ -6,6 +6,44 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.1 — "Survives being installed"
+
+Nothing users see. Everything here is something that only shows up on somebody else's machine.
+
+- **Two of the three stores could be left half-written.** The observation store has always
+  written a temporary file and renamed it over the target; the template-cost store and the new
+  VRAM store called `write_text`, which truncates first. A crash, a full disk or a second
+  process arriving mid-call left valid UTF-8 that is not valid JSON — and since every reader
+  here treats a corrupt store as an empty one, the cost was a silent loss of everything that
+  had been learned. All three now go through one `pharos.store.write_json`.
+
+- **The atomic rename was failing on Windows, and had been all along.** Writing the test for
+  the above turned it up: `os.replace` refuses with WinError 5 while any other handle is open
+  on the destination, including a reader holding it for the microsecond it takes to parse.
+  Under a reader thread looping over a store being rewritten, most replaces failed — and a
+  failed write here is only a log line, so the effect was a store that quietly stopped learning
+  whenever anything was reading it. The dashboard reads these on a timer while a run writes
+  them, so that is the ordinary case, not a stretch. Both directions now retry over ~150ms:
+  a reader is denied just as transiently while a replace is in flight, and swallowing that as
+  "the store is empty" is how a run would start uncorrected for no reason. Atomicity is not
+  traded for it — every attempt is still a whole-file swap, and giving up leaves the previous
+  store intact.
+
+- **The package shipped no `py.typed`.** Every module is `mypy --strict` clean and fully
+  annotated, and none of it was visible to anything that imported Pharos. Added, declared as a
+  wheel artifact, and pinned by a test — along with one that imports every console script's
+  entry point, since a typo there is only ever discovered by a user on a fresh install.
+
+- **Python 3.13 is supported.** `requires-python` was `<3.13`, which on a current machine means
+  no install at all. The whole suite passes on 3.13 unchanged, so the pin is `<3.14` and CI runs
+  four legs: 3.12 and 3.13 on Linux and Windows. Each leg names its interpreter explicitly,
+  because `.python-version` pins 3.12 and a bare `uv run` in the 3.13 leg would silently test
+  3.12 and report green — which is worse than not testing 3.13 at all. A CI step asserts the
+  interpreter is the one asked for.
+
+- Packaging metadata for a public release: classifiers, keywords, and Homepage / Repository /
+  Issues / Changelog URLs. The launchers no longer promise to fetch "Python 3.12" specifically.
+
 ## v1.1 — "Measured here"
 
 The VRAM figures stop guessing on the models they could not derive a rate for.

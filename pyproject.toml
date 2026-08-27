@@ -1,11 +1,26 @@
 [project]
 name = "pharos"
-version = "1.1.0"
+version = "1.1.1"
 description = "Transparent, context-aware orchestration proxy and live terminal dashboard for local LLM backends."
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Isaac Jordan", email = "isaaz.jordan02@gmail.com" }]
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.14"
+keywords = ["llm", "ollama", "proxy", "context-window", "tui", "local-llm", "vram"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.30",
@@ -22,6 +37,11 @@ dependencies = [
 pharos = "pharos.__main__:main"
 pharos-profile = "pharos.profiler.cli:main"
 pharos-split = "pharos.preflight.cli:split_main"
+[project.urls]
+Homepage = "https://github.com/ij-jkl/Pharos"
+Repository = "https://github.com/ij-jkl/Pharos"
+Issues = "https://github.com/ij-jkl/Pharos/issues"
+Changelog = "https://github.com/ij-jkl/Pharos/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
@@ -38,6 +58,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pharos"]
+# PEP 561: without this marker in the installed package, every type hint in here is invisible
+# to anything that imports it, however strictly it is checked in CI.
+artifacts = ["pharos/py.typed"]
 
 # Install llama-cpp-python from the prebuilt CPU wheels rather than the PyPI sdist (which would
 # need a C++ toolchain). `explicit = true` scopes this index to only the package pinned below,

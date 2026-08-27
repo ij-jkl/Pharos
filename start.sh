@@ -145,7 +145,7 @@ else
         ok "uv installed — $(uv --version)"
     fi
 
-    step "Installing dependencies (this fetches Python 3.12 the first time — give it a minute)"
+    step "Installing dependencies (this fetches Python the first time — give it a minute)"
     uv sync || die "uv sync failed." \
                    "Scroll up for the resolver error. A compile attempt for llama-cpp-python means the prebuilt CPU wheel index was not used."
     ok "dependencies installed"

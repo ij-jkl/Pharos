@@ -1,7 +1,7 @@
 # Pharos
 
 [![CI](https://github.com/ij-jkl/Pharos/actions/workflows/ci.yml/badge.svg)](https://github.com/ij-jkl/Pharos/actions/workflows/ci.yml)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12 | 3.13](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A transparent proxy and live terminal dashboard between a local coding agent and a local LLM
@@ -41,7 +41,7 @@ cd Pharos
 .\start.ps1       # Windows
 ```
 
-The first run installs [uv](https://docs.astral.sh/uv/) if it is missing, fetches Python 3.12,
+The first run installs [uv](https://docs.astral.sh/uv/) if it is missing, fetches Python,
 installs the dependencies, creates `pharos.toml`, and checks for a backend. Every run after
 that detects all of it is already there, skips straight past, and opens the prompt:
 
@@ -770,7 +770,8 @@ uv run mypy pharos
 uv run pytest
 ```
 
-**720 tests**, `ruff` and `mypy --strict` clean, on Linux and Windows in CI. Tokenizer tests
+**729 tests**, `ruff` and `mypy --strict` clean — on Python 3.12 and 3.13, Linux and
+Windows, all four combinations in CI. Tokenizer tests
 against a real GGUF auto-skip unless a model file is present under `tests/models/` (gitignored).
 
 `tests/test_end_to_end.py` runs the whole loop against a mocked backend — a coding-agent-shaped

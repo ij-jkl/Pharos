@@ -29,9 +29,7 @@ loop (``asyncio.to_thread``) — the proxy's request path stays non-blocking.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import statistics
 import threading
 import time
@@ -41,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from pharos.naming import same_model
+from pharos.store import read_json, write_json
 
 _logger = logging.getLogger("pharos.calibration")
 
@@ -96,10 +95,7 @@ def _optional_bool(value: Any) -> bool | None:
 
 def load_observations(path: Path) -> list[Observation]:
     """Read the store; an absent, malformed or partially valid file degrades to what parses."""
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
+    raw = read_json(path, [])
     if not isinstance(raw, list):
         return []
     out: list[Observation] = []
@@ -193,9 +189,7 @@ class ObservationRecorder:
         existing = load_observations(self._path)
         merged = (existing + batch)[-_MAX_RECORDS:]
         payload: list[dict[str, Any]] = [asdict(obs) for obs in merged]
-        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        os.replace(tmp, self._path)
+        write_json(self._path, payload)
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,13 +357,7 @@ def load_template_costs(path: Path) -> dict[str, TemplateCost]:
     Same rule as the observation store: this makes runs better when it is there and must never
     be able to stop one happening. A corrupt file is worth a log line and nothing more.
     """
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as exc:
-        _logger.warning("could not read template costs from %s: %s", path, exc)
-        return {}
+    raw = read_json(path, {})
     if not isinstance(raw, dict):
         return {}
     out: dict[str, TemplateCost] = {}
@@ -422,11 +410,7 @@ def remember_run(path: Path, model: str | None, offsets: list[int]) -> TemplateC
             for name, cost in store.items()
         }
     }
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2) + chr(10), encoding="utf-8")
-    except OSError as exc:
-        _logger.warning("could not write template costs to %s: %s", path, exc)
+    write_json(path, payload, indent=2)
     return updated
 
 

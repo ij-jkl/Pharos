@@ -15,6 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        # Both supported minors. 3.12 is what development happens on and what the lockfile
+        # resolves to by default; 3.13 is what a `pip install pharos` on a current machine
+        # will pick, and nothing else here would notice it breaking.
+        python: ["3.12", "3.13"]
 
     runs-on: ${{ matrix.os }}
 
@@ -35,23 +39,29 @@ jobs:
       # fallback, the backend calls are mocked, and the tokenizer tests that need a real GGUF
       # skip themselves because tests/models/ is empty on a fresh clone.
       - name: Sync dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --python ${{ matrix.python }}
 
       - name: Lint
-        run: uv run ruff check .
+        run: uv run --python ${{ matrix.python }} ruff check .
 
       - name: Type-check
-        run: uv run mypy pharos
+        run: uv run --python ${{ matrix.python }} mypy pharos
 
       - name: Test
-        run: uv run pytest -q
+        run: uv run --python ${{ matrix.python }} pytest -q
+
+      # `.python-version` pins 3.12 for day-to-day work, so every uv call above names the
+      # matrix interpreter explicitly. Without that the 3.13 leg silently runs 3.12 and
+      # reports green, which is worse than not testing 3.13 at all.
+      - name: The interpreter under test is the one asked for
+        run: uv run --python ${{ matrix.python }} python -c "import sys; assert '.'.join(map(str, sys.version_info[:2])) == '${{ matrix.python }}', sys.version"
 
       # `shell: powershell` is Windows PowerShell 5.1 on GitHub runners, which is the point:
       # 5.1 reads a script with no byte-order mark as the ANSI code page, so one em dash in a
       # comment turns every string after it into a parse error. PowerShell 7 decodes the same
       # file as UTF-8 and shows nothing, so testing on a modern host cannot catch it.
       - name: start.ps1 stays ASCII and parses under Windows PowerShell 5.1
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.python == '3.12'
         shell: powershell
         run: |
           $bad = Select-String -Path start.ps1 -Pattern '[^\x00-\x7F]'
@@ -69,5 +79,5 @@ jobs:
           Write-Host "start.ps1 ok under $($PSVersionTable.PSVersion)"
 
       - name: start.sh parses
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.python == '3.12'
         run: bash -n start.sh

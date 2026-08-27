@@ -125,3 +125,31 @@ def test_the_files_per_part_default_is_the_measured_one() -> None:
     to 2.0 files whatever it is given; at four per part that task covered 46/62/46%, at two it
     covered 92%. The number is load-bearing, so a silent change should fail here first."""
     assert PharosConfig().max_files_per_part == 2
+
+
+def test_the_package_ships_its_type_marker() -> None:
+    """PEP 561: without this file inside the installed package, every hint in here is invisible
+    to anything that imports it -- however strictly CI checks them."""
+    assert (_REPO_ROOT / "pharos" / "py.typed").is_file()
+
+    declared = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    wheel = declared["tool"]["hatch"]["build"]["targets"]["wheel"]
+    assert "pharos/py.typed" in wheel.get("artifacts", [])
+    assert "Typing :: Typed" in declared["project"]["classifiers"]
+
+
+def test_every_console_script_points_at_something_importable() -> None:
+    """A typo here is only discovered by a user on a fresh install, at the worst moment."""
+    import importlib
+
+    declared = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    for name, target in declared["project"]["scripts"].items():
+        module_name, _, attribute = target.partition(":")
+        module = importlib.import_module(module_name)
+        assert callable(getattr(module, attribute, None)), f"{name} -> {target} is not callable"
+
+
+def test_the_stylesheet_lives_inside_the_package() -> None:
+    """styles.tcss is loaded at runtime by path. Outside the package it is not in the wheel,
+    and the TUI comes up unstyled on an installed copy while looking fine from a checkout."""
+    assert (_REPO_ROOT / "pharos" / "tui" / "styles.tcss").is_file()
