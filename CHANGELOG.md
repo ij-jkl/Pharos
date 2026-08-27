@@ -41,6 +41,13 @@ Nothing users see. Everything here is something that only shows up on somebody e
   3.12 and report green — which is worse than not testing 3.13 at all. A CI step asserts the
   interpreter is the one asked for.
 
+- **CI now tests the artifact, not just the source tree.** Every leg builds the wheel, installs
+  it into a clean environment and asserts that `py.typed` and `styles.tcss` actually shipped,
+  that the proxy and the TUI both construct, and that `pharos check` reaches a verdict with no
+  config file and no backend — the state a new user is in. This is the step that would have
+  caught `py.typed` shipping nowhere, and the only one that would notice the stylesheet falling
+  out of the wheel and the TUI coming up unstyled for everyone except the developer.
+
 - Packaging metadata for a public release: classifiers, keywords, and Homepage / Repository /
   Issues / Changelog URLs. The launchers no longer promise to fetch "Python 3.12" specifically.
 

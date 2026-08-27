@@ -53,6 +53,44 @@ jobs:
       # `.python-version` pins 3.12 for day-to-day work, so every uv call above names the
       # matrix interpreter explicitly. Without that the 3.13 leg silently runs 3.12 and
       # reports green, which is worse than not testing 3.13 at all.
+      # Everything above tests the source tree. This tests the artifact, which is a
+      # different thing: a wheel can be missing package data the checkout has, and the first
+      # person to find out is a user on a fresh install. It caught `py.typed` shipping
+      # nowhere, and it is the only step here that would notice styles.tcss falling out of
+      # the wheel and the TUI coming up unstyled for everyone but the developer.
+      - name: The built wheel installs and runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv build --wheel -o dist
+          uv venv --python ${{ matrix.python }} .wheeltest
+          uv pip install --python .wheeltest             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu             dist/*.whl
+          if [ "${{ runner.os }}" = "Windows" ]; then BIN=.wheeltest/Scripts; else BIN=.wheeltest/bin; fi
+          "$BIN/python" -c "
+          import pathlib, pharos
+          from pharos.config import PharosConfig
+          from pharos.events import EventBus
+          from pharos.proxy.app import create_app
+          from pharos.tui.app import PharosApp
+          here = pathlib.Path(pharos.__file__).parent
+          assert (here / 'py.typed').is_file(), 'py.typed did not ship'
+          assert (here / 'tui' / 'styles.tcss').is_file(), 'the stylesheet did not ship'
+          config = PharosConfig()
+          create_app(config, EventBus())
+          PharosApp(config=config, bus=EventBus())
+          print('wheel ok:', pharos.__version__)
+          "
+          # A verdict, not a traceback. The exit code is the verdict itself (0 fits, 1
+          # exceeds, 2 no budget), so any of the three is a pass here and anything else --
+          # a crash, a missing import, an unencodable character on a redirected stream -- is
+          # not. Deliberately run with no pharos.toml, which is how a new user arrives.
+          set +e
+          "$BIN/pharos" check --target 8000 "document README.md" > check.out 2>&1
+          code=$?
+          set -e
+          cat check.out
+          test $code -le 2 || { echo "pharos check exited $code"; exit 1; }
+
       - name: The interpreter under test is the one asked for
         run: uv run --python ${{ matrix.python }} python -c "import sys; assert '.'.join(map(str, sys.version_info[:2])) == '${{ matrix.python }}', sys.version"
 
