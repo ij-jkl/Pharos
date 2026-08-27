@@ -23,13 +23,14 @@ import pytest
 from rich.console import Console
 
 from pharos.agent.audit import own_paths
-from pharos.agent.cli import _render_footer
+from pharos.agent.cli import _render_footer, _render_way_back
 from pharos.agent.ledger import names_its_work
 from pharos.agent.runner import (
     RunOutcome,
     _edit_target,
     _load_payload,
     _with_handoff,
+    run_task,
 )
 from pharos.agent.session import (
     AgentSession,
@@ -2137,3 +2138,69 @@ def test_a_text_split_names_no_files_and_is_scored_as_before(tmp_path: Path) -> 
     config = PharosConfig(model="m", target_folder=str(tmp_path))
     report = asyncio.run(run_check(config, "a wall of pasted log text", target=50))
     assert scoped_display_names(report) == []
+
+
+# --- a run cut short still says how to get back -------------------------------------------------
+
+
+def test_an_interrupted_run_names_the_branch_it_left_you_on(tmp_path: Path) -> None:
+    """The bug: Ctrl-C printed "Files already written are on the run branch" and stopped there.
+
+    It could not do better -- the outcome holding the branch name was only bound once run_task
+    returned, and an interrupted run never returns one. So the user was left checked out on a
+    pharos-run branch, told that in the abstract, with no name for it and no base to go back
+    to. That is the moment somebody most needs the way back: they stopped the run because it
+    was going wrong.
+    """
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(branch="pharos-run/2026-01-01-000000", base_branch="master")
+
+    _render_way_back(console, outcome)
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "git diff master" in text
+    assert "git checkout master && git branch -D pharos-run/2026-01-01-000000" in text
+
+
+def test_an_interrupted_run_without_git_names_the_snapshot(tmp_path: Path) -> None:
+    """In a plain folder the way back is the undo directory, and it is just as unguessable."""
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    undo = Undo(tmp_path, tmp_path / ".pharos" / "undo-2026-01-01-000000")
+    outcome = RunOutcome(undo=undo)
+
+    _render_way_back(console, outcome)
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "undo-2026-01-01-000000" in text
+    assert "copy that folder back" in text
+
+
+def test_an_interrupt_before_anything_was_made_says_so(tmp_path: Path) -> None:
+    """Interrupted during the pre-flight, there is no branch and no snapshot. Saying nothing
+    has changed is a stronger statement than naming a way back that does not exist."""
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+
+    assert _render_way_back(console, RunOutcome()) is None
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "nothing has been changed" in text
+
+
+def test_run_task_fills_in_an_outcome_the_caller_holds(tmp_path: Path) -> None:
+    """How the CLI can know the branch after a Ctrl-C: it owns the record, not the return.
+
+    Driven through the real entry point with no backend, so the run stops at the no-verdict
+    path -- which is enough to prove the object handed in is the one written to.
+    """
+    held = RunOutcome()
+    config = PharosConfig(
+        model="not-a-real-model",
+        target_folder=str(tmp_path),
+        backend_url="http://127.0.0.1:9",  # nothing listens here
+        observations_file=str(tmp_path / "obs.json"),
+    )
+
+    returned = asyncio.run(run_task(config, "document a.py", use_git=False, outcome=held))
+
+    assert returned is held, "the caller's object must be the one the run records into"
+    assert held.error is not None

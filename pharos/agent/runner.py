@@ -407,15 +407,21 @@ async def run_task(
     use_ledger: bool = True,
     stop_on_break: bool = False,
     on_event: Callable[[str], None] | None = None,
+    outcome: RunOutcome | None = None,
 ) -> RunOutcome:
     """Pre-flight, divide and execute ``prompt`` in the configured workspace.
 
     ``divide=False`` runs the whole task as one undivided conversation. It exists to be the
     control in a comparison: same model, same tools, same task, only the division removed. A
     claim that splitting rescues a task nobody watched fail is not worth much.
+
+    ``outcome`` lets a caller hold the record while the run is still going, which matters for
+    exactly one thing: a run interrupted part-way has already made a branch or a snapshot, and
+    the way back is written in here. Passing it in is how the CLI can name that after a Ctrl-C
+    instead of telling the user their files are "on the run branch" without saying which.
     """
     say = on_event or (lambda _message: None)
-    outcome = RunOutcome()
+    outcome = outcome if outcome is not None else RunOutcome()
 
     root = workspace_root(config.target_folder)
     workspace = Workspace(root)

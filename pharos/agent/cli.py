@@ -201,6 +201,9 @@ def main(argv: list[str] | None = None) -> int:
         else nullcontext()
     )
 
+    # Held here rather than only returned, so a Ctrl-C part-way through still has the branch
+    # or the snapshot to point at -- which is the moment a user most needs it.
+    outcome = RunOutcome()
     try:
         with live:
             outcome = asyncio.run(
@@ -220,13 +223,16 @@ def main(argv: list[str] | None = None) -> int:
                     use_ledger=not args.no_ledger,
                     stop_on_break=args.stop_on_break or config.stop_on_break,
                     on_event=report,
+                    outcome=outcome,
                 )
             )
     except GitGuardError as exc:
         console.print(f"[bold red]Refusing to run:[/] {exc}")
         return 2
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted.[/] Files already written are on the run branch.")
+        console.print()
+        console.print("  [yellow]Interrupted.[/] Anything already written is still on disk.")
+        _render_way_back(console, outcome)
         return 1
 
     return _render(console, outcome, dry_run=args.dry_run, as_json=args.json, root=str(root))
@@ -919,6 +925,27 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
     )
 
 
+def _render_way_back(console: Console, outcome: RunOutcome) -> str | None:
+    """The two lines that say how to look at a run and how to undo it.
+
+    Shared with the interrupt path deliberately. A run that is cut short has still made a
+    branch or a snapshot, and "your files are on the run branch" without naming the branch or
+    the base to return to is the least useful thing to say to somebody who has just stopped a
+    run because it was going wrong.
+    """
+    if outcome.branch:
+        base = outcome.base_branch or "-"
+        console.print(f"  [dim]review[/]  git diff {base}")
+        console.print(f"  [dim]undo[/]    git checkout {base} && git branch -D {outcome.branch}")
+        return outcome.branch
+    if outcome.undo is not None:
+        console.print(f"  [dim]review[/]  compare against {outcome.undo.directory}")
+        console.print("  [dim]undo[/]    copy that folder back over the workspace")
+        return str(outcome.undo.directory)
+    console.print("  [dim]no branch and no snapshot were made, so nothing has been changed[/]")
+    return None
+
+
 def _render_footer(console: Console, outcome: RunOutcome) -> None:
     """What to do next, which is always the same two things: look at it, or undo it."""
     lines: list[str] = []
@@ -934,6 +961,8 @@ def _render_footer(console: Console, outcome: RunOutcome) -> None:
     elif outcome.undo is not None:
         lines.append(f"[dim]review[/]  compare against {outcome.undo.directory}")
         lines.append("[dim]undo[/]    copy that folder back over the workspace")
+    # Kept as one list here because the footer interleaves these with its other lines; the
+    # interrupt path prints the same two through `_render_way_back`.
 
     # Said last because it is the caveat a reader should leave with: Pharos proved the task
     # fit and ran, and has no opinion at all about whether the code is right.

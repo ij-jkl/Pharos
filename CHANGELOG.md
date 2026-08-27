@@ -6,6 +6,24 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.2 — "The way back, after a Ctrl-C"
+
+- **An interrupted run could not tell you how to undo it.** `pharos run` makes a branch (or a
+  snapshot) before it writes anything, and on Ctrl-C it printed *"Files already written are on
+  the run branch"* and stopped there. It could not do better: the record holding the branch
+  name was only bound once `run_task` returned, and an interrupted run never returns one. So
+  the user was left checked out on a `pharos-run/...` branch, told that in the abstract, with
+  no name for it and no base to go back to — at the one moment they most need it, having
+  stopped the run because it looked wrong.
+
+  `run_task` now accepts the record to write into, so the CLI holds it throughout and prints
+  the same two lines the normal footer does: what to diff, and what to check out and delete.
+  Interrupted before a branch or snapshot existed, it says nothing has been changed, which is
+  a stronger statement than naming a way back that does not exist.
+
+Also checked and left alone: every backend call is already bounded — connect, read, write and
+pool timeouts on the chat, semantic and review paths — so a hung backend cannot hang a run.
+
 ## v1.1.1 — "Survives being installed"
 
 Nothing users see. Everything here is something that only shows up on somebody else's machine.
