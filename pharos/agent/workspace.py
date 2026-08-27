@@ -13,6 +13,7 @@ Two independent guards, because they fail differently:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from collections.abc import Collection
@@ -33,7 +34,45 @@ _DENIED_NAMES = frozenset(
     {".env", ".git", ".ssh", ".aws", "id_rsa", "credentials", ".pharos"}
 )
 
+# Windows resolves these names to hardware devices in EVERY directory, and with any extension:
+# `src/con.py` is the console, not a file. Writing to one is not an error -- it succeeds,
+# `exists()` returns True afterwards, and the directory is empty, because the bytes went to the
+# device. Measured exactly that way: a 49-character write to `<root>/NUL` returned normally and
+# read back as "".
+#
+# So a model asked to create `aux.py` or `con.py` -- ordinary names for "auxiliary" and
+# "configuration", legal on Linux and in any repository written there -- would have its write
+# reported as landing, and vanish. The audit catches it as a write the disk does not show, which
+# is the audit working, but coverage still counts the file and `--no-audit` turns the only
+# witness off. `COM1` and `LPT1` are worse than silent: they open a serial or printer port.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    {"con", "prn", "aux", "nul"}
+    | {f"com{n}" for n in range(1, 10)}
+    | {f"lpt{n}" for n in range(1, 10)}
+)
+
 _BRANCH_PREFIX = "pharos-run"
+
+
+def reserved_device(path: Path) -> str | None:
+    """The Windows device a path would open, or None. Always None off Windows.
+
+    Matched on the stem, because the reservation ignores the extension -- `con`, `con.py` and
+    `con.tar.gz` are all the console. Checked on every component, since the name means the
+    device wherever it appears in a path.
+
+    Refused only on Windows: on Linux `aux.py` is a legal file that exists and works, and a
+    repository written there is entitled to contain one. The same run of the same task is
+    therefore allowed to differ between platforms here, which is the truth about the platforms
+    rather than an inconsistency in Pharos.
+    """
+    if os.name != "nt":
+        return None
+    for part in path.parts:
+        stem = part.split(".", 1)[0].strip().lower()
+        if stem in _WINDOWS_DEVICE_NAMES:
+            return stem.upper()
+    return None
 
 
 class WorkspaceError(Exception):
@@ -135,6 +174,12 @@ class Workspace:
         denied = lowered & _DENIED_NAMES
         if denied:
             raise WorkspaceError(f"{raw!r} is off limits ({', '.join(sorted(denied))}).")
+        device = reserved_device(candidate)
+        if device is not None:
+            raise WorkspaceError(
+                f"{raw!r} names {device}, which Windows resolves to a device in every folder. "
+                f"A write there reports success and leaves nothing on disk. Pick another name."
+            )
         return candidate
 
     def _locate(self, raw: str) -> Path:

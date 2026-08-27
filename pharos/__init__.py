@@ -13,4 +13,4 @@ rather than truncates, enforces a part's scope in the tool layer rather than the
 will not start without an undo.
 """
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"

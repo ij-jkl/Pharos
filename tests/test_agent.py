@@ -14,6 +14,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -2204,3 +2205,46 @@ def test_run_task_fills_in_an_outcome_the_caller_holds(tmp_path: Path) -> None:
 
     assert returned is held, "the caller's object must be the one the run records into"
     assert held.error is not None
+
+
+# --- Windows resolves some ordinary-looking names to hardware devices ----------------------------
+
+
+@pytest.mark.parametrize(
+    "raw", ["NUL", "con", "src/NUL", "aux.py", "src/con.py", "COM1", "lpt1.txt", "Nul.tar.gz"]
+)
+def test_a_reserved_device_name_is_refused_on_windows(workspace: Workspace, raw: str) -> None:
+    """Writing to one of these is not an error: it succeeds, `exists()` returns True, and the
+    directory is empty, because the bytes went to the device. Measured that way -- a
+    49-character write to `<root>/NUL` returned normally and read back as "".
+
+    So a model asked for `aux.py` or `con.py` -- ordinary names, legal on Linux -- would have
+    its write reported as landing and vanish. The reservation ignores the extension, which is
+    why the stem is what gets matched.
+    """
+    if os.name != "nt":
+        pytest.skip("only Windows resolves these to devices; elsewhere they are legal files")
+    with pytest.raises(WorkspaceError, match="Windows resolves"):
+        workspace.resolve(raw)
+
+
+def test_a_device_name_is_a_perfectly_good_file_elsewhere(workspace: Workspace) -> None:
+    """Refusing it on Linux would reject a file that exists there and works. The same task is
+    allowed to differ between platforms here, because the platforms differ."""
+    if os.name == "nt":
+        pytest.skip("Windows really does resolve these to devices")
+    assert workspace.resolve("src/aux.py").name == "aux.py"
+
+
+def test_reserved_device_matches_the_stem_not_the_whole_name() -> None:
+    from pharos.agent.workspace import reserved_device
+
+    if os.name != "nt":
+        assert reserved_device(Path("con.py")) is None
+        return
+    assert reserved_device(Path("con.py")) == "CON"
+    assert reserved_device(Path("a/b/lpt9.tar.gz")) == "LPT9"
+    # Not every name that starts with one: `console.py` and `nullable.py` are ordinary files.
+    assert reserved_device(Path("console.py")) is None
+    assert reserved_device(Path("nullable.py")) is None
+    assert reserved_device(Path("com10.py")) is None  # only COM1-9 are reserved

@@ -6,6 +6,34 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.3 — "Names that are not files"
+
+I threw twenty-six escape shapes at the path containment `pharos run` relies on — parent
+traversal, laundered traversal, absolute paths, UNC paths, backslash separators, a directory
+junction pointing out of the workspace, and a twelve-deep climb at `Windows/win.ini`. **Nothing
+resolved outside the workspace.** The junction is the one worth naming: it is the classic way
+past a containment check that compares strings, and this one resolves before it compares.
+
+What it did turn up is on the other side of the fence:
+
+- **Windows resolves `NUL`, `CON`, `AUX`, `PRN`, `COM1-9` and `LPT1-9` to hardware devices in
+  every directory, with any extension.** `src/con.py` is the console. Writing to one is not an
+  error — it succeeds, `exists()` returns True afterwards, and the directory is empty, because
+  the bytes went to the device. Measured: a 49-character write to `<root>/NUL` returned
+  normally and read back as `""`.
+
+  A model asked to create `aux.py` or `con.py` — ordinary names for "auxiliary" and
+  "configuration", legal on Linux and present in repositories written there — would have its
+  write reported as landing, and lose it. The audit catches that as a write the disk does not
+  show, which is the audit doing its job, but coverage still counts the file and `--no-audit`
+  turns the only witness off. `COM1` and `LPT1` are worse than silent: they open a serial or
+  printer port.
+
+  Refused now, with a message that says why. Matched on the stem, since the reservation ignores
+  the extension, and only on Windows — on Linux `aux.py` is a file that exists and works, and a
+  repository is entitled to contain one. The same task is allowed to differ between the two
+  platforms here, because the platforms differ.
+
 ## v1.1.2 — "The way back, after a Ctrl-C"
 
 - **An interrupted run could not tell you how to undo it.** `pharos run` makes a branch (or a

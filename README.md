@@ -770,7 +770,7 @@ uv run mypy pharos
 uv run pytest
 ```
 
-**733 tests**, `ruff` and `mypy --strict` clean — on Python 3.12 and 3.13, Linux and
+**742 tests**, `ruff` and `mypy --strict` clean — on Python 3.12 and 3.13, Linux and
 Windows, all four combinations in CI. Tokenizer tests
 against a real GGUF auto-skip unless a model file is present under `tests/models/` (gitignored).
 
