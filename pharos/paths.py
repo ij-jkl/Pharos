@@ -43,6 +43,43 @@ def resolve_display(name: str, known: dict[str, str]) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+def shorten_path(path: str | Path, width: int) -> str:
+    """A path that fits ``width``, keeping the end that identifies it.
+
+    Rich hard-wraps a long line at the console edge, which breaks a path mid-token: a run under
+    `C:\\Users\\...\\AppData\\Local\\Temp\\claude\\<uuid>\\scratchpad\\proj` came out split across
+    three lines through the middle of the uuid, and could not be copied out of the terminal.
+
+    Truncating the right would drop the leaf, which is the part a reader is actually looking
+    for, so the middle goes instead: the anchor (drive or `~`) and the last components stay.
+    A home-relative path is shortened to `~` first, because that is both shorter and clearer.
+    """
+    text = str(path)
+    try:
+        home = str(Path.home())
+        if text.startswith(home):
+            text = "~" + text[len(home) :]
+    except (OSError, RuntimeError):  # no home on this platform, or it is unreadable
+        pass
+    if len(text) <= width or width < 8:
+        return text
+
+    separator = "\\" if "\\" in text else "/"
+    parts = text.split(separator)
+    anchor = parts[0] if parts[0] else separator
+    # Grow the tail from the right until one more component would not fit.
+    tail: list[str] = []
+    room = width - len(anchor) - len(separator) * 2 - 1  # anchor + sep + ELLIPSIS + sep
+    for part in reversed(parts[1:]):
+        if len(part) + len(separator) > room:
+            break
+        tail.insert(0, part)
+        room -= len(part) + len(separator)
+    if not tail:
+        return text[: width - 1] + "\u2026"
+    return separator.join([anchor, "\u2026", *tail])
+
+
 def display_path(path: Path, root: Path) -> str:
     """A path as it should be shown: relative to the workspace when it is inside it.
 

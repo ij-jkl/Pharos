@@ -44,6 +44,7 @@ from pharos.agent.workspace import GitGuardError
 from pharos.config import ConfigError, load_config
 from pharos.console import force_utf8
 from pharos.log import configure_logging
+from pharos.paths import shorten_path
 from pharos.preflight.split import Grouping, SplitMode
 
 
@@ -134,12 +135,12 @@ def main(argv: list[str] | None = None) -> int:
         "--no-ledger",
         action="store_true",
         help="do not carry Pharos's record of what landed on disk between parts; the model's "
-        "own hand-off becomes the only thread, as it was before v0.6",
+        "own hand-off becomes the only thread",
     )
     args = parser.parse_args(argv)
     if args.stop_on_break and args.no_verify:
-        # The per-part parse is part of the verification tier. Accepting the flag and doing
-        # nothing with it is the failure `pharos check --target` shipped with in v0.4.
+        # The per-part parse belongs to verification, so one flag would silently disable the
+        # other. An accepted flag that does nothing is worse than a rejected one.
         parser.error("--stop-on-break needs the checks that --no-verify turns off")
 
     console = Console(stderr=args.json)
@@ -173,7 +174,14 @@ def main(argv: list[str] | None = None) -> int:
     # the only way to work out why a part did nothing is to reproduce it. The terminal keeps
     # the summary; the file keeps the evidence.
     log_path = configure_logging(config.log_file)
-    progress.print(f"[dim]workspace {root} · log {log_path}[/]")
+    # Both are long absolute paths and the line holds two of them, so each gets half the
+    # width rather than being wrapped through the middle of a directory name.
+    half = max(progress.width // 2 - 12, 24)
+    where = shorten_path(root, half)
+    logged = shorten_path(log_path, half)
+    progress.print(
+        f"[dim]workspace {where} {chr(183)} log {logged}[/]", no_wrap=True, overflow="ignore"
+    )
 
     status = RunStatus()
 
@@ -468,7 +476,11 @@ def _render_header(console: Console, outcome: RunOutcome, root: str) -> None:
 
     console.print()
     console.print(f"[bold cyan]  Pharos run[/]  [dim]{model} {chr(183)} {exactness}{window}[/]")
-    console.print(f"[dim]  {root}[/]")
+    console.print(
+        f"[dim]  {shorten_path(root, max(console.width - 4, 24))}[/]",
+        no_wrap=True,
+        overflow="ignore",
+    )
 
 
 def _render_plan(console: Console, outcome: RunOutcome) -> None:
@@ -818,13 +830,32 @@ def _render_scorecard(console: Console, card: Scorecard) -> None:
             if not card.exposed_requests
             else f"{card.exposed_requests} request(s) went out uncorrected"
         )
-        note = (
-            f"[yellow]short by {card.worst_shortfall:,} tokens, past the "
-            f"{SAFETY_MARGIN}-token margin[/] [dim]{chr(183)} {corrected}[/]"
-            if card.under_counted
-            else f"[dim]worst shortfall {card.worst_shortfall:,} tokens, inside the "
-                 f"{SAFETY_MARGIN}-token margin[/]"
+        # The margin is not the only thing behind the ceiling. When the remembered template
+        # cost covers the shortfall AND nothing went out uncorrected, a live run was never
+        # actually enforced against a number below the real prompt -- so it does not get the
+        # yellow. Printing the alarm and "every request corrected" side by side, both true,
+        # left a reader unable to tell which one described their run.
+        covered = (
+            card.template_offset is not None
+            and not card.exposed_requests
+            and card.worst_shortfall <= SAFETY_MARGIN + card.template_offset
         )
+        if card.under_counted and covered:
+            note = (
+                f"[dim]short by {card.worst_shortfall:,} tokens, past the {SAFETY_MARGIN}-token "
+                f"margin on its own {chr(183)} covered by the +{card.template_offset:,} "
+                f"remembered, and {corrected}[/]"
+            )
+        elif card.under_counted:
+            note = (
+                f"[yellow]short by {card.worst_shortfall:,} tokens, past the "
+                f"{SAFETY_MARGIN}-token margin[/] [dim]{chr(183)} {corrected}[/]"
+            )
+        else:
+            note = (
+                f"[dim]worst shortfall {card.worst_shortfall:,} tokens, inside the "
+                f"{SAFETY_MARGIN}-token margin[/]"
+            )
         body.add_row(
             "drift",
             f"{span} [dim]over {card.drift_samples} requests[/] {chr(183)} {note}",
@@ -1081,9 +1112,34 @@ def _render(
                 for extra in files[1:]:
                     table.add_row("", "", "", _scope_label(extra))
             console.print(table)
+            # Otherwise two parts holding near-identical files show wildly different
+            # projections and nothing on screen says why: every part after the first is
+            # counted as arriving with the previous part's hand-off already in its window.
+            if len(plan.parts) > 1 and plan.handoff_reserve:
+                console.print(
+                    f"[dim]  parts after the first include {plan.handoff_reserve:,} tokens "
+                    f"of room for the hand-off they arrive with[/]"
+                )
         console.print()
         console.print("  [yellow]Dry run[/] [dim]nothing was executed, no files were touched[/]")
         console.print()
+        if as_json:
+            # `--dry-run --json` used to return here having written nothing at all: the human
+            # table went to stderr (where --json puts it) and stdout stayed empty, so a CI step
+            # piping into `jq` got a parse error from a command that had exited 0. The plan is
+            # exactly the payload worth having -- it answers "what would this run do?" without
+            # running it.
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "plan": _plan_summary(outcome),
+                        "planned_files": outcome.planned_files,
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
         return 0
 
     card = score(

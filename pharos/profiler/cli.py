@@ -124,7 +124,7 @@ def _add_budget_rows(grid: Table, budget: BudgetReport, *, gpu_available: bool) 
     if gpu_available:
         line = f"{_mib(budget.vram_free_mib)} free [dim](measured)[/]"
         if budget.vram_headroom_tokens is not None:
-            source = "KV derived" if budget.kv_rate_derived else "KV configured"
+            source = f"KV {budget.kv_rate_source}"
             line += (
                 f" · ≈{_tok(budget.vram_headroom_tokens)} more ctx tokens "
                 f"[dim](estimate · {source} · "
@@ -136,15 +136,25 @@ def _add_budget_rows(grid: Table, budget: BudgetReport, *, gpu_available: bool) 
 
 
 def kv_provenance(budget: BudgetReport) -> str:
-    """Where the KV rate came from — the model's own metadata, or the configured fallback.
+    """Where the KV rate came from: this machine, the model's metadata, or the constant.
 
-    The two differ by 5-14x on real models, and the rate drives the headroom advice, so which
-    one produced a figure is part of the figure.
+    The three differ by up to 7x on real models and the rate drives the headroom advice, so
+    which one produced a figure is part of the figure. When a measurement outranked a
+    derivation, both are shown — agreement is worth seeing and disagreement is worth seeing
+    more, and neither is visible if the loser is dropped.
     """
     rate = budget.kv_mib_per_1k
     if rate is None:
         return "estimate"
-    if budget.kv_rate_derived:
+    if budget.kv_rate_source == "measured":
+        detail = f" · {budget.kv_measured_detail}" if budget.kv_measured_detail else ""
+        against = (
+            f" · metadata implied {budget.kv_derived_mib_per_1k:,.0f}"
+            if budget.kv_derived_mib_per_1k is not None
+            else ""
+        )
+        return f"measured here · {rate:,.0f} MiB/1K{detail}{against}"
+    if budget.kv_rate_source == "derived":
         return f"derived · {rate:,.0f} MiB/1K from model metadata"
     return f"estimate · configured {rate:,.0f} MiB/1K"
 

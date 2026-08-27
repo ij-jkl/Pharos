@@ -18,7 +18,11 @@ class ConfigError(Exception):
 
 
 class PharosConfig(BaseModel):
-    """Typed Pharos configuration; defaults mirror pharos.toml.example."""
+    """Typed Pharos configuration.
+
+    Defaults mirror pharos.toml.example, which documents the reasoning and the measurements
+    behind each one. The comments here carry only what a reader of this file needs.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True, protected_namespaces=())
 
@@ -28,143 +32,76 @@ class PharosConfig(BaseModel):
     response_reserve: int = Field(default=1024, ge=0)
     warn_threshold: float = Field(default=0.80, ge=0.0, le=1.0)
     alert_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
+    # Fallback only: normally derived per model from GGUF metadata and labelled as such.
     kv_mib_per_1k: float = Field(default=32.0, gt=0.0)
-    # Free VRAM held back before any headroom estimate: driver allocations, fragmentation and
-    # display compositing all claim memory with no warning, and advice that consumes the last
-    # free byte is an OOM invitation, not guidance.
+    # Free VRAM held back before any headroom estimate. Driver allocations, fragmentation and
+    # display compositing all claim memory without warning, so advice that spends the last free
+    # byte is an OOM invitation rather than guidance.
     vram_safety_margin_mib: int = Field(default=512, ge=0)
     proxy_host: str = "127.0.0.1"
     proxy_port: int = Field(default=11435, ge=1, le=65535)
     log_file: str = Field(default="pharos.log", min_length=1)
     target_folder: str | None = None
-    # Pre-flight: tokens the coding agent adds on top of a pasted prompt (system prompt, tool
-    # catalogue, injected context). When set it overrides the value learned from observed
-    # traffic; when neither exists the pre-flight floor omits overhead and says so.
+    # Tokens the coding agent adds on top of a pasted prompt (system prompt, tool catalogue).
+    # Set, it overrides the value learned from observed traffic; with neither, the pre-flight
+    # floor omits overhead and says so.
     client_overhead_tokens: int | None = Field(default=None, ge=0)
-    # Pre-flight: tokens the agent pulls in ON ITS OWN over one task, beyond the prompt and
-    # the model's own replies. When set it overrides the value learned from observed traffic;
-    # when neither exists the check prints FLOOR and CEILING and says the middle is unknown.
+    # Tokens the agent pulls in ON ITS OWN over one task. Same override rule; with neither, the
+    # check prints FLOOR and CEILING and says the middle is unknown rather than standing a guess
+    # in the gap.
     agent_read_tokens: int | None = Field(default=None, ge=0)
-    # Where the proxy records per-request token counts (counts only, never text) so the
-    # pre-flight check can calibrate against real observed traffic.
+    # Where the proxy records per-request token counts (counts only, never text) for the
+    # pre-flight to calibrate against.
     observations_file: str = Field(default="pharos_observations.json", min_length=1)
-    # Tokens `pharos split` holds back in every scope part for the previous part's hand-off.
-    # Measured across two real agent runs (qwen3.5-9b): 64, 74, 83, 107, 160, 161, 162, 168 and
-    # 328 tokens — for the SAME instruction ("at most 10 lines"). A model's idea of ten lines is
-    # not a constant, so this is a knob rather than a magic number: 500 clears every hand-off
-    # observed, and an agent that writes essays needs it raised.
+    # Tokens held back in every scope part for the previous part's hand-off. A knob rather than
+    # a constant: measured hand-offs to one "at most 10 lines" instruction ranged 64-328 tokens.
     handoff_reserve: int = Field(default=500, ge=0)
-    # Carry Pharos's own record of what has landed on disk from part to part, alongside the
-    # hand-off the model writes. On by default because the model's half is measurably
-    # unreliable: across sixteen live runs (DESKTOP_VALIDATION §14) parts changed files and
-    # then reported "NO CHANGES NEEDED", so the next part was handed a summary that was not
-    # thin but wrong. The record cannot be wrong — it is written by the dispatcher as each
-    # write succeeds, not by a model describing itself afterwards.
-    #
-    # It shares `handoff_reserve` with the prose rather than adding to it, taking at most half,
-    # so turning it on cannot make a part overrun the budget its ceiling was computed from.
-    #
-    # Turn it off to see what the model's own hand-offs achieve alone, which is what every
-    # coverage figure recorded before v0.6 measures.
+    # Carry Pharos's own record of what landed on disk from part to part, alongside the model's
+    # hand-off. It SHARES handoff_reserve rather than adding to it, taking at most half, so
+    # turning it on cannot make a part overrun the budget its ceiling was computed from.
     handoff_ledger: bool = True
-    # The context window `pharos run` asks the backend to load the model with. Ollama picks a
-    # conservative VRAM-based default (4,096 on a 12 GB card), which is too small to plan an
-    # agentic edit against: the part scaffold alone fills it. Left unset, whatever is already
-    # loaded is used and measured as-is — Pharos never silently changes a window it is also
-    # reporting on. Set it and `pharos run` loads the model with that window and says so.
+    # The window `pharos run` asks the backend to load. Left unset, whatever is already loaded is
+    # used and measured as-is: Pharos never silently changes a window it is also reporting on.
     num_ctx: int | None = Field(default=None, ge=256)
-    # Most files `pharos run` puts in one part. It bounds how much WORK a part contains, not
-    # how many tokens — the limit it exists for belongs to the model, not the hardware, and no
-    # token count predicts it.
-    #
-    # Measured rather than guessed, on the same 13-file task run four times against
-    # qwen2.5-coder:14b in a 16K window. A part completes about 1.5 to 2.0 files and then stops
-    # believing itself finished, whatever it was given: 1.5, 2.0, 1.5 files per part when parts
-    # held four. Window pressure was never the cause — peak usage sat at 42-51% of the ceiling
-    # throughout. Nor was persuasion the answer: stating the target up front, naming the
-    # outstanding files, and asking again all failed to push a part past roughly two.
-    #
-    # So the fix is arithmetic. At four files per part that task covered 46%, 62%, 46%. At two,
-    # 92%. The cost is more parts, which is more hand-offs and more chances to drop the thread
-    # — worth watching in the scorecard, and worth raising for a model that finishes more.
+    # Most files `pharos run` puts in one part. It bounds how much WORK a part contains, not how
+    # many tokens -- the limit belongs to the model, not the hardware, and no token count
+    # predicts it. Measured: a part completes 1.5-2.0 files whatever it is given.
     max_files_per_part: int = Field(default=2, ge=1)
     # How many parts beyond the mechanical count a semantic grouping may spend to keep related
-    # files together. Grouping by meaning packs worse than first-fit almost by definition —
-    # coherence and density want different answers — so some slack has to be allowed or the
-    # feature can never do anything. Unbounded slack is the failure mode though: a model that
-    # returns one file per part has "grouped" nothing and bought a hand-off for each one.
-    #
-    # This is a stated preference, not a measurement, exactly like max_files_per_part's
-    # existence is (its VALUE was measured; this one's has not been). Two extra parts is enough
-    # for a 6-file task to split 3/3 where position packed 2/2/2, and not enough to degenerate.
+    # files together. Grouping by meaning packs worse than first-fit almost by definition, so
+    # some slack is needed; unbounded slack lets a model "group" one file per part.
     semantic_max_extra_parts: int = Field(default=2, ge=0)
-    # Which model answers the grouping question. Unset, it is the model doing the work.
-    #
-    # Worth setting, because the two jobs want different models and the obvious default is not
-    # the best one. Grouping is small and structured — partition six filenames, name each
-    # group — and on the same task, measured on this machine (see DESKTOP_VALIDATION.md §18):
-    #
-    #   qwen2.5-coder:7b    4.2s   exact coverage, and the only clean db/http split
-    #   qwen2.5-coder:14b  14.1s   exact coverage, incoherent groups
-    #   gemma3:12b         20.9s   exact coverage, incoherent groups
-    #   qwen3.5:9b         13.3s   DROPPED a file — rejected, fell back to position
-    #   llama3.2:1b        10.2s   dropped four files — rejected
-    #
-    # The smallest coding model won outright and was three times faster than the model that
-    # would otherwise have been asked. Bigger did not mean better here; it meant slower and,
-    # for the run's own model, wrong. Nothing is lost when it is wrong — the proposal is
-    # rejected and the mechanical grouping stands — but a call that always fails is a call
-    # not worth making.
-    #
-    # It is not free, though, and that was not measured when the above was written. A 12 GB
-    # card holds one model of this size, so a different grouper EVICTS the run's model and the
-    # next operation reloads it: 4-5s each way here. Leaving this unset avoids the swap.
-    # Which way that trades depends on how good the grouping is on your files, which is the
-    # thing nothing here can measure for you.
+    # Which model answers the grouping question. Unset, it is the model doing the work, which
+    # costs no swap -- a different grouper evicts the run's model on a single-model card.
     semantic_model: str | None = None
-    # After the plan has run, go back over any assigned file that no part actually
-    # changed, in a fresh conversation holding only the leftovers. One round, never more:
-    # a second would be chasing a model that has declined the same work twice, and an
-    # unbounded repair loop is how a run stops having a knowable cost. Turn it off to see
-    # what the plan alone achieves - which is what the coverage figures above measure.
+    # Go back over any assigned file no part changed, in a fresh conversation holding only the
+    # leftovers. One round, never more: an unbounded repair loop is how a run stops having a
+    # knowable cost.
     repair_pass: bool = True
-    # After the run, re-run the project's own checks and report what the run broke. Mechanical
-    # only: exit codes from tools the repository already configures, never a model's opinion of
-    # the code. Every check is also run BEFORE the first part, so a suite that was already red
-    # is reported as such and never charged to the run.
+    # Re-run the project's own checks afterwards and report what the run broke. Mechanical only:
+    # exit codes from the repository's tools, never a model's opinion. Every check also runs
+    # BEFORE the first part, so a suite that was already red is never charged to the run.
     verify: bool = True
     # The checks to run. Unset, Pharos detects the ones this repository configures and that are
-    # installed (ruff, pytest). Set it and the list is used verbatim -- which is how any other
-    # ecosystem gets checked, since detection deliberately invents nothing.
+    # installed; set, the list is used verbatim, which is how any other ecosystem is checked.
     verify_commands: list[str] | None = None
     # Per-command ceiling. A check that outruns it is reported as skipped, never as passing: a
-    # run must not be able to turn a slow suite into a green tick by waiting.
+    # run must not be able to turn a slow suite green by waiting.
     verify_timeout_seconds: float = Field(default=300.0, gt=0.0)
-    # End the run at the first part that leaves a file it wrote unparseable, instead of
-    # carrying on into the parts after it.
-    #
-    # Off by default, and that is a judgement rather than a measurement. A part that breaks a
-    # file is sometimes repaired by a later one or by the repair sweep, and every coverage
-    # figure this project has published was measured on runs that ran to the end -- turning
-    # this on by default would silently change what those numbers mean. What argues FOR it is
-    # also measured: from v0.6 the record carries a broken part's conventions to every part
-    # after it, so damage propagates rather than staying where it happened.
+    # End the run at the first part that leaves a file it wrote unparseable. Off by default, and
+    # that is a judgement: a broken file is sometimes repaired by a later part or by the repair
+    # sweep, and every published coverage figure was measured on runs that ran to the end.
     stop_on_break: bool = False
-    # A project check is also run after EVERY part when the baseline measured it taking no
-    # longer than this. Attribution is the point: v0.7 watched only the parser, and two
-    # measured runs in four broke `ruff` without breaking any file's syntax, so half the
-    # damage had no part's name on it.
-    #
-    # Measured rather than configured, because the baseline has already run every check and
-    # therefore already knows what each costs on this machine. Three seconds is the stated
-    # preference: a part takes 30-60s here, so a check at the ceiling adds under 10% per part,
-    # and a suite that takes longer than that is one you do not want between parts anyway. Set
-    # it to 0 to keep the old behaviour, where only the parser ran per part.
+    # A project check also runs after EVERY part when the baseline measured it at or below this,
+    # so a part that breaks the linter is named the way a part that breaks the parser is. The
+    # parser alone misses half the damage. Set it to 0 to check only that files still parse.
     per_part_check_seconds: float = Field(default=3.0, ge=0.0)
-    # Where `pharos run` remembers what each model's chat template costs: the ratio between
-    # the backend's own token count and Pharos's projection. Counts only, one small record per
-    # model, and it makes runs slightly better rather than being needed for one to happen --
-    # delete it and the next run measures it again from scratch.
+    # Where the profiler remembers what each model occupied at each window, so the VRAM cost
+    # of a context token can be fitted from this machine's own readings rather than taken
+    # from a constant. Two numbers per window, safe to delete: it is re-measured by use.
+    vram_memory_file: str = Field(default="pharos_vram.json", min_length=1)
+    # Where `pharos run` remembers how many tokens the backend's own count runs above its
+    # projection, per model. Counts only, and safe to delete: the next run measures it again.
     template_memory_file: str = Field(default="pharos_templates.json", min_length=1)
 
     @model_validator(mode="after")

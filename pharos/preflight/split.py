@@ -719,6 +719,21 @@ def _scope_units(
     return units, notes
 
 
+def scoped_display_names(report: CheckReport) -> list[str]:
+    """Every file a plan WOULD put in some part's scope, in plan order.
+
+    A run whose task fits in one window is executed as a single unscoped part, so no part
+    carries a file list and coverage had no denominator at all -- the scorecard printed
+    "nothing to measure coverage against" and a bold green DONE for the commonest case there
+    is. The prompt still named files, and the pre-flight still resolved them, so the
+    denominator was never actually missing: it was just not being asked for.
+
+    Deliberately the same function the splitter packs from, so a divided run and an undivided
+    one are scored against an identical list rather than two that can drift apart.
+    """
+    return [entry.display for entry, _ in _scope_entries(report)]
+
+
 def _scope_entries(report: CheckReport) -> list[tuple[CountedFile, str | None]]:
     """Named files first, then each named directory's contents, each tagged with its origin."""
     entries: list[tuple[CountedFile, str | None]] = [(f, None) for f in report.files]

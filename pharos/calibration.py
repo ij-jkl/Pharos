@@ -432,10 +432,10 @@ def remember_run(path: Path, model: str | None, offsets: list[int]) -> TemplateC
 
 # --- what the agent opens on its own ----------------------------------------------------------
 #
-# The third number, and the one this project spent nine versions refusing to print. `pharos
-# check` counts what you NAMED: files exactly, into the floor; directories in full, into a
-# separate ceiling. What the agent decides to open once it starts working was in neither, and
-# `preflight/extract.py` has carried a note since v0.2 saying that predicting it "is v1.0".
+# The third number. `pharos check` counts what you NAMED: files exactly, into the floor;
+# directories in full, into a separate ceiling. What the agent decides to open once it starts
+# working is in neither, and a floor that clears the budget by 2,000 tokens looks like a pass
+# right up until the agent opens four files nobody mentioned.
 #
 # It turns out to be derivable from the store exactly as it already stands, which is the only
 # reason it is allowed to exist. Between two consecutive requests of one conversation the input

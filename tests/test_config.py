@@ -85,27 +85,39 @@ def test_version_matches_pyproject() -> None:
     assert pharos.__version__ == declared["project"]["version"]
 
 
-def test_readme_status_line_matches_the_version() -> None:
-    """The README is the third hand-edited place the version lives, and the one people read.
+def test_readme_describes_one_version() -> None:
+    """The README documents what Pharos IS, not the order its tiers arrived in.
 
-    It drifted once already: a v0.4 section was added while the status line above it still
-    said v0.3, and the check above passed the whole time because it only compares the module
-    to the packaging metadata. A repo whose own front page disagrees with what it installs is
-    exactly the kind of unlabelled inconsistency this project is about.
+    It drifted the other way once already: a section for one tier was added while the status
+    line above it still named the previous one, and nothing caught it because the only version
+    check compared the module to the packaging metadata. The fix was to stop numbering the
+    prose at all — `CHANGELOG.md` is the release history — so this guards that instead. A
+    heading or status line that pins the front page to a release is how the drift comes back.
     """
     readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    status = re.search(r"\*\*Status: v(\d+\.\d+)", readme)
-    assert status is not None, "README has no **Status: vX.Y** line"
 
-    major_minor = ".".join(pharos.__version__.split(".")[:2])
-    assert status.group(1) == major_minor
+    assert re.search(r"\*\*Status: v\d", readme) is None, (
+        "README carries a status line pinned to a release; the CHANGELOG holds the history"
+    )
+    tiered = re.findall(r"^#{2,4} .*\(v\d+\.\d+", readme, re.MULTILINE)
+    assert not tiered, f"README headings are pinned to releases: {tiered}"
 
-    # Every tier heading must be at or below the declared version; a section for a tier that
-    # has not shipped reads as a promise rather than a description.
-    released = tuple(int(part) for part in major_minor.split("."))
-    headings = set(re.findall(r"^## .*\(v(\d+\.\d+) \"", readme, re.MULTILINE))
-    ahead = [v for v in headings if tuple(int(p) for p in v.split(".")) > released]
-    assert not ahead, f"README documents tiers not yet released: {sorted(ahead)}"
+    # Prose that dates a feature to a release is the same drift in a sentence.
+    dated = re.findall(r"\b(?:from|since|until|new in|before) v\d+\.\d+", readme, re.IGNORECASE)
+    assert not dated, f"README dates features to releases: {sorted(set(dated))}"
+
+
+def test_readme_documents_every_run_flag() -> None:
+    """A flag the CLI accepts and the README never mentions is a feature nobody finds.
+
+    `--exclude` shipped and went undocumented for exactly that reason: it was added to both
+    parsers and to neither page.
+    """
+    readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    parser_source = (_REPO_ROOT / "pharos" / "agent" / "cli.py").read_text(encoding="utf-8")
+    flags = set(re.findall(r'"(--[a-z][a-z-]+)"', parser_source))
+    missing = sorted(flag for flag in flags if flag not in readme)
+    assert not missing, f"`pharos run` flags missing from the README: {missing}"
 
 
 def test_the_files_per_part_default_is_the_measured_one() -> None:

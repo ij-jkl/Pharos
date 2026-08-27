@@ -30,13 +30,6 @@ handoff_reserve = 500
 # Set it to false to see what the model's own hand-offs achieve alone.
 handoff_ledger = true
 
-# After the plan has run, go back over any assigned file that no part actually changed, in a
-# fresh conversation holding only the leftovers. One round, never more: a second would be
-# chasing a model that has declined the same work twice, and an unbounded repair loop is how a
-# run stops having a knowable cost. Set it to false to see what the plan alone achieves —
-# which is what the coverage figures in the scorecard measure.
-repair_pass = true
-
 # The window `pharos run` asks the backend to load the model with. Ollama picks a cautious
 # VRAM-based default (4,096 on a 12 GB card), and that is too small for agentic work: the part
 # scaffold alone fills it before a single file can be scoped in. Leave it commented out and
@@ -89,7 +82,27 @@ log_file = "pharos.log"
 # agent at). Unset: the current directory is used, with a warning.
 # target_folder = "."
 
-# --- verification (v0.4.2) ----------------------------------------------------------------------
+# --- pharos run --------------------------------------------------------------------------
+
+# Most files `pharos run` puts in one part. This bounds how much WORK a part contains, not how
+# many tokens: the limit it exists for belongs to the model, not the hardware, and no token
+# count predicts it.
+#
+# Measured, not guessed. On the same 13-file task run four times against qwen2.5-coder:14b in a
+# 16K window, a part completes about 1.5 to 2.0 files and then believes itself finished,
+# whatever it was given. Window pressure was never the cause (peak usage sat at 42-51% of the
+# ceiling) and persuasion did not help. So the fix is arithmetic: at four files per part that
+# task covered 46%, 62%, 46%; at two, 92%. The cost of lowering it is more parts, which means
+# more hand-offs and more chances to drop the thread -- watch the scorecard's continuity line.
+max_files_per_part = 2
+
+# After the plan has run, go back over any assigned file that no part actually changed, in a
+# fresh conversation holding only the leftovers. One round, never more: a second would be
+# chasing a model that has declined the same work twice, and an unbounded repair loop is how a
+# run stops having a knowable cost. Set it to false to see what the plan alone achieves.
+repair_pass = true
+
+# --- verification (pharos run) ------------------------------------------------------------
 
 # After a run, re-run the checks this project already has and report what the run broke. The
 # exit code follows it: a run that wrote every file and stopped the project building exits 1.
@@ -103,8 +116,8 @@ verify = true
 # on into the parts after it. Off by default, and that is a judgement rather than a
 # measurement: a broken file is sometimes fixed by a later part or by the repair sweep, and
 # every coverage figure published for this project was measured on runs that ran to the end.
-# What argues for turning it on is also measured -- from v0.6 the record between parts carries
-# a broken part's conventions to every part after it, so damage propagates.
+# What argues for turning it on is also measured: the record between parts carries a broken
+# part's conventions to every part after it, so damage propagates.
 stop_on_break = false
 
 # A project check is also run after EVERY part when the baseline measured it taking no longer
@@ -117,10 +130,18 @@ per_part_check_seconds = 3.0
 # Where `pharos run` remembers how many TOKENS the backend's own count runs above its
 # projection, per model -- the cost of a chat template that is applied server-side and cannot
 # be seen from here. Measured flat at 263-314 tokens over a 3x range of conversation sizes,
-# which is why it is a token count and not a ratio. Seeding a part with it means the part's FIRST request is corrected too,
-# which before v0.9 was the one request per part that nothing but the safety margin covered.
-# Counts only, gitignored, and safe to delete: the next run measures it again.
+# which is why it is a token count and not a ratio. Seeding a part with it corrects that
+# part's FIRST request -- otherwise the one request per part that nothing but the safety
+# margin covers. Counts only, gitignored, and safe to delete: the next run measures it again.
 # template_memory_file = "pharos_templates.json"
+
+# Where the profiler remembers what each model occupied at each window, so the VRAM cost of a
+# context token can be FITTED from this machine's own readings instead of taken from the
+# constant above. Every profile files one reading; three windows above 8K from a fully
+# resident model are enough to fit a rate, and the report then says "measured here" with the
+# windows it used. Two numbers per window, gitignored, and safe to delete -- ordinary use
+# re-measures it.
+# vram_memory_file = "pharos_vram.json"
 
 # The checks to run. Left unset, Pharos detects the ones this repository configures AND that
 # are installed (ruff, pytest) -- it never invents a build command for a project that did not
@@ -140,7 +161,7 @@ per_part_check_seconds = 3.0
 # skips both.
 verify_timeout_seconds = 300
 
-# --- pre-flight calibration (v0.2 "Warn") -------------------------------------------------------
+# --- pre-flight calibration (pharos check) ------------------------------------------------
 
 # Tokens your coding agent adds on top of a pasted prompt: system prompt, tool catalogue,
 # injected context. Normally learned automatically from traffic observed through the proxy;
@@ -157,7 +178,7 @@ verify_timeout_seconds = 300
 # prompt text, file names or any reconstructable content is ever written.
 observations_file = "pharos_observations.json"
 
-# --- Semantic grouping (pharos split --semantic / pharos run --semantic) -----------------
+# --- semantic grouping (pharos split --semantic / pharos run --semantic) ------------------
 # Off unless you pass the flag. With it, the backend is asked which files belong in a part
 # together; the proposal is then checked in code (coverage, the file cap, the part ceiling,
 # and whether every group still fits) and discarded for position packing if it fails any of

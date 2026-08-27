@@ -1,8 +1,9 @@
 """Extract explicitly-referenced file paths from free-form prompt text and resolve them.
 
-Extraction is deliberately conservative — v0.2 only handles files the user NAMES; predicting
-what an agent will read on its own is v1.0. The bias is against false positives: a stray
-"v0.2" or "e.g." must not surface as a missing file. Three candidate tiers:
+Extraction is deliberately conservative: it handles only files the user NAMES. What an agent
+opens on its own is predicted separately, from observed traffic, in `pharos.calibration`.
+The bias here is against false positives — a stray "v0.2" or "e.g." must not surface as a
+missing file. Three candidate tiers:
 
 1. backtick-quoted spans,
 2. quoted spans (double quotes may contain spaces — paths with spaces usually arrive quoted;
@@ -54,8 +55,8 @@ DIRECTORY_FILE_CAP = 300
 # The `--resolve REF=*` answer: count every candidate rather than choose between them.
 ALL_CANDIDATES = "*"
 
-# Public since v1.0: `pharos.agent.audit` walks the same tree and must prune it the same
-# way, or a run would report every .pyc it compiled as a change nobody claimed.
+# Public because `pharos.agent.audit` walks the same tree and must prune it the same way,
+# or a run would report every .pyc it compiled as a change nobody claimed.
 IGNORED_DIRS = frozenset({
     ".git", ".hg", ".svn", ".venv", "venv", "node_modules", "__pycache__",
     ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist", "build", ".idea", ".vscode",

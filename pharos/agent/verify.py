@@ -306,10 +306,24 @@ def _excerpt(stream: str) -> str:
     """
     lines = [line.rstrip() for line in stream.splitlines() if line.strip()]
     if len(lines) <= _EXCERPT_LINES:
-        return chr(10).join(lines)
-    head, tail = lines[:4], lines[-2:]
+        return chr(10).join(_trimmed(lines))
+    head, tail = _trimmed(lines[:4]), lines[-2:]
     hidden = len(lines) - len(head) - len(tail)
     return chr(10).join([*head, f"... {hidden} more line(s) ...", *tail])
+
+
+def _trimmed(lines: list[str]) -> list[str]:
+    """Drop a trailing bar that opens a caret diagram the cut has already removed.
+
+    ruff (and rustc, and anything else using that format) draws the source under a lone `|`.
+    Cutting the excerpt at four lines regularly landed exactly on that opener, so a real run
+    printed a diagnostic, its location, and then a bare `|` with nothing under it -- scaffolding
+    for a picture that is not there.
+    """
+    out = list(lines)
+    while out and out[-1].strip() in {"|", "│"}:
+        out.pop()
+    return out
 
 
 def baseline(root: Path, commands: list[str], *, timeout: float) -> dict[str, CheckOutcome]:
@@ -409,8 +423,8 @@ class DamageWatch:
 
     Two things are watched. Parsing the files the part itself wrote costs milliseconds and
     needs no budget or configuration, so it always happens. The project's OWN checks are the
-    other half -- v0.7 watched only the parser, and two measured runs in four broke `ruff`
-    without breaking any file's syntax, so half the damage went unattributed. Those are run
+    other half: watching only the parser leaves half the damage unattributed, since two measured
+    runs in four broke `ruff` without breaking any file's syntax. Those are run
     per part too, but only the ones the baseline measured as cheap enough; the runner decides
     which and hands the results in, because a check that takes a minute cannot run between
     parts that take a minute.

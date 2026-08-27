@@ -15,7 +15,7 @@ again after the project's own checks have run. Three snapshots, two questions:
   because every coverage figure in the scorecard is computed from claims.
 * what changed while the CHECKS ran? A formatter wired into a test command, a snapshot test
   writing its snapshots, a build step touching generated sources. Those writes are real edits
-  to the user's tree made during a Pharos run, and until v1.0 nothing recorded them at all.
+  to the user's tree, made during a Pharos run, that no other record here would show.
 
 Identity is (size, mtime_ns), not a content hash. The question here is "did this change",
 which mtime answers for a few thousand files in the time hashing answers it for a few dozen;
@@ -96,8 +96,8 @@ def own_paths(config: PharosConfig, root: Path, *extra: Path) -> frozenset[str]:
     """The paths Pharos itself writes inside the workspace, as keys the index would use.
 
     The audit exists to report changes nobody claimed, and Pharos writing its own log into the
-    folder it is auditing is the one change it can always account for. Every live run of v1.0
-    reported `pharos.log` and `pharos_observations.json` as unattributed AND out of scope AND
+    folder it is auditing is the one change it can always account for. Without this, a live run
+    reports `pharos.log` and `pharos_observations.json` as unattributed AND out of scope AND
     written by the checks -- three findings, all false, sitting beside the real ones. A check
     whose output is mostly noise is a check people learn to skip.
 

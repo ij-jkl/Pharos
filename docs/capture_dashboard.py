@@ -25,6 +25,13 @@ class _Server(uvicorn.Server):
         yield
 
 
+# The window every request in the shot is sent under, so the image the README embeds always
+# shows the same mismatch its caption describes. Without this the backend loads whatever it
+# likes -- 4,096 on this card -- and re-running the capture produced a shot reading
+# "loaded 4,096 (1.6%)" under a caption promising 32,768 (12.5%). A screenshot that disagrees
+# with the words beside it is worse than no screenshot.
+SHOT_NUM_CTX = 32768
+
 PROMPTS = [
     "Reply with the single word: ok",
     "In one short sentence, what does a KV cache store?" + (" context line for sizing." * 40),
@@ -62,7 +69,7 @@ async def main() -> None:
                         f"{base}/api/chat",
                         json={"model": config.model, "stream": False,
                               "messages": [{"role": "user", "content": prompt}],
-                              "options": {"num_predict": 24}},
+                              "options": {"num_predict": 24, "num_ctx": SHOT_NUM_CTX}},
                     )
                     print(f"  request {i}/{len(PROMPTS)} ok", file=sys.stderr)
                 except Exception as exc:  # noqa: BLE001

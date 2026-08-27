@@ -1,6 +1,6 @@
 """Byte-for-byte streaming passthrough over httpx, plus an out-of-band token-counting tee.
 
-v0.1 is a pure passthrough: it never mutates a request. The counted routes parse a COPY of
+A pure passthrough: it never mutates a request. The counted routes parse a COPY of
 the request body for token estimates and forward the original bytes verbatim — never
 re-serialize (hard rule). Counting must never delay or alter the stream: input counting runs
 as a background task, and response metrics are parsed from a bounded tail buffer only after
@@ -84,8 +84,8 @@ class ProxyState:
         self.bus = bus
         self.client = client
         self.tokenizer = tokenizer
-        # The model whose vocabulary ``tokenizer`` actually holds. v0.1 resolves exactly one
-        # tokenizer at startup, so a request for any other model is counted with the wrong
+        # The model whose vocabulary ``tokenizer`` actually holds. Exactly one tokenizer is
+        # resolved at startup, so a request for any other model is counted with the wrong
         # vocabulary; that count is labelled untrusted rather than exact. See _count_input.
         self.tokenizer_model = tokenizer_model
         # Optional calibration sink (counts only, never text); None disables recording.
@@ -550,10 +550,10 @@ async def _count_input(state: ProxyState, request_id: int, spec: InputSpec) -> N
     exact = False
     counter = state.tokenizer
     if counter is not None:
-        # v0.1 holds ONE vocabulary, resolved from config.model. Counting a request aimed at a
-        # different model with it produces a plausible but wrong number, so the result is
+        # The proxy holds ONE vocabulary, resolved from config.model. Counting a request aimed
+        # at a different model with it produces a plausible but wrong number, so the result is
         # labelled "gguf:other-model" and never exact — an admitted unknown beats a confident
-        # error. Per-request tokenizer resolution is a v0.2 item.
+        # error.
         trusted = _tokenizer_matches(state, spec)
         identity = _tokenizer_identity(counter)
         try:

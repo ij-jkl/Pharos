@@ -10,6 +10,7 @@ reproducible on any machine.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -21,6 +22,7 @@ import httpx
 import pytest
 from rich.console import Console
 
+from pharos.agent.audit import own_paths
 from pharos.agent.cli import _render_footer
 from pharos.agent.ledger import names_its_work
 from pharos.agent.runner import (
@@ -49,11 +51,12 @@ from pharos.agent.workspace import (
     Undo,
     Workspace,
     WorkspaceError,
+    _porcelain_path,
     current_branch,
     git_guard,
 )
 from pharos.config import PharosConfig
-from pharos.preflight.split import PartFile, build_plan
+from pharos.preflight.split import PartFile, build_plan, scoped_display_names
 
 
 def _count(text: str) -> int:
@@ -2030,3 +2033,107 @@ def test_the_echoed_numbers_are_still_refused_if_written_back(tmp_path: Path) ->
     )
     assert not result.ok
     assert "NNN| line-number prefixes" in result.text
+
+
+# --- the guard does not charge the user for files Pharos itself wrote ----------------------------
+
+
+def test_git_guard_ignores_pharos_own_files(tmp_path: Path) -> None:
+    """The bug: `pharos run --dry-run` writes pharos.log into the workspace, so the very next
+    `pharos run` refused to start and blamed the user for a file Pharos had just written.
+
+    Reproduced from a clean repository doing exactly what the README documents.
+    """
+    _repo_on_branch(tmp_path, "main")
+    (tmp_path / "pharos.log").write_text("a run happened", encoding="utf-8")
+
+    with pytest.raises(GitGuardError):
+        git_guard(tmp_path, create_branch=False)
+
+    # Told which paths are its own, the same tree is clean.
+    assert git_guard(tmp_path, create_branch=False, ignore={"pharos.log"}) is None
+
+
+def test_git_guard_still_refuses_real_work_beside_our_own_files(tmp_path: Path) -> None:
+    """The exclusion must not swallow the finding beside it: one ignored file and one real
+    edit is still a dirty tree, and the count reports the real one alone."""
+    _repo_on_branch(tmp_path, "main")
+    (tmp_path / "pharos.log").write_text("noise", encoding="utf-8")
+    (tmp_path / "a.py").write_text("a = 2  # the user's own edit", encoding="utf-8")
+
+    with pytest.raises(GitGuardError) as caught:
+        git_guard(tmp_path, create_branch=False, ignore={"pharos.log"})
+    assert "1 uncommitted change" in str(caught.value)
+
+
+def test_git_guard_ignores_a_whole_directory_we_own(tmp_path: Path) -> None:
+    """`own_paths` can name the undo directory, which holds a copy of every original."""
+    _repo_on_branch(tmp_path, "main")
+    snapshot = tmp_path / ".pharos" / "undo-1"
+    snapshot.mkdir(parents=True)
+    (snapshot / "a.py").write_text("a = 1", encoding="utf-8")
+
+    assert git_guard(tmp_path, create_branch=False, ignore={".pharos/undo-1"}) is None
+
+
+def test_porcelain_path_reads_a_rename_and_a_quoted_name() -> None:
+    """A rename reads `R  old -> new`; the name on disk is the one after the arrow."""
+    assert _porcelain_path("R  old.py -> new.py") == "new.py"
+    assert _porcelain_path("?? pharos.log") == "pharos.log"
+    assert _porcelain_path('?? "odd name.py"') == "odd name.py"
+    # Separators are normalised, so a key built from a Path matches on Windows too.
+    assert _porcelain_path("?? sub\\pharos.log") == "sub/pharos.log"
+
+
+def test_own_paths_feeds_the_guard_without_a_second_source_of_truth(tmp_path: Path) -> None:
+    """The guard and the audit must answer "is this ours?" the same way, or one of them is
+    wrong about a file the other is silent on."""
+    _repo_on_branch(tmp_path, "main")
+    (tmp_path / "pharos.log").write_text("x", encoding="utf-8")
+    config = PharosConfig(log_file=str(tmp_path / "pharos.log"))
+
+    ours = own_paths(config, tmp_path)
+    assert "pharos.log" in ours
+    assert git_guard(tmp_path, create_branch=False, ignore=ours) is None
+
+
+# --- an unscoped run is still measured against the files the prompt named ------------------------
+
+
+def test_a_task_that_fits_still_has_a_coverage_denominator(tmp_path: Path) -> None:
+    """The bug: a task small enough to fit ran as one unscoped part, so no part carried a file
+    list, coverage had no denominator, and the scorecard printed a bold green DONE with
+    "nothing to measure coverage against" -- for the commonest case there is.
+
+    Observed live: a run naming two files touched one and reported DONE.
+    """
+    config, prompt, report = _report_with_files(tmp_path, 2)
+    plan = build_plan(config, prompt, report, target=100_000,
+                      max_files=config.max_files_per_part)
+    assert plan.already_fits, "this fixture is meant to fit in one window"
+
+    # The denominator was never missing -- the pre-flight had already resolved both files.
+    named = scoped_display_names(report)
+    assert len(named) == 2
+    assert all(name.endswith(".py") for name in named)
+
+
+def test_the_undivided_denominator_is_the_one_a_split_would_have_used(tmp_path: Path) -> None:
+    """Two lists that can drift apart would make a divided run and an undivided one
+    incomparable -- which is the whole point of --no-split."""
+    config, prompt, report = _report_with_files(tmp_path, 6)
+    plan = build_plan(config, prompt, report, target=3_000,
+                      max_files=config.max_files_per_part)
+    assert plan.parts, "this fixture is meant to split"
+
+    from_plan = sorted(f.display for part in plan.parts for f in part.files)
+    assert sorted(scoped_display_names(report)) == from_plan
+
+
+def test_a_text_split_names_no_files_and_is_scored_as_before(tmp_path: Path) -> None:
+    """Pasted text names nothing, so there is no denominator to find and none is invented."""
+    from pharos.preflight.check import run_check
+
+    config = PharosConfig(model="m", target_folder=str(tmp_path))
+    report = asyncio.run(run_check(config, "a wall of pasted log text", target=50))
+    assert scoped_display_names(report) == []

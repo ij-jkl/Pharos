@@ -1,7 +1,6 @@
 """Ask a model what it thinks of the diff — and keep the answer away from every measurement.
 
-Until v1.0 the README said, in as many words, that nothing here reads the diff and judges it:
-Pharos proves a task fit, ran, and still builds. That line was doing real work. Every other
+Pharos proves a task fit, ran, and still builds — it does not judge the code. Every other
 number a run produces is a measurement — coverage is counted, damage is parsed, drift is
 compared against ``prompt_eval_count`` — and an opinion filed next to them borrows their
 authority without having earned any of it.

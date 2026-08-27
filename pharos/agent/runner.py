@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -78,7 +78,13 @@ from pharos.calibration import (
 )
 from pharos.config import PharosConfig
 from pharos.preflight.check import CheckReport, Verdict, run_check
-from pharos.preflight.split import PartFile, SplitMode, SplitPlan, build_plan
+from pharos.preflight.split import (
+    PartFile,
+    SplitMode,
+    SplitPlan,
+    build_plan,
+    scoped_display_names,
+)
 from pharos.tokenizer.gguf import GgufTokenizer
 from pharos.tokenizer.resolver import resolve_gguf_path
 
@@ -114,7 +120,7 @@ class RunOutcome:
     # Every file the PLAN assigned, whether or not its part ever ran. Coverage is measured
     # against this rather than against the parts that executed: a run halted after part 1 of
     # three otherwise reports 100%, because the four files nobody attempted are not in any
-    # part's scope. True of a run stopped by an error too, and has been since v0.4.
+    # part's scope. True of a run stopped by an error too.
     planned_files: list[str] = field(default_factory=list)
     # What earlier runs measured this model's chat template to cost, and whether any request
     # still went out with nothing correcting its ceiling.
@@ -251,6 +257,139 @@ def written_by_parts(parts: list[PartResult]) -> list[str]:
     return sorted({normalise(path) for part in parts for path in part.files_written})
 
 
+@dataclass
+class Baseline:
+    """What every check said BEFORE the run wrote anything.
+
+    Taken before the first part rather than after, because a baseline captured once the model
+    has started editing measures the run's own damage and calls it pre-existing.
+    """
+
+    commands: list[str] = field(default_factory=list)
+    was_passing: dict[str, CheckOutcome] = field(default_factory=dict)
+    parses_now: dict[str, str | None] = field(default_factory=dict)
+    # The subset cheap enough to also run after every part, so damage can be attributed to
+    # the part that caused it rather than only to the run.
+    per_part: list[str] = field(default_factory=list)
+
+
+async def _take_baseline(
+    config: PharosConfig,
+    root: Path,
+    planned: list[str],
+    say: Callable[[str], None],
+) -> Baseline:
+    commands = (
+        list(config.verify_commands)
+        if config.verify_commands is not None
+        else detect_commands(root)
+    )
+    state = Baseline(commands=commands, parses_now=syntax_state(root, planned))
+    if not commands:
+        return state
+
+    say(f"baseline: {', '.join(commands)}")
+    state.was_passing = await asyncio.to_thread(
+        baseline, root, commands, timeout=config.verify_timeout_seconds
+    )
+    for command, before in state.was_passing.items():
+        if before.skipped is not None:
+            say(f"  {command} could not be baselined ({before.skipped})")
+        elif not before.ok:
+            say(f"  {command} was already failing - it will not be charged to this run")
+
+    state.per_part = _cheap_enough(state.was_passing, config.per_part_check_seconds)
+    if state.per_part:
+        spent = sum(state.was_passing[c].duration for c in state.per_part)
+        say(
+            f"  running after every part as well: {', '.join(state.per_part)} "
+            f"({spent:.1f}s the baseline took)"
+        )
+    return state
+
+
+async def _route(
+    config: PharosConfig, outcome: RunOutcome, say: Callable[[str], None]
+) -> str:
+    """Prefer the proxy, so the run appears in the dashboard; fall back to the backend."""
+    proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"
+    async with httpx.AsyncClient(base_url=proxy_url) as probe:
+        outcome.via_proxy = await _reachable(probe)
+    say(
+        f"routing through the Pharos proxy at {proxy_url}"
+        if outcome.via_proxy
+        else f"proxy not running — going straight to {config.backend_url}, so this run will "
+        f"not appear in the dashboard"
+    )
+    return proxy_url if outcome.via_proxy else config.backend_url
+
+
+def _seed_from_memory(
+    memory: Path, model: str, outcome: RunOutcome, say: Callable[[str], None]
+) -> int | None:
+    """What previous runs measured this model's chat template to cost.
+
+    A part starts with no responses of its own, so without this its first request is enforced
+    against a ceiling with only SAFETY_MARGIN behind it -- and that constant measured 288-297
+    tokens short on nine live runs. Seeding is not a new measurement: it is the correction the
+    session already makes for itself, one request earlier.
+    """
+    known = remembered_cost(memory, model)
+    outcome.template_cost = known
+    if known is None:
+        return None
+    say(
+        f"template memory: {model} counted {known.offset:,} tokens above our projection "
+        f"over {known.runs} previous run(s) — every part's ceiling starts corrected"
+    )
+    if known.capped:
+        say(
+            f"  that measurement wanted more than the {TEMPLATE_OFFSET_CAP:,}-token cap "
+            f"and was held to it — a gap that size is not template scaffolding"
+        )
+    return known.offset
+
+
+def _changed_files(
+    outcome: RunOutcome,
+    root: Path,
+    *,
+    undo: Undo | None,
+    use_git: bool,
+    ours: Collection[str] = (),
+) -> list[str]:
+    """What the run actually wrote, by the best evidence available.
+
+    Under --no-git there is no diff to ask and no snapshot to list, and the answer used to be
+    an empty list -- not "we do not know" but a positive claim that nothing was written,
+    printed as "Nothing was written" under a run that had just edited both its files. Worse,
+    it reached the verifier as the set of written files, so --no-git quietly turned the syntax
+    check off. The dispatcher records each path as it writes it, so the fallback is Pharos's
+    own account rather than the model's: weaker than a diff, since a write that restored a
+    file's original bytes still counts, and much better than silence.
+    """
+    if undo is not None:
+        return sorted(undo.saved)
+    if use_git:
+        return changed_files(root, ignore=ours)
+    return written_by_parts(outcome.parts)
+
+
+def _remember_template_cost(outcome: RunOutcome, memory: Path, model: str) -> None:
+    """Fold this run's measurements back in, so the next one starts corrected.
+
+    One number per run -- its worst gap -- so a long run cannot outvote a short one.
+    """
+    gaps = [
+        theirs - ours
+        for part in outcome.parts
+        for ours, theirs in part.drift_samples
+        if ours > 0 and theirs > 0
+    ]
+    if gaps:
+        outcome.template_learned = remember_run(memory, model, gaps)
+
+
 async def run_task(
     config: PharosConfig,
     prompt: str,
@@ -353,16 +492,26 @@ async def run_task(
         return outcome
 
     outcome.planned_files = [f.display for _, files in bodies if files for f in files]
+    if not outcome.planned_files:
+        # An unscoped run -- the task fit in one window, or --no-split was asked for. The parts
+        # carry no file list, but the prompt named files and the pre-flight resolved them, so
+        # coverage still has a denominator and the syntax baseline still has something to
+        # record. Empty for a text split, which names no files and is scored as it always was.
+        outcome.planned_files = scoped_display_names(report)
 
     if dry_run:
         say(f"dry run — {len(bodies)} part(s) planned, nothing executed")
         return outcome
 
+    # Pharos's own files, so neither the guard below nor the audit later reports the run's
+    # log as somebody's uncommitted work. Recomputed once the undo directory exists.
+    ours = own_paths(config, root)
+
     undo: Undo | None = None
     if use_git:
         try:
             outcome.base_branch = current_branch(root)
-            outcome.branch = git_guard(root)
+            outcome.branch = git_guard(root, ignore=ours)
             if outcome.branch:
                 say(f"working on branch {outcome.branch}")
         except NotARepository:
@@ -373,48 +522,20 @@ async def run_task(
             outcome.undo = undo
             say(f"no git here — originals will be copied to {undo.directory} before any write")
 
-    # The checks, and their answers BEFORE anything is written. Taken here because a moment
-    # later the model starts editing, and a baseline captured after that measures nothing.
-    checks: list[str] = []
-    was_passing: dict[str, CheckOutcome] = {}
-    parses_now: dict[str, str | None] = {}
-    per_part_checks: list[str] = []
-    if config.verify and verify_work:
-        checks = (
-            list(config.verify_commands)
-            if config.verify_commands is not None
-            else detect_commands(root)
-        )
-        parses_now = syntax_state(root, outcome.planned_files)
-        if checks:
-            say(f"baseline: {', '.join(checks)}")
-            was_passing = await asyncio.to_thread(
-                baseline, root, checks, timeout=config.verify_timeout_seconds
-            )
-            for command, before in was_passing.items():
-                if before.skipped is not None:
-                    say(f"  {command} could not be baselined ({before.skipped})")
-                elif not before.ok:
-                    say(f"  {command} was already failing - it will not be charged to this run")
-            per_part_checks = _cheap_enough(was_passing, config.per_part_check_seconds)
-            if per_part_checks:
-                spent = sum(was_passing[c].duration for c in per_part_checks)
-                say(
-                    f"  running after every part as well: {', '.join(per_part_checks)} "
-                    f"({spent:.1f}s the baseline took)"
-                )
-
-    proxy_url = f"http://{config.proxy_host}:{config.proxy_port}"
-
-    async with httpx.AsyncClient(base_url=proxy_url) as probe:
-        outcome.via_proxy = await _reachable(probe)
-    base_url = proxy_url if outcome.via_proxy else config.backend_url
-    say(
-        f"routing through the Pharos proxy at {proxy_url}"
-        if outcome.via_proxy
-        else f"proxy not running — going straight to {config.backend_url}, so this run will "
-        f"not appear in the dashboard"
+    # One switch for all three uses below: the baseline, the per-part damage watch that reads
+    # it, and the end-of-run comparison against it. They are the same decision.
+    checking = config.verify and verify_work
+    baseline_state = (
+        await _take_baseline(config, root, outcome.planned_files, say)
+        if checking
+        else Baseline()
     )
+    checks = baseline_state.commands
+    was_passing = baseline_state.was_passing
+    parses_now = baseline_state.parses_now
+    per_part_checks = baseline_state.per_part
+
+    base_url = await _route(config, outcome, say)
 
     model = report.model or config.model
     if not model:
@@ -425,11 +546,7 @@ async def run_task(
     # before it. Costs milliseconds beside the minute a part takes, and it is the only way to
     # name the part responsible: the end-of-run check knows the project is broken and cannot
     # know who did it.
-    watch = (
-        DamageWatch(root, parses_now, was_passing)
-        if (config.verify and verify_work)
-        else None
-    )
+    watch = DamageWatch(root, parses_now, was_passing) if checking else None
     halt_on_break = stop_on_break and watch is not None
 
     # What previous runs learned about this model's chat template. A part starts with no
@@ -438,34 +555,22 @@ async def run_task(
     # on nine live runs. Seeding costs nothing and is not a new measurement: it is the same
     # correction the session already makes for itself, one request earlier.
     memory = Path(config.template_memory_file)
-    known = remembered_cost(memory, model)
-    outcome.template_cost = known
-    seed = known.offset if known else None
-    if known is not None:
-        say(
-            f"template memory: {model} counted {known.offset:,} tokens above our projection "
-            f"over {known.runs} previous run(s) — every part's ceiling starts corrected"
-        )
-        if known.capped:
-            say(
-                f"  that measurement wanted more than the {TEMPLATE_OFFSET_CAP:,}-token cap "
-                f"and was held to it — a gap that size is not template scaffolding"
-            )
+    seed = _seed_from_memory(memory, model, outcome, say)
 
     handoff: str | None = None
-    # Pharos's own account of the run, appended to as each write lands. Off it goes back to
-    # v0.5 behaviour, where the model's prose was the only thread between parts — which is
-    # what the coverage figures in DESKTOP_VALIDATION were measured against.
+    # Pharos's own account of the run, appended to as each write lands. Off, the model's prose
+    # is the only thread between parts — which is what the coverage figures in
+    # DESKTOP_VALIDATION were measured against.
     record = Ledger()
     # label -> (tree before the part, tree after its tools). Closed out once the project's own
     # checks have run, because a check command that rewrites files is doing so during the run
-    # and nothing before v1.0 noticed.
+    # and no other record here would show it.
     pending: dict[str, tuple[TreeIndex, TreeIndex]] = {}
-    # What Pharos itself writes into the workspace, so the audit stops reporting its own log
-    # as a change nobody claimed. The undo directory goes in too: it exists to hold a copy of
-    # every original the run is about to overwrite, which is the largest false finding
-    # available. Computed once -- none of these move during a run.
-    ours = own_paths(config, root, *([undo.directory] if undo is not None else []))
+    # The undo directory joins them now that it exists: it holds a copy of every original the
+    # run is about to overwrite, which is the largest false finding available. Computed once
+    # more and then fixed -- none of these move during a run.
+    if undo is not None:
+        ours = own_paths(config, root, undo.directory)
 
     def close_audit(label: str, result: PartResult) -> None:
         snapshots = pending.pop(label, None)
@@ -630,36 +735,13 @@ async def run_task(
                         say(f"  [{label}] failed: {result.error}")
                         break
 
-    if undo is not None:
-        outcome.files_changed = sorted(undo.saved)
-    elif use_git:
-        outcome.files_changed = changed_files(root)
-    else:
-        # --no-git, so there is no diff to ask and no snapshot to list. This used to be an
-        # empty list, which was not "we do not know" but a positive claim that nothing was
-        # written — printed as "Nothing was written" under a run that had just correctly
-        # edited both its files. Worse, it went to the verifier as the set of written files,
-        # so --no-git quietly turned the syntax check off: a run could break every file in
-        # the tree and be told there was nothing in a format it could parse.
-        #
-        # The dispatcher records each path as it writes it, so this is Pharos's own account
-        # of what it did rather than the model's. Weaker than a diff — a write that restored
-        # a file's original bytes still counts here — and much better than silence.
-        outcome.files_changed = written_by_parts(outcome.parts)
-
+    outcome.files_changed = _changed_files(
+        outcome, root, undo=undo, use_git=use_git, ours=ours
+    )
     outcome.exposed_requests = sum(p.exposed_requests for p in outcome.parts)
-    # Fold this run's measurements back in, so the next one starts corrected. One number per
-    # run -- its worst ratio -- so a long run cannot outvote a short one.
-    gaps = [
-        theirs - ours
-        for part in outcome.parts
-        for ours, theirs in part.drift_samples
-        if ours > 0 and theirs > 0
-    ]
-    if gaps:
-        outcome.template_learned = remember_run(memory, model, gaps)
+    _remember_template_cost(outcome, memory, model)
 
-    if config.verify and verify_work:
+    if checking:
         say("verifying")
         outcome.verification = await asyncio.to_thread(
             verify,
@@ -986,7 +1068,7 @@ def _cap_handoff(handoff: str, reserve: int, count: Callable[[str], int]) -> tup
     truncating would be the context loss this project refuses, which is why the marker is
     part of the forwarded text rather than only a line in the report.
 
-    The marker is counted against the reserve too, which it was not until v0.6. Trimming the
+    The marker is counted against the reserve too. Trimming the
     prose to exactly the reserve and then appending forty tokens of explanation overran the
     budget by forty tokens on every cut hand-off — the same failure the function exists to
     prevent, committed by the fix for it, and invisible because nothing measured the total
@@ -1064,7 +1146,3 @@ def _with_handoff(
         )
     sections.append(body)
     return "\n\n".join(sections)
-
-
-def workspace_for(config: PharosConfig) -> Path:
-    return workspace_root(config.target_folder)

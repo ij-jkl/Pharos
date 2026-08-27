@@ -32,9 +32,9 @@ from pharos.preflight.split import Grouping, SplitMode, SplitPlan, build_plan
 _EXIT_BY_VERDICT = {Verdict.FITS: 0, Verdict.EXCEEDS: 1, Verdict.INDETERMINATE: 2}
 # Bumped when a field is removed or its meaning changes, so a wrapper can refuse politely
 # rather than silently misread a number. Added fields do not bump it.
-# 2 since v1.0: the payload gained `reads` and `expected` (what an agent opens on its
-# own), and a plan gained `reads_reserved`. Additive, and the number still moved --
-# a version that never changes tells a consumer nothing it can act on.
+# At 2: the payload gained `reads` and `expected` (what an agent opens on its own), and a
+# plan gained `reads_reserved`. Additive, and the number still moved -- a version that
+# never changes tells a consumer nothing it can act on.
 _JSON_SCHEMA_VERSION = 2
 
 

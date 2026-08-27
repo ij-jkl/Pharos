@@ -28,7 +28,7 @@ The six:
   wrote files and then reported "NO CHANGES NEEDED". A threshold flags the first and waves the
   second through; naming separates them exactly. A part that changed nothing is not held to it.
 
-  And, from v0.6, Pharos's own record of every write, carried to each later part. That is not
+  And Pharos's own record of every write, carried to each later part. That is not
   folded into the numbers above and it deliberately cannot rescue them: `thin_handoffs` asks
   what the MODEL reported, and answering it with what Pharos recorded would make it true by
   construction. `ledger_files` sits beside it and says how many files were carried anyway, so a
@@ -93,8 +93,8 @@ def _carried_the_work(part: PartResult) -> bool:
     full in both places, which is how this project has twice grown the same bug in two copies
     of one comparison; `pharos.paths` exists for the same reason.
 
-    Note what is NOT consulted: the ledger. From v0.6 the run carries Pharos's own record of
-    every write between parts, so context survives a hand-off that says nothing — but this
+    Note what is NOT consulted: the ledger. The run carries Pharos's own record of every
+    write between parts, so context survives a hand-off that says nothing — but this
     question is about the MODEL's summary, and answering it with Pharos's record would make it
     true by construction and stop it measuring anything.
     """
@@ -367,8 +367,8 @@ def score(
     # is given -- not the parts that happened to execute. A run halted after part 1 of three
     # otherwise reports 100%, because the files nobody attempted are in no part's scope: the
     # denominator shrinks along with the numerator and the bar stays full. True of a run
-    # stopped by a failed part too, which it has been since v0.4 and nobody noticed until
-    # --stop-on-break made a short run an ordinary outcome rather than an accident.
+    # stopped by a failed part too, which --stop-on-break makes an ordinary outcome rather
+    # than an accident.
     scoped_set = {normalise(path) for part in parts for path in part.scoped} | {
         normalise(path) for path in (planned_files or [])
     }

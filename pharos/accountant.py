@@ -8,7 +8,7 @@ whether Ollama or llama.cpp sits behind the proxy.
 from __future__ import annotations
 
 from pharos.config import PharosConfig
-from pharos.profiler.types import BudgetReport, GpuInfo
+from pharos.profiler.types import BudgetReport, GpuInfo, KvRateSource
 
 _BYTES_PER_MIB = 1024 * 1024
 
@@ -29,17 +29,17 @@ class Accountant:
         loaded_ctx: int | None,
         gpu: GpuInfo,
         kv_bytes_per_token: int | None = None,
+        measured_mib_per_1k: float | None = None,
     ) -> BudgetReport:
         """Compute the budget for a given loaded context window and GPU snapshot.
 
-        ``kv_bytes_per_token`` comes from the model's own GGUF metadata and, when present,
-        replaces the configured ``kv_mib_per_1k`` for every figure below. The constant was a
-        hand-tuned guess that measured 5-14x low on real models, and it drives the headroom
-        estimate — so a low KV rate overstates how much context still fits, which is the one
-        direction this number must never be wrong in. The config value stays as the fallback
-        for backends that publish nothing to derive from.
+        Three things can answer "what does a context token cost in VRAM", and they are ranked
+        by how directly each one answers it — see ``_kv_rate``. The configured constant is last
+        because it is one number for every model and measured 4-7x wrong across three
+        architectures, always in the direction that overstates how much context still fits.
         """
-        kv_rate, kv_derived = self._kv_rate(kv_bytes_per_token)
+        derived_rate = self._derived_rate(kv_bytes_per_token)
+        kv_rate, source = self._kv_rate(derived_rate, measured_mib_per_1k)
         usable: int | None = None
         warn_tokens: int | None = None
         alert_tokens: int | None = None
@@ -85,11 +85,38 @@ class Accountant:
             vram_safety_margin_mib=self._vram_margin_mib,
             achievable_ctx_estimate=achievable_ctx,
             kv_mib_per_1k=kv_rate,
-            kv_rate_derived=kv_derived,
+            kv_rate_source=source,
+            kv_derived_mib_per_1k=derived_rate,
         )
 
-    def _kv_rate(self, kv_bytes_per_token: int | None) -> tuple[float, bool]:
-        """The KV rate to compute with, and whether it was derived or merely configured."""
-        if kv_bytes_per_token is not None and kv_bytes_per_token > 0:
-            return kv_bytes_per_token * 1000 / _BYTES_PER_MIB, True
-        return self._kv_mib_per_1k, False
+    @staticmethod
+    def _derived_rate(kv_bytes_per_token: int | None) -> float | None:
+        """MiB per 1K tokens implied by the model's own GGUF metadata, when it published enough."""
+        if kv_bytes_per_token is None or kv_bytes_per_token <= 0:
+            return None
+        return kv_bytes_per_token * 1000 / _BYTES_PER_MIB
+
+    def _kv_rate(
+        self, derived: float | None, measured: float | None
+    ) -> tuple[float, KvRateSource]:
+        """The rate to compute with, and which of the three answered.
+
+        Measurement outranks derivation, which is not the obvious order and is the one the
+        numbers argue for. Derivation is exact arithmetic over published metadata, but it
+        counts the cache and nothing else: validated against `size_vram` on three
+        architectures it read 1-4% UNDER what the card actually gave up, because llama.cpp
+        allocates per-token scratch outside the cache proper. That residual overstates
+        headroom, and overstating headroom is the one direction this number must not be wrong
+        in. A fit over this machine's own readings includes whatever else the window costs
+        here, on this backend, with these flags — so where one exists it is the better answer,
+        and `pharos.vram` refuses to produce one until it has three windows above 8K from a
+        fully resident model.
+
+        Derivation stays ahead of the configured constant for everything not yet measured,
+        which is every model on a fresh install and every model whose windows have not moved.
+        """
+        if measured is not None and measured > 0:
+            return measured, "measured"
+        if derived is not None:
+            return derived, "derived"
+        return self._kv_mib_per_1k, "configured"

@@ -71,9 +71,9 @@ _PHAROS_NOTE = "[Pharos]"
 #
 # What a part spends its window on is overwhelmingly tool results: a read_file of a 700-line
 # module is thousands of tokens that stay in the conversation for the rest of the part, long
-# after the model has finished editing that file. Until v1.0 the ceiling simply stopped the
-# part there and asked for the hand-off -- correct, and expensive, because most of what filled
-# the window was no longer being used.
+# after the model has finished editing that file. Without compaction the ceiling simply stops
+# the part there and asks for the hand-off -- correct, and expensive, because most of what
+# filled the window is no longer being used.
 #
 # `--compact` replaces the OLDEST tool results with a stub naming what was dropped, oldest
 # first, until the projection clears the ceiling again. Four rules keep it honest:
@@ -394,10 +394,10 @@ class AgentSession:
     def exposed(self) -> int:
         """Requests this part sent with no correction in force at all.
 
-        The number v0.9 exists to drive to zero. It is not the same question as the drift line
-        below, which measures the ESTIMATOR and is expected to read short: this asks whether
-        any request was actually enforced against a ceiling that had nothing but a constant
-        behind it. Before the template memory that was the first request of every part.
+        The number the template memory exists to drive to zero. Not the same question as the
+        drift line below, which measures the ESTIMATOR and is expected to read short: this
+        asks whether any request was enforced against a ceiling with nothing but a constant
+        behind it. Without the template memory that is the first request of every part.
         """
         return self._exposed
 

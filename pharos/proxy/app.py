@@ -53,7 +53,7 @@ def create_app(
         gguf = resolve_gguf_path(config)
         if gguf is not None:
             tokenizer = GgufTokenizer(gguf)
-            # Remember WHICH model this vocabulary belongs to. v0.1 loads exactly one, so a
+            # Remember WHICH model this vocabulary belongs to. Exactly one is loaded, so a
             # request naming a different model must not have its count labelled exact.
             tokenizer_model = config.model
 

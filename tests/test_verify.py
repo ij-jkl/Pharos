@@ -349,3 +349,34 @@ def test_verdict_says_broken_not_incomplete_when_every_file_was_written() -> Non
 def test_verdict_stays_complete_when_verification_passed() -> None:
     clean = Verification(checks=(CheckOutcome(name="ruff check .", ok=True),))
     assert _headline(_card(clean))[0] == "COMPLETE"
+
+
+def test_an_excerpt_never_ends_on_an_empty_diagram_opener() -> None:
+    """ruff draws the offending source under a lone `|`. Cutting the head at four lines landed
+    on that opener, so a live run printed a diagnostic, its location, and then a bare `|` with
+    nothing under it -- scaffolding for a picture the cut had already removed."""
+    output = chr(10).join(
+        [
+            "F821 Undefined name `Customer`",
+            "--> src/orders.py:5:56",
+            "  |",
+            "  |",
+            "5 | def f(c: Customer) -> None:",
+            "  |          ^^^^^^^^",
+            "help: add an import",
+            "Found 1 error.",
+        ]
+    )
+    excerpt = _excerpt(output)
+
+    assert excerpt.splitlines()[1].strip() != "|"
+    assert "|" + chr(10) + "..." not in excerpt
+    # The diagnostic and its location are what the head is for, and both survive.
+    assert "F821 Undefined name `Customer`" in excerpt
+    assert "--> src/orders.py:5:56" in excerpt
+
+
+def test_a_short_output_keeps_every_useful_line() -> None:
+    """Trimming must only remove scaffolding, never a line carrying a message."""
+    output = chr(10).join(["E501 line too long", "--> a.py:1:101", "help: shorten it"])
+    assert _excerpt(output) == output

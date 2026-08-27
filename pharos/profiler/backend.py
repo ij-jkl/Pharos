@@ -98,6 +98,7 @@ async def _build_info(
     loaded_ctx = _extract_loaded_ctx(ps_model) if ps_model else None
     size_vram = _as_int(ps_model.get("size_vram")) if ps_model else None
     weight_size = _as_int(ps_model.get("size")) if ps_model else None
+    digest = _as_str(ps_model.get("digest")) if ps_model else None
     quant = _dig_str(ps_model, "details", "quantization_level")
     param_size = _dig_str(ps_model, "details", "parameter_size")
 
@@ -129,6 +130,7 @@ async def _build_info(
         size_vram_bytes=size_vram,
         advertised_max_ctx=advertised,
         loaded_ctx=loaded_ctx,
+        digest=digest,
         kv_bytes_per_token=kv_bytes_per_token,
     )
 

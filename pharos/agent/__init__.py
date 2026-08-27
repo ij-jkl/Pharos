@@ -5,8 +5,8 @@ the boundaries are worth stating once, here, rather than rediscovering them per 
 
 What it does: pre-flight the task exactly as ``pharos check`` does, divide it exactly as
 ``pharos split`` does, then execute each part as its own agent conversation — fresh context,
-seeded with the previous part's hand-off. The division is the v0.3 splitter unchanged: file
-packing by scope and position. No model is ever asked what the task means.
+seeded with the previous part's hand-off. The division is the ``pharos split`` packer
+unchanged: files by scope and position. No model is ever asked what the task means.
 
 Three properties hold by construction, and they are the reason this can exist alongside the
 observe-only proxy:
@@ -17,9 +17,10 @@ observe-only proxy:
 * **Overhead is exact, not learned.** Pharos wrote this client, so it can count its own system
   prompt and tool catalogue instead of estimating them from observed traffic. The floor a run
   plans against has no calibration guess in it.
-* **Nothing is trimmed.** A conversation that would exceed the window is stopped and handed
-  off, never silently compacted. History compaction is out of scope here for the same reason
-  it is out of scope in the proxy: a number you cannot explain is worse than a refusal.
+* **Nothing is trimmed silently.** A conversation that would exceed the window is stopped and
+  handed off. ``--compact`` is the one alternative to stopping, and it stubs the oldest tool
+  results in place, naming what it dropped and how big it was — see ``pharos.agent.session``.
+  A window that shrinks without saying so is worse than a refusal.
 
 The scope rule is enforced in the tool layer, not merely requested in the prompt. A part that
 is told "open only these three files" cannot open a fourth — see ``pharos.agent.tools``. That

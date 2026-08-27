@@ -194,7 +194,7 @@ def test_derived_rate_overrides_the_configured_constant() -> None:
     report = Accountant(PharosConfig(kv_mib_per_1k=26)).report(
         loaded_ctx=8192, gpu=GpuInfo(available=False), kv_bytes_per_token=147_456
     )
-    assert report.kv_rate_derived is True
+    assert report.kv_rate_source == "derived"
     assert report.kv_mib_per_1k == pytest.approx(147_456 * 1000 / BYTES_PER_MIB)
     assert report.kv_estimate_mib == pytest.approx(report.kv_mib_per_1k * 8192 / 1000)
 
@@ -203,7 +203,7 @@ def test_falls_back_to_configured_rate_when_nothing_to_derive() -> None:
     report = Accountant(PharosConfig(kv_mib_per_1k=26)).report(
         loaded_ctx=8192, gpu=GpuInfo(available=False), kv_bytes_per_token=None
     )
-    assert report.kv_rate_derived is False
+    assert report.kv_rate_source == "configured"
     assert report.kv_mib_per_1k == pytest.approx(26.0)
 
 

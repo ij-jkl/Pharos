@@ -6,6 +6,166 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1 — "Measured here"
+
+The VRAM figures stop guessing on the models they could not derive a rate for.
+
+- **A context token's VRAM cost is now measured on your machine, not assumed.** The KV rate
+  drives the headroom estimate and the "raise num_ctx toward N" advice, and it had two sources:
+  derived from the model's own GGUF metadata, or the single configured constant. Two
+  architecture families are refused by the derivation — hybrid SSM stacks and sliding-window
+  attention — and those fell back to one number for every model, which measured 4-7x wrong.
+
+  Nothing extra had to be run to fix it. `/api/ps` reports `size_vram` and the loaded window on
+  every probe, VRAM is linear in context, and a profile happens on every `check`, every `run`
+  and every few seconds of the dashboard. So each probe now files what the model occupied at
+  that window, and once three windows above 8K have been seen the rate is the slope of a line
+  fitted through them. That is exactly how the derivation's own validation table was built,
+  by hand, with curl; `pharos/vram.py` does it for free.
+
+  It reproduces the hand measurement it replaces. Three ordinary profiles at 8K, 16K and 32K
+  against `qwen3.5-9b-heretic` fitted **32.23 MiB/1K** — the same figure to two decimal places
+  as the validation table arrived at with curl, and 0.01% off it. On `qwen3.5:9b`, a hybrid
+  stack that publishes too little to derive from and was therefore stuck on the constant, the
+  same three windows gave 33.20. Both are labelled `measured here` and print the windows
+  behind them.
+
+- **A measurement outranks a derivation**, which is not the obvious order and is the one the
+  numbers argue for. Derivation is exact arithmetic over published metadata, but it counts the
+  cache and nothing else, and on all three architectures it was validated against it read 1-4%
+  *under* what the card actually gave up — llama.cpp allocates per-token scratch outside the
+  cache proper. Reading low overstates headroom, which is the one direction this figure must
+  not be wrong in. Where both exist, both are printed: agreeing is worth seeing and disagreeing
+  is worth more.
+
+- **Four things stop a measurement from existing at all**, and each one is a refusal rather than
+  a smaller number: fewer than three windows, no 8K of span between the lowest and highest, a
+  model `/api/ps` does not report as fully resident (`size_vram != size` — a partly offloaded
+  model's VRAM does not move with context in a way worth fitting), and a changed digest, since
+  a model re-pulled under one tag can be a different file with a different cache. A slope that
+  comes out negative or outside 1-1000 MiB/1K is discarded too: something other than the cache
+  moved between those readings.
+
+- **The fit is honest about its own shape.** The first live run turned up something worth
+  recording: `qwen3.5:9b` measured 33.20 MiB/1K from 8K to 32K — exactly, to the byte, across
+  two intervals — and then 28.56 from 32K to 64K. The curve is piecewise linear, not linear,
+  and one straight line describes neither piece exactly. It is still one straight line: the
+  bend is downward, because a fixed allocation is amortising over more tokens, and a rate
+  fitted slightly high spends the headroom estimate too fast, which is the direction this
+  number is allowed to be wrong in. Fitting only the top segment would answer the marginal
+  question more exactly and would do it from two points, which is the shortcut the three-point
+  rule exists to refuse. The table is in `pharos/vram.py` and pinned by a test.
+
+`kv_rate_derived: bool` becomes `kv_rate_source: "measured" | "derived" | "configured"`, since
+there are three answers now and a bool cannot name three things. `vram_memory_file`
+(`pharos_vram.json`) is the store: a window size and a byte total per model, gitignored, and
+safe to delete — ordinary use re-measures it.
+
+## v1.0.7 — "What the run itself left behind"
+
+An end-to-end pass against a live backend — profiler, proxy, dashboard, `check`, `split` and
+two real runs that wrote files. Six defects, four of them in the first five minutes of using
+it the way the README says to.
+
+- **`--dry-run` made the very next `pharos run` refuse to start.** The dry run writes
+  `pharos.log` into the workspace, `git_guard` counted it as the user's uncommitted work, and
+  the run stopped with *"Commit or stash them first"* — blaming the user for a file Pharos had
+  just written. Reproduced from a clean repository on the first attempt.
+
+  `own_paths` has always computed which files are ours, from configuration rather than by
+  guessing at what a Pharos file looks like; the guard simply never asked. It does now, and so
+  does `changed_files`, which was reporting *"3 file(s) changed on disk"* for a run that
+  changed two and handing the `.log` to the syntax verifier, which duly reported a written file
+  in a format it could not parse. The guard also reads `--untracked-files=all`: git collapses
+  an untracked folder to `dir/`, which no per-file exclusion can match and which understates a
+  hundred stray files as one change.
+
+- **A task that fit in one window had no coverage denominator, and printed a bold green DONE.**
+  An undivided run carries no per-part file list, so `planned_files` was empty and the
+  scorecard said *"one unrestricted part; nothing to measure coverage against"* — for the
+  commonest case there is. Observed live: a run naming two files touched one and reported DONE.
+
+  The denominator was never missing. The prompt named the files and the pre-flight resolved
+  them, so an unscoped run is now scored against `scoped_display_names(report)` — deliberately
+  the same list the splitter packs from, so a divided run and an undivided one cannot drift
+  into being scored against two different things. It also gives the syntax baseline something
+  to record, which an unscoped run previously did without. A text split names no files, finds
+  no denominator, and is scored exactly as before.
+
+- **`pharos run --dry-run --json` wrote nothing at all and exited 0.** The human table goes to
+  stderr under `--json`, and the dry-run branch returned before reaching any payload, so a CI
+  step piping into `jq` got a parse error from a command that had succeeded. It now emits the
+  plan, which is the answer to *"what would this run do?"* without running it.
+
+- **Long paths wrapped through the middle of a directory name.** A workspace under
+  `AppData\Local\Temp\pharos\<uuid>\…` came out split across three lines through the uuid and
+  could not be copied out of the terminal. `shorten_path` drops the middle rather than the end,
+  because the leaf is the part a reader is looking for, and uses `~` where it applies.
+
+- **The drift line contradicted itself.** It shouted *"short by 276 tokens, past the 256-token
+  margin"* in yellow while noting, dimly, *"every request corrected"* — both true, and together
+  useless. When the remembered template cost covers the shortfall and nothing went out
+  uncorrected, no ceiling was ever enforced against a number below the real prompt, so it now
+  says that instead of raising an alarm about a risk that was already handled.
+
+- **`docs/capture_dashboard.py` was not reproducible, and the README told you to run it.** It
+  set `num_predict` and never `num_ctx`, so the backend loaded whatever it liked — 4,096 here —
+  and the regenerated shot read *"loaded 4,096 (1.6%)"* under a caption, alt text and body
+  promising 32,768 (12.5%). The window is pinned now.
+
+Two smaller things: the plan table says that parts after the first include room for the
+hand-off they arrive with, so two parts holding near-identical files no longer show projections
+that differ by half without explanation; and a check excerpt no longer ends on ruff's bare `|`
+diagram opener when the cut has already removed the diagram under it.
+
+Nothing above changes what the proxy does, and the four measurements that were checked against
+the hardware all held: the KV fallback for a hybrid SSM stack measured 28.6 MiB/1K against a
+configured 33 — conservative, in the safe direction; the estimate ran a flat ~10 tokens under
+the backend at every conversation size, which is the fixed-offset claim the template memory is
+built on; and the template memory took `exposed_requests` from 2 to 0 between two runs.
+
+## v1.0.6 — "One version"
+
+No behaviour changed. The front page stopped being a history.
+
+- **The README describes what Pharos is, not the order its tiers arrived in.** Four
+  release-numbered headings (`(v0.2 "Warn")`, `(v0.3 "Divide")`), a `**Status:**` line and 24
+  version mentions in the prose (*"From v0.6…"*, *"new in v1.0"*, *"Until v1.0 the README
+  said…"*) meant a first-time reader had to reconstruct the product from its release order.
+  All of it is gone; `CHANGELOG.md` was always the release history and now it is the only one.
+  Same features, same measurements, 898 lines down to 766, and in one voice.
+
+- **Two things it never documented.** `--exclude` has been on both `pharos check` and
+  `pharos run` and appeared on neither page, and `max_files_per_part` — the knob that decides
+  how a run is divided — was in `PharosConfig` but not in `pharos.toml.example`, so the one
+  value most worth tuning was invisible to anyone editing their config. Both are documented,
+  and a test now fails if a `pharos run` flag exists that the README does not mention.
+
+- **The test that enforced the old shape is replaced by one that enforces the new.** It used
+  to assert the README carried a status line matching `__version__`, and it would have failed
+  this release for the right reason under the wrong rule. It now asserts the opposite: no
+  status line, no release-numbered headings, no prose dating a feature to a version.
+
+- **Comments stopped narrating the release they were written in.** Thirty-five version
+  references across eighteen modules said when a line arrived rather than what it does. One was
+  actively wrong: `pharos/agent/__init__.py` still promised that "history compaction is out of
+  scope here", which `--compact` has contradicted since v1.0. The one version string left in
+  the source is the false positive `preflight/extract.py` tests itself against.
+
+- **`config.py` was 57% comment, and most of it was `pharos.toml.example` retyped.** The
+  measurements behind every default live in the example file, which is the one a user edits.
+  The module now carries the invariant a code reader needs — that `handoff_ledger` *shares*
+  `handoff_reserve` rather than adding to it, that an unset `num_ctx` means measure what is
+  loaded rather than change it — and points at the example for the reasoning. One copy of each
+  explanation instead of two drifting ones.
+
+- **`run_task` was 443 lines.** Five self-contained phases lift out of it as named steps —
+  taking the baseline, choosing the route, seeding the template memory, resolving what changed
+  on disk, folding this run's drift back in. The execution loop is untouched. 374 lines, and
+  each phase now readable without holding the other four.
+
+- **Removed `workspace_for`**, a one-line wrapper nothing has called.
+
 ## v1.0.5 — "An edit that says where it landed"
 
 Why two parts ran out of window, from the run in §27. It was not the size of the task.

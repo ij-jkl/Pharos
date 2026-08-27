@@ -91,8 +91,8 @@ async def _run(config: PharosConfig) -> None:
 def main() -> None:
     """Console-script entry point: bare `pharos` runs the TUI; `pharos check` pre-flights.
 
-    Subcommand dispatch happens before any TUI import cost is paid, and the bare invocation
-    is untouched — pointing a coding agent at the proxy works exactly as it did in v0.1.
+    Subcommand dispatch happens before any TUI import cost is paid, and leaves the bare
+    invocation untouched: pointing a coding agent at the proxy is unaffected by any of it.
     """
     # The unknown-argument message below carries an em dash, so even the error path needs a
     # stream that can encode it.

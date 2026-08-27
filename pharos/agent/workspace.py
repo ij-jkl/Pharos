@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Collection
 from datetime import datetime
 from pathlib import Path
+
+from pharos.paths import normalise_display
 
 # Never readable by a run, whatever the scope says: a model that asks for these is either
 # confused or being steered, and neither case has a good outcome. Matched on any path
@@ -190,13 +193,40 @@ def current_branch(root: Path) -> str | None:
     return sha.stdout.strip() or None if sha.returncode == 0 else None
 
 
-def git_guard(root: Path, *, create_branch: bool = True) -> str | None:
+def _is_ours(key: str, ignore: Collection[str]) -> bool:
+    """Exact match, or sitting under an ignored directory -- the audit's rule, verbatim."""
+    return key in ignore or any(key.startswith(f"{prefix}/") for prefix in ignore)
+
+
+def _porcelain_path(line: str) -> str:
+    """The path out of one ``git status --porcelain`` line.
+
+    A rename reads ``R  old -> new``; the new name is the one on disk. Git quotes a path
+    holding unusual characters, and a quoted form simply will not match an ignore key --
+    which fails towards refusing the run rather than towards writing over somebody's work.
+    """
+    path = line[3:].strip()
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    return normalise_display(path.strip('"'))
+
+
+def git_guard(
+    root: Path, *, create_branch: bool = True, ignore: Collection[str] = ()
+) -> str | None:
     """Verify the tree is clean and move the run onto its own branch. Returns the branch name.
 
     Raises GitGuardError rather than proceeding, in every ambiguous case. The agent is about
     to overwrite files with model output; "you can always git diff it" is the entire safety
     argument, and it is false the moment uncommitted work is already in the tree — a bad run
     would then be indistinguishable from the user's own changes.
+
+    ``ignore`` names paths that are Pharos's own -- see ``pharos.agent.audit.own_paths``,
+    which computes them from configuration rather than guessing at what a Pharos file looks
+    like. Without it the run's own log, written into the workspace by the pre-flight, counts
+    as the user's uncommitted work: `--dry-run` then leaves a tree that the very next
+    `pharos run` refuses to start on, blaming the user for a file Pharos wrote. The audit
+    has always excluded these; the guard asking the same question deserves the same answer.
 
     ``create_branch=False`` keeps the cleanliness check and skips the branch, for a caller
     that has already isolated the work (a throwaway clone, a worktree, CI).
@@ -205,13 +235,19 @@ def git_guard(root: Path, *, create_branch: bool = True) -> str | None:
     if probe.returncode != 0:
         raise NotARepository(f"{root} is not a git repository")
 
-    status = _git(root, "status", "--porcelain")
+    # `-uall` lists untracked files one by one instead of collapsing a directory to `dir/`.
+    # Two reasons: an ignore key naming a path inside one of ours cannot match a collapsed
+    # parent, and a whole untracked folder reported as "1 uncommitted change" understates
+    # what the user is being asked to deal with. Ignored files are still ignored either way.
+    status = _git(root, "status", "--porcelain", "--untracked-files=all")
     if status.returncode != 0:
         raise GitGuardError(f"git status failed: {status.stderr.strip()}")
-    if status.stdout.strip():
-        changed = len(status.stdout.strip().splitlines())
+    dirty = [line for line in status.stdout.splitlines() if line.strip()]
+    if ignore:
+        dirty = [line for line in dirty if not _is_ours(_porcelain_path(line), ignore)]
+    if dirty:
         raise GitGuardError(
-            f"the working tree has {changed} uncommitted change(s). Commit or stash them "
+            f"the working tree has {len(dirty)} uncommitted change(s). Commit or stash them "
             f"first: a run's edits have to be separable from yours, or reviewing the diff "
             f"afterwards tells you nothing."
         )
@@ -226,9 +262,16 @@ def git_guard(root: Path, *, create_branch: bool = True) -> str | None:
     return branch
 
 
-def changed_files(root: Path) -> list[str]:
-    """Paths the run has modified, for the closing report. Empty when git is unavailable."""
-    status = _git(root, "status", "--porcelain")
+def changed_files(root: Path, *, ignore: Collection[str] = ()) -> list[str]:
+    """Paths the run has modified, for the closing report. Empty when git is unavailable.
+
+    ``ignore`` excludes Pharos's own files, for the same reason ``git_guard`` does: the run's
+    log lives in the workspace, and counting it here reported "3 file(s) changed on disk" for
+    a run that changed two -- and handed the .log to the syntax verifier, which then reported
+    a written file in a format it could not parse.
+    """
+    status = _git(root, "status", "--porcelain", "--untracked-files=all")
     if status.returncode != 0:
         return []
-    return [line[3:].strip() for line in status.stdout.splitlines() if line.strip()]
+    paths = [_porcelain_path(line) for line in status.stdout.splitlines() if line.strip()]
+    return [path for path in paths if not _is_ours(path, ignore)]

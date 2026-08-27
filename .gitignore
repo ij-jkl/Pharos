@@ -34,6 +34,8 @@ HANDOFF.md
 # Per-machine calibration data written by the proxy (token counts only, never text)
 pharos_observations.json
 pharos_templates.json
+# Per-machine VRAM readings (a window size and a byte total per model)
+pharos_vram.json
 
 # Model weights (e.g. a GGUF pulled for offline tokenizer tests) — never commit these
 *.gguf
