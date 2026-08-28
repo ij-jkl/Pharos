@@ -6,6 +6,45 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.4 — "Show it, then say it"
+
+No behaviour changed. The front page did.
+
+- **The README was 798 lines of reasoning and one picture.** Everything in it was true and
+  almost none of it was the first thing a reader needs, which is: paste a prompt too big for
+  your card at your own project and the work still gets done. It is now a third of the length,
+  built around that one path — install, point it at a project, paste, watch it iterate — with
+  the design arguments compressed to the sentence each one earns and the measurements moved to
+  a benchmarks section at the end, where a reader who wants numbers can find all of them
+  together.
+
+- **`docs/capture_cli.py` takes the CLI shots the README now embeds**, the same way
+  `capture_dashboard.py` takes the dashboard: by running the real thing. It builds a 22-module
+  fixture project that formats with `%`, gives it a 13-test suite, a clean `ruff` baseline and
+  a git repository, writes a `pharos.toml` beside it at an 8,192-token window, and then runs
+  `check`, `split` and `run` against it as ordinary subprocesses. What the commands printed is
+  what the images show, exit codes included, and the untrimmed transcript of each is written to
+  `docs/shot-*.txt` beside the image it came from.
+
+  One thing is forced and it is not a number: Rich writes ANSI escapes to a terminal and not to
+  a pipe, and on Windows a redirected stream is detected as a legacy console and gets no colour
+  at all, so the child process starts with `detect_legacy_windows` pinned to False. That is a
+  lie told to Rich about where its output is going, and it is the only one.
+
+  The run shot is of a run that went badly, which is the point: 68% coverage, three files left
+  unparseable with the parts that broke them named, one part dead on a tool call the backend
+  could not parse, a clean audit, `FAILED`, exit 1 — and 8,856 tokens reclaimed by compaction
+  across nine parts that would otherwise have stopped at their ceiling. A tool whose front page
+  only shows it succeeding is advertising, not documentation.
+
+- **A test now fails if the README embeds an image the repository does not hold.** Generated
+  files in `docs/` are exactly what a cleanup sweep removes without anyone noticing until the
+  front page is a row of broken frames.
+
+- `pharos.toml.example` described `target_folder` as the root `pharos check` resolves against.
+  It is also the tree `run` writes to and audits, which is the whole reason the README can tell
+  you to point Pharos at a project and leave it where it is.
+
 ## v1.1.3 — "Names that are not files"
 
 I threw twenty-six escape shapes at the path containment `pharos run` relies on — parent
