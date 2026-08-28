@@ -2625,35 +2625,62 @@ did, through `planned_files`, invisibly.
 
 ### Measured, the same prompt on the same fixture
 
-| | before the fix | after |
-|---|---|---|
-| parts planned / run | 13 / **11** | 13 / **13** (part 7 failed, the rest ran) |
-| repair parts | 0 (skipped after a failure) | 4 |
-| coverage | 68% (17 of 25) | **84%** (21 of 25) · the plan alone 72% |
-| the misses | 8 files, 3 of them never opened | 4 files, **all four** opened and left alone |
-| compaction | 8,856 tokens over 9 parts | 6,370 over 6 |
-| hand-offs | 10 of 10 | 8 of 12, 3 thin |
-| drift | 0.90–1.03x over 112 requests | 0.89–1.03x over 129 |
-| audit | clean | clean |
-| verdict | `FAILED`, exit 1 | `FAILED`, exit 1 |
-| wall time | 22m | 25m |
+| | before the fix | after | and again, with the peak fixed |
+|---|---|---|---|
+| parts planned / run | 13 / **11** | 13 / **13** (part 7 failed, the rest ran) | 13 / **13** |
+| repair parts | 0 (skipped after a failure) | 4 | 1, and it is the one that failed |
+| coverage | 68% (17 of 25) | **84%** (21 of 25) · plan alone 72% | **88%** (22 of 25) · plan alone 84% |
+| the misses | 8 files, 3 of them never opened | 4 files, all four opened and left alone | 3 files, all three opened and left alone |
+| compaction | 8,856 tokens over 9 parts | 6,370 over 6 | 4,622 over 6 |
+| hand-offs | 10 of 10 | 8 of 12, 3 thin | 10 of 12, 2 thin |
+| headroom | 100% | **104%** (the defect below) | **95%** |
+| drift | 0.90–1.03x over 112 requests | 0.89–1.03x over 129 | 0.89–1.01x over 118 |
+| audit | clean | clean | clean |
+| verdict | `FAILED`, exit 1 | `FAILED`, exit 1 | `FAILED`, exit 1 |
+| wall time | 22m | 25m | 20m |
 
 The verdict is unchanged on purpose: **a failed part still fails the run.** What changed is that
 six more parts got to try, four `__init__.py` files that nobody had looked at are now four that
 a part opened and correctly left alone, and the difference between those two facts is the whole
 reason `untouched_but_examined` exists.
 
-### Not fixed, recorded: headroom read 104%
+### ☑ Closed: headroom read 104%
 
-The second run reports `headroom 104% of a part's ceiling, at the worst part`. Peak over
-ceiling is a fraction that should not exceed 1, so either the ceiling moved under a part that
-compacted or a single request is being measured against a ceiling computed before it. It is a
-reporting figure, it is on the safe side (it overstates pressure rather than hiding it), and
-nothing else depends on it. Left as found, and written down here rather than explained.
+The second run reported `headroom 104% of a part's ceiling, at the worst part`. Peak over
+ceiling is a fraction of a limit that by construction cannot be exceeded — the guarantee is
+that nothing goes on the wire until it has been proven to fit, and the requests themselves
+were fine.
+
+The **peak** was the problem, and it was one line in the wrong place:
+
+```python
+while steps < _MAX_STEPS:
+    projected = self._projected()
+    peak = max(peak, projected)      # <- here
+    ...compact if over the ceiling...
+    ...end the part if still over...
+```
+
+The top of the loop is the one moment a conversation is legitimately over the ceiling: a tool
+result has just been appended and neither of the two checks that undo that has run yet. So the
+high-water mark included a state that was never sent, and the scorecard then divided it by what
+may be sent. Both readings were correct and the ratio between them was meaningless.
+
+The peak is now taken past both checks, immediately before the request goes out — the largest
+conversation the part *actually sent*, which is what the line always claimed. The excursion is
+not lost: it is what the compaction and hand-off lines report, by name and in tokens, at the
+moment it happens. `test_the_peak_never_exceeds_the_ceiling_it_is_reported_against` pins it,
+because a reader uses this number to decide whether the next slightly larger file breaks the
+run.
+
+The third run is the one in the README, and it says something the first two could not: the
+failure landed on the **repair part** this time, with all thirteen planned parts done. Same
+model, same prompt, same fixture — the malformed tool call is a property of the model, not of
+any particular part.
 
 ### What these runs do NOT establish
 
-Coverage went 68% → 84% across two runs of one prompt, and six more parts ran in the second
-because the first stopped early. That is the fix working as designed; it is not a measurement
-of how much the fix is worth. Two runs of one task against one model cannot separate it from
-the roll of the dice, and §28 is the standing warning about exactly this.
+Coverage went 68% → 84% → 88% across three runs of one prompt, and six more parts ran in the
+second because the first stopped early. That is the fix working as designed; it is not a
+measurement of how much the fix is worth. Three runs of one task against one model cannot
+separate it from the roll of the dice, and §28 is the standing warning about exactly this.

@@ -1,77 +1,75 @@
 
 [1;36m  Pharos run[0m  [2mqwen3.[0m[1;2;92m5:9b[0m[2m · exact · window [0m[1;2;36m8[0m[2m,[0m[1;2;36m192[0m
-[2m  ~\AppData\Local\Temp\pharos-shots-19slcxeu[0m
+[2m  ~\AppData\Local\Temp\pharos-shots-u5irx8d9[0m
 [2m  divided into [0m[1;2;36m13[0m[2m parts of ≤ [0m[1;2;36m2[0m[2m,[0m[1;2;36m811[0m[2m tokens[0m
 [33m  grouped by position[0m [2m· the proposal was rejected — its file list did not match the scope — it [0m
 [2mdropped shop\notifications\digest.py, shop\notifications\dispatch.py, shop\shipping\parcels.py and [0m[1;2;36m2[0m[2m [0m
 [2mmore[0m
 
-  [32m✓[0m part 1/13     [32m2/2[0m   [2m3 rnd[0m [2merrors.py, money.py                                                    [0m
-  [33m~[0m part 2/13     [33m1/2[0m   [2m5 rnd[0m [2mcatalogue.py                                                           [0m
-  [32m✓[0m part 3/13     [32m2/2[0m   [2m4 rnd[0m [2mpayments.py, checkout.py                                               [0m
+  [32m✓[0m part 1/13     [32m2/2[0m   [2m7 rnd[0m [2merrors.py, money.py                                                    [0m
+  [32m✓[0m part 2/13     [32m2/2[0m   [2m7 rnd[0m [2mcatalogue.py, orders.py                                                [0m
+  [32m✓[0m part 3/13     [32m2/2[0m   [2m5 rnd[0m [2mpayments.py, checkout.py                                               [0m
   [32m✓[0m part 4/13     [32m2/2[0m   [2m9 rnd[0m [2mdiscounts.py, rates.py                                                 [0m
-  [32m✓[0m part 5/13     [32m2/2[0m   [2m5 rnd[0m [2minventory.py, calculator.py                                            [0m
-  [32m✓[0m part 6/13     [32m2/2[0m   [2m7 rnd[0m [2mcustomers.py, csv_export.py                                            [0m
-  [31m✗[0m part 7/13     [31m1/2[0m   [2m3 rnd[0m [2mbackend call failed: ValueError: XML syntax error on line 87:          [0m
-                              [2munexpected EOF                                                         [0m
-  [33m~[0m part 8/13     [33m1/2[0m   [2m8 rnd[0m [2mlegacy_invoice.py                                                      [0m
-  [32m✓[0m part 9/13     [32m2/2[0m   [2m9 rnd[0m [2mquotes.py, tracking.py                                                 [0m
-  [32m✓[0m part 10/13    [32m2/2[0m   [2m4 rnd[0m [2mexemptions.py, dispatch.py                                             [0m
-  [33m~[0m part 11/13    [33m1/2[0m   [2m9 rnd[0m [2mhit the window ceiling                                                 [0m
-  [33m✗[0m part 12/13    [33m0/2[0m   [2m2 rnd[0m [2mwrote nothing                                                          [0m
-  [33m✗[0m part 13/13    [33m0/1[0m   [2m2 rnd[0m [2mwrote nothing                                                          [0m
-  [32m✓[0m repair 1      [32m2/2[0m  [2m11 rnd[0m [2morders.py, parcels.py                                                  [0m
-  [33m~[0m repair 2      [33m1/2[0m   [2m9 rnd[0m [2mcarriers.py                                                            [0m
-  [33m✗[0m repair 3      [33m0/2[0m   [2m3 rnd[0m [2mwrote nothing                                                          [0m
-  [33m✗[0m repair 4      [33m0/1[0m   [2m1 rnd[0m [2mwrote nothing                                                          [0m
+  [32m✓[0m part 5/13     [32m2/2[0m   [2m4 rnd[0m [2minventory.py, calculator.py                                            [0m
+  [33m~[0m part 6/13     [33m1/2[0m   [2m5 rnd[0m [2mcustomers.py                                                           [0m
+  [33m~[0m part 7/13     [33m1/2[0m   [2m6 rnd[0m [2mreporting.py                                                           [0m
+  [33m~[0m part 8/13     [33m1/2[0m  [2m12 rnd[0m [2mhit the window ceiling                                                 [0m
+  [32m✓[0m part 9/13     [32m2/2[0m   [2m6 rnd[0m [2mquotes.py, tracking.py                                                 [0m
+  [33m~[0m part 10/13    [33m1/2[0m   [2m9 rnd[0m [2mexemptions.py                                                          [0m
+  [32m✓[0m part 11/13    [32m2/2[0m   [2m6 rnd[0m [2mdigest.py, __init__.py                                                 [0m
+  [32m✓[0m part 12/13    [32m2/2[0m  [2m11 rnd[0m [2m__init__.py, __init__.py                                               [0m
+  [32m✓[0m part 13/13    [32m1/1[0m   [2m2 rnd[0m [2m__init__.py                                                            [0m
+  [31m✗[0m repair 1      [31m1/2[0m   [2m7 rnd[0m [2mbackend call failed: ValueError: XML syntax error on line 2: element   [0m
+                              [2m<function> closed by </parameter>                                      [0m
 
   [1;31m╭─[0m[1;31m Scorecard [0m[1;31m────────────────────────────────────────────────────────────────────────────────────[0m[1;31m─╮[0m
   [1;31m│[0m                                                                                                 [1;31m│[0m
   [1;31m│[0m  [1;31mFAILED[0m        [2ma part could not finish[0m                                                          [1;31m│[0m
-  [1;31m│[0m  coverage      [33m████████████████████[0m[2m░░░░[0m  84%  [2m21 of 25 files[0m                                    [1;31m│[0m
-  [1;31m│[0m                [2muntouched  shop/__init__.py[0m                                                      [1;31m│[0m
-  [1;31m│[0m                [2muntouched  shop/notifications/__init__.py[0m                                        [1;31m│[0m
-  [1;31m│[0m                [2muntouched  shop/shipping/__init__.py[0m                                             [1;31m│[0m
-  [1;31m│[0m                [2muntouched  shop/tax/__init__.py[0m                                                  [1;31m│[0m
-  [1;31m│[0m  repair        4 extra part(s) rescued 3 file(s) · the plan alone reached 72%                   [1;31m│[0m
-  [1;31m│[0m  continuity    [33m![0m 8/12 hand-offs [2m· largest 256 of 500 reserved[0m                                   [1;31m│[0m
-  [1;31m│[0m                [33m3 part(s) changed files and reported almost nothing[0m [2m· Pharos carried 21 changed[0m  [1;31m│[0m
+  [1;31m│[0m  coverage      [33m█████████████████████[0m[2m░░░[0m  88%  [2m22 of 25 files[0m                                    [1;31m│[0m
+  [1;31m│[0m                [2muntouched  shop/notifications/dispatch.py[0m                                        [1;31m│[0m
+  [1;31m│[0m                [2muntouched  shop/shipping/carriers.py[0m                                             [1;31m│[0m
+  [1;31m│[0m                [2muntouched  shop/shipping/parcels.py[0m                                              [1;31m│[0m
+  [1;31m│[0m  repair        1 extra part(s) rescued 1 file(s) · the plan alone reached 84%                   [1;31m│[0m
+  [1;31m│[0m  continuity    [33m![0m 10/12 hand-offs [2m· largest 219 of 500 reserved[0m                                  [1;31m│[0m
+  [1;31m│[0m                [33m2 part(s) changed files and reported almost nothing[0m [2m· Pharos carried 21 changed[0m  [1;31m│[0m
   [1;31m│[0m                [2mfile(s) forward regardless[0m                                                       [1;31m│[0m
-  [1;31m│[0m                [2m8 of 12 had to be asked for · the rest were volunteered[0m                          [1;31m│[0m
-  [1;31m│[0m                [33m1 revisit(s)[0m [2ma part reached for work another part owned[0m                          [1;31m│[0m
-  [1;31m│[0m  wandering     [2m1 path(s) in no part's scope · refused, nothing touched[0m                          [1;31m│[0m
-  [1;31m│[0m  damage        [31mpart 2 broke ruff check .[0m                                                        [1;31m│[0m
-  [1;31m│[0m                  [2m[1m[91mF821 [0m[1mUndefined name `name`[0m[0m                                     [1;31m│[0m
-  [1;31m│[0m                [31mpart 2 broke pytest -q[0m                                                           [1;31m│[0m
-  [1;31m│[0m                  [2m[32m.[0m[32m.[0m[31mF[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m…[0m  [1;31m│[0m
-  [1;31m│[0m                [31mpart 3 broke shop/checkout.py[0m                                                    [1;31m│[0m
-  [1;31m│[0m                  [2munexpected indent (<unknown>, line 23)[0m                                         [1;31m│[0m
-  [1;31m│[0m                [31mpart 4 broke shop/discounts.py[0m                                                   [1;31m│[0m
+  [1;31m│[0m                [2m5 of 12 had to be asked for · the rest were volunteered[0m                          [1;31m│[0m
+  [1;31m│[0m  wandering     [2m2 path(s) in no part's scope · refused, nothing touched[0m                          [1;31m│[0m
+  [1;31m│[0m  damage        [31mpart 4 broke shop/discounts.py[0m                                                   [1;31m│[0m
   [1;31m│[0m                  [2munterminated string literal (detected at line 22) (<unknown>, line 22)[0m         [1;31m│[0m
+  [1;31m│[0m                [31mpart 4 broke ruff check .[0m                                                        [1;31m│[0m
+  [1;31m│[0m                  [2m[1m[91minvalid-syntax: [0m[1mmissing closing quote in string literal[0m[0m        [1;31m│[0m
+  [1;31m│[0m                [31mpart 6 broke shop/customers.py[0m                                                   [1;31m│[0m
+  [1;31m│[0m                  [2mclosing parenthesis ')' does not match opening parenthesis '[' (<unknown>, [0m    [1;31m│[0m
+  [1;31m│[0m                [2mline 37)[0m                                                                         [1;31m│[0m
+  [1;31m│[0m                [31mpart 7 broke shop/reporting.py[0m                                                   [1;31m│[0m
+  [1;31m│[0m                  [2minvalid syntax (<unknown>, line 36)[0m                                            [1;31m│[0m
   [1;31m│[0m                [2m... 5 more[0m                                                                       [1;31m│[0m
-  [1;31m│[0m  headroom      [32m████████████████████████[0m  104%  [2mof a part's ceiling, at the worst part[0m           [1;31m│[0m
-  [1;31m│[0m  drift         0.89-1.03x [2mover 129 requests[0m · [33mshort by 326 tokens, past the 256-token margin[0m [2m·[0m  [1;31m│[0m
-  [1;31m│[0m                [2m17 request(s) went out uncorrected[0m                                               [1;31m│[0m
-  [1;31m│[0m  convergence   [2m10 part(s) needed a reminder, 1 stopped early[0m                                    [1;31m│[0m
-  [1;31m│[0m  compaction    6,370 tokens reclaimed [2macross 6 part(s) · tool results those parts had finished[0m  [1;31m│[0m
+  [1;31m│[0m  headroom      [33m███████████████████████[0m[2m░[0m  95%  [2mof a part's ceiling, at the worst part[0m            [1;31m│[0m
+  [1;31m│[0m  drift         0.89-1.01x [2mover 118 requests[0m · [33mshort by 314 tokens, past the 256-token margin[0m [2m·[0m  [1;31m│[0m
+  [1;31m│[0m                [2m14 request(s) went out uncorrected[0m                                               [1;31m│[0m
+  [1;31m│[0m  convergence   [2m3 part(s) needed a reminder, 1 stopped early[0m                                     [1;31m│[0m
+  [1;31m│[0m  compaction    4,622 tokens reclaimed [2macross 6 part(s) · tool results those parts had finished[0m  [1;31m│[0m
   [1;31m│[0m                [2mwith, stubbed rather than dropped[0m                                                [1;31m│[0m
-  [1;31m│[0m  unchanged     4 scoped file(s) nobody wrote — 4 opened and left alone  [2mshop/__init__.py, [0m      [1;31m│[0m
-  [1;31m│[0m                [2mshop/notifications/__init__.py, shop/shipping/__init__.py, shop/tax/__init__.py[0m  [1;31m│[0m
-  [1;31m│[0m  audit         [32m✓[0m [2m21 file change(s), every one of them claimed by the part that made it[0m          [1;31m│[0m
+  [1;31m│[0m  unchanged     3 scoped file(s) nobody wrote — 3 opened and left alone                          [1;31m│[0m
+  [1;31m│[0m                [2mshop/notifications/dispatch.py, shop/shipping/carriers.py, [0m                      [1;31m│[0m
+  [1;31m│[0m                [2mshop/shipping/parcels.py[0m                                                         [1;31m│[0m
+  [1;31m│[0m  audit         [32m✓[0m [2m22 file change(s), every one of them claimed by the part that made it[0m          [1;31m│[0m
   [1;31m│[0m  verification  [31m3 check(s) this run broke[0m  [2mpassed before, failing now[0m                            [1;31m│[0m
   [1;31m│[0m                [31m✗[0m syntax                                                                         [1;31m│[0m
-  [1;31m│[0m                    [2mshop/checkout.py: unexpected indent (<unknown>, line 23); [0m                   [1;31m│[0m
-  [1;31m│[0m                [2mshop/csv_export.py: unexpected character after line continuation character [0m      [1;31m│[0m
+  [1;31m│[0m                    [2mshop/csv_export.py: unexpected character after line continuation character [0m  [1;31m│[0m
   [1;31m│[0m                [2m(<unknown>, line 11); shop/customers.py: closing parenthesis ')' does not match[0m  [1;31m│[0m
-  [1;31m│[0m                [2mopening parenthesis '[' (<unknown>, line 42); shop/discounts.py: unterminated [0m   [1;31m│[0m
+  [1;31m│[0m                [2mopening parenthesis '[' (<unknown>, line 37); shop/discounts.py: unterminated [0m   [1;31m│[0m
   [1;31m│[0m                [2mstring literal (detected at line 22) (<unknown>, line 22); [0m                      [1;31m│[0m
-  [1;31m│[0m                [2mshop/legacy_invoice.py: f-string: expecting '}', or format specs (<unknown>, [0m    [1;31m│[0m
-  [1;31m│[0m                [2mline 17); shop/reporting.py: closing parenthesis '}' does not match opening [0m     [1;31m│[0m
-  [1;31m│[0m                [2mparenthesis '[' (<unknown>, line 30); shop/shipping/tracking.py: expected an [0m    [1;31m│[0m
-  [1;31m│[0m                [2mindented block after function definition on line 31 (<unknown>, line 31)[0m         [1;31m│[0m
+  [1;31m│[0m                [2mshop/legacy_invoice.py: f-string: expecting '=', or '!', or ':', or '}' [0m         [1;31m│[0m
+  [1;31m│[0m                [2m(<unknown>, line 15); shop/reporting.py: invalid syntax (<unknown>, line 36); [0m   [1;31m│[0m
+  [1;31m│[0m                [2mshop/shipping/tracking.py: expected an indented block after function definition[0m  [1;31m│[0m
+  [1;31m│[0m                [2mon line 31 (<unknown>, line 32); shop/tax/exemptions.py: expected ':' [0m           [1;31m│[0m
+  [1;31m│[0m                [2m(<unknown>, line 19)[0m                                                             [1;31m│[0m
   [1;31m│[0m                [31m✗[0m ruff check .                                                                   [1;31m│[0m
-  [1;31m│[0m                    [2m[1m[91mF821 [0m[1mUndefined name `name`[0m[0m                                   [1;31m│[0m
-  [1;31m│[0m                    [2m[1m[94m-->[0m shop\catalogue.py:18:19[0m                                        [1;31m│[0m
+  [1;31m│[0m                    [2m[1m[91minvalid-syntax: [0m[1mExpected a newline after line continuation[0m      [1;31m│[0m
+  [1;31m│[0m                [2mcharacter[0m[0m                                                                     [1;31m│[0m
+  [1;31m│[0m                    [2m[1m[94m-->[0m shop\csv_export.py:11:34[0m                                       [1;31m│[0m
   [1;31m│[0m                    [2m[1m[94m|[0m[0m                                                                  [1;31m│[0m
   [1;31m│[0m                [31m✗[0m pytest -q                                                                      [1;31m│[0m
   [1;31m│[0m                    [2m============================================== ERRORS [0m                       [1;31m│[0m
@@ -86,22 +84,14 @@
 
   [2m╭─[0m[2m Review — one model's opinion, not a measurement [0m[2m──────────────────────────────────────────────[0m[2m─╮[0m
   [2m│[0m                                                                                                 [2m│[0m
-  [2m│[0m  [31mbug [0m shop/catalogue.py:16  Uses undefined variable 'name' instead of self.name in label        [2m│[0m
-  [2m│[0m  method.                                                                                        [2m│[0m
-  [2m│[0m  [31mbug [0m shop/catalogue.py:29  References _by_sku and stock without defining them or using         [2m│[0m
-  [2m│[0m  self._by_sku/self.stock.                                                                       [2m│[0m
-  [2m│[0m  [31mbug [0m shop/csv_export.py:12  Escaped quotes inside f-string are invalid Python syntax for this  [2m│[0m
-  [2m│[0m  context.                                                                                       [2m│[0m
-  [2m│[0m  [31mbug [0m shop/discounts.py:25  Missing closing parenthesis for conditional string concatenation    [2m│[0m
-  [2m│[0m  in f-string.                                                                                   [2m│[0m
-  [2m│[0m  [31mbug [0m shop/reporting.py:30  Syntax error: f-string contains invalid expression inside curly     [2m│[0m
-  [2m│[0m  braces.                                                                                        [2m│[0m
-  [2m│[0m  [33mrisk[0m shop/customers.py:38  References undefined variable 'c' and self.email in directory       [2m│[0m
-  [2m│[0m  function scope.                                                                                [2m│[0m
-  [2m│[0m  [33mrisk[0m shop/inventory.py:40  Uses invalid format specifier ':d' instead of standard integer      [2m│[0m
-  [2m│[0m  formatting.                                                                                    [2m│[0m
-  [2m│[0m  [33mrisk[0m shop/shipping/quotes.py:24  f-string uses :g format specifier which may not be supported  [2m│[0m
-  [2m│[0m  in all Python versions or contexts.                                                            [2m│[0m
+  [2m│[0m  [31mbug [0m shop/customers.py:29  f-string uses undefined variables 'name' and 'ref' instead of       [2m│[0m
+  [2m│[0m  self.name and self.reference.                                                                  [2m│[0m
+  [2m│[0m  [31mbug [0m shop/reporting.py:19  The line contains a comment claiming the code is wrong and an       [2m│[0m
+  [2m│[0m  incomplete f-string implementation.                                                            [2m│[0m
+  [2m│[0m  [33mrisk[0m shop/csv_export.py:17  Escaping quotes inside f-string may fail if value contains         [2m│[0m
+  [2m│[0m  backslashes or other special characters.                                                       [2m│[0m
+  [2m│[0m  [33mrisk[0m shop/reporting.py:23  A new function 'summary' appears to be defined but lacks any        [2m│[0m
+  [2m│[0m  return statement or body logic.                                                                [2m│[0m
   [2m│[0m  [2m2 finding(s) discarded — they named a file this run did not change, or a line the diff does [0m   [2m│[0m
   [2m│[0m  [2mnot contain[0m                                                                                    [2m│[0m
   [2m│[0m                                                                                                 [2m│[0m
@@ -110,398 +100,360 @@
 [2mbefore it was asked.[0m
 
 
-  [1;36m39[0m[1m [0m[1;35mfile[0m[1m([0m[1ms[0m[1m)[0m[1m changed on disk.[0m
+  [1;36m38[0m[1m [0m[1;35mfile[0m[1m([0m[1ms[0m[1m)[0m[1m changed on disk.[0m
   [2mreview[0m  git diff master
-  [2mundo[0m    git checkout master && git branch -D pharos-run/[1;36m2026[0m-[1;36m08[0m-[1;36m27[0m-[1;36m232946[0m
+  [2mundo[0m    git checkout master && git branch -D pharos-run/[1;36m2026[0m-[1;36m08[0m-[1;36m28[0m-[1;36m002617[0m
 
   [2mPharos checked that it fit and that it ran. Reading the diff is yours.[0m
   [2mRan without the proxy, so the dashboard recorded nothing.[0m
 
 ===== everything below is the live progress written to stderr while the above was being produced =====
 
-[2mworkspace ~\…\Local\Temp\pharos-shots-19slcxeu · log ~\…\pharos-shots-19slcxeu\pharos.log[0m
+[2mworkspace ~\…\Local\Temp\pharos-shots-u5irx8d9 · log ~\…\pharos-shots-u5irx8d9\pharos.log[0m
 [?25l[36m⠋[0m [1;36mworking[0m [2m·[0m starting [2m· 0s in part · 0s total · 0 written · 0 calls[0m
 [2K[36m⠙[0m [1;36mworking[0m [2m·[0m starting [2m· 0s in part · 0s total · 0 written · 0 calls[0m
-[2K[2m  working on branch pharos-run/[0m[1;2;36m2026[0m[2m-[0m[1;2;36m08[0m[2m-[0m[1;2;36m27[0m[2m-[0m[1;2;36m232946[0m
-[36m⠧[0m [1;36mworking[0m [2m·[0m 2026-08-27-232946 [2m· 15s in part · 15s total · 0 written · 0 calls[0m
+[2K[36m⠹[0m [1;36mworking[0m [2m·[0m starting [2m· 0s in part · 0s total · 0 written · 0 calls[0m
+[2K[2m  working on branch pharos-run/[0m[1;2;36m2026[0m[2m-[0m[1;2;36m08[0m[2m-[0m[1;2;36m28[0m[2m-[0m[1;2;36m002617[0m
+[36m⠧[0m [1;36mworking[0m [2m·[0m 2026-08-28-002617 [2m· 15s in part · 15s total · 0 written · 0 calls[0m
 [2K[2m  baseline: ruff check ., pytest -q[0m
-[36m⠧[0m [1;36mworking[0m [2m·[0m baseline: ruff check ., pytest -q [2m· 15s in part · 15s total · 0 written · 0 calls[0m
-[2K[2m  running after every part as well: ruff check ., pytest -q [0m[1;2m([0m[1;2;36m0.[0m[2m7s the baseline took[0m[1;2m)[0m
-[36m⠦[0m [1;36mworking[0m [2m·[0m running after every part as well: ruff check ., pytest -q (0.7s the baseline took) [2m· 15s…[0m
+[36m⠇[0m [1;36mworking[0m [2m·[0m baseline: ruff check ., pytest -q [2m· 15s in part · 15s total · 0 written · 0 calls[0m
+[2K[2m  running after every part as well: ruff check ., pytest -q [0m[1;2m([0m[1;2;36m0.[0m[2m6s the baseline took[0m[1;2m)[0m
+[36m⠦[0m [1;36mworking[0m [2m·[0m running after every part as well: ruff check ., pytest -q (0.6s the baseline took) [2m· 15s…[0m
 [2K[2m  proxy not running — going straight to [0m[2;4;94mhttp://127.0.0.1:11436,[0m[2m so this run will not appear in the [0m
 [2mdashboard[0m
-[36m⠹[0m [1;36mworking[0m [2m·[0m 127.0.0.1:11436, so this run will not appear in the dashboard [2m· 17s in part · 17s total …[0m
+[36m⠙[0m [1;36mworking[0m [2m·[0m 127.0.0.1:11436, so this run will not appear in the dashboard [2m· 17s in part · 17s total …[0m
 [2K[1;36m  part [0m[1;36m1[0m[1;36m of [0m[1;36m13[0m
-[36m⠹[0m [1;36mpart 1/13[0m [2m·[0m starting [2m· 0s in part · 17s total · 0 written · 0 calls[0m
+[36m⠙[0m [1;36mpart 1/13[0m [2m·[0m starting [2m· 0s in part · 17s total · 0 written · 0 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m1[0m [36mread_file shop/errors.py[0m
-[36m⠹[0m [1;36mpart 1/13[0m [2m·[0m errors.py [2m· 4s in part · 22s total · 0 written · 1 calls[0m
+[36m⠋[0m [1;36mpart 1/13[0m [2m·[0m errors.py [2m· 5s in part · 23s total · 0 written · 1 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m1[0m [36mread_file shop/money.py[0m
-[36m⠹[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 4s in part · 22s total · 0 written · 2 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m1[0m [32mwrite_file shop/errors.py[0m
-[36m⠸[0m [1;36mpart 1/13[0m [2m·[0m errors.py [2m· 32s in part · 50s total · 1 written · 3 calls[0m
+[36m⠋[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 5s in part · 23s total · 0 written · 2 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m1[0m [32mreplace_lines shop/errors.py[0m
+[36m⠦[0m [1;36mpart 1/13[0m [2m·[0m errors.py [2m· 38s in part · 56s total · 1 written · 3 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m1[0m [32mreplace_lines shop/money.py[0m
+[36m⠦[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 38s in part · 56s total · 2 written · 4 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m1[0m [36mread_file shop/money.py[0m
+[36m⠋[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 42s in part · 1m00s total · 2 written · 5 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m1[0m [36mread_file shop/money.py[0m
+[36m⠴[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 45s in part · 1m03s total · 2 written · 6 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m1[0m [33mreplace_lines shop/money.py[0m
+[33m⠏[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 51s in part · 1m08s total · 2 written · 7 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m1[0m [36mread_file shop/money.py[0m
+[33m⠼[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 55s in part · 1m13s total · 2 written · 8 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m1[0m [32mwrite_file shop/money.py[0m
-[36m⠼[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 54s in part · 1m12s total · 2 written · 4 calls[0m
+[33m⠼[0m [1;36mpart 1/13[0m [2m·[0m money.py [2m· 1m05s in part · 1m23s total · 3 written · 9 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m1[0m [33mceiling reached — compacted [0m[1;33m360[0m[33m tokens of stale tool results, back to [0m[1;33m6[0m[33m,[0m[1;33m072[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
+[33m⠼[0m [1;36mpart 1/13[0m [2m·[0m ceiling reached — compacted 360 tokens of stale tool results, back to 6,072 of 6,412 [2m·…[0m
 [2K[1;36m  part [0m[1;36m2[0m[1;36m of [0m[1;36m13[0m
-[36m⠦[0m [1;36mpart 2/13[0m [2m·[0m starting [2m· 0s in part · 1m25s total · 2 written · 4 calls[0m
+[33m⠇[0m [1;36mpart 2/13[0m [2m·[0m starting [2m· 0s in part · 1m43s total · 3 written · 9 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m2[0m [36mread_file shop/catalogue.py[0m
-[36m⠼[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 4s in part · 1m29s total · 2 written · 5 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m2[0m [36mread_file shop/orders.py[0m
-[36m⠼[0m [1;36mpart 2/13[0m [2m·[0m orders.py [2m· 4s in part · 1m29s total · 2 written · 6 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m2[0m [2mreply hit the [0m[1;2;36m2[0m[2m,[0m[1;2;36m427[0m[2m-token cap and was cut off[0m
-[36m⠙[0m [1;36mpart 2/13[0m [2m·[0m reply hit the 2,427-token cap and was cut off [2m· 53s in part · 2m19s total · 2 written …[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m2[0m [33mstopped with [0m[1;33m2[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[36m⠙[0m [1;36mpart 2/13[0m [2m·[0m stopped with 2 of 2 file(s) unchanged — asking again (1 of 4) [2m· 53s in part · 2m19s to…[0m
+[33m⠏[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 4s in part · 1m47s total · 3 written · 10 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m2[0m [32mreplace_lines shop/catalogue.py[0m
-[36m⠇[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 1m13s in part · 2m39s total · 3 written · 7 calls[0m
+[33m⠸[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 17s in part · 2m00s total · 4 written · 11 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m2[0m [36mread_file shop/catalogue.py[0m
-[36m⠴[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 1m23s in part · 2m49s total · 3 written · 8 calls[0m
+[33m⠦[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 19s in part · 2m02s total · 4 written · 12 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m2[0m [32mwrite_file shop/catalogue.py[0m
-[36m⠼[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 1m33s in part · 2m58s total · 4 written · 9 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m2[0m [36mread_file shop/catalogue.py[0m
-[36m⠙[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 1m42s in part · 3m08s total · 4 written · 10 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m2[0m [2mreply hit the [0m[1;2;36m318[0m[2m-token cap and was cut off[0m
-[36m⠴[0m [1;36mpart 2/13[0m [2m·[0m reply hit the 318-token cap and was cut off [2m· 1m51s in part · 3m17s total · 4 written …[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m2[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m2[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[36m⠴[0m [1;36mpart 2/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (2 of 4) [2m· 1m51s in part · 3m17s …[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m2[0m [33mceiling reached — compacted [0m[1;33m415[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m789[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠦[0m [1;36mpart 2/13[0m [2m·[0m ceiling reached — compacted 415 tokens of stale tool results, back to 5,789 of 6,412 [2m·…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m2[0m [2mreply hit the [0m[1;2;36m623[0m[2m-token cap and was cut off[0m
-[33m⠹[0m [1;36mpart 2/13[0m [2m·[0m reply hit the 623-token cap and was cut off [2m· 2m06s in part · 3m32s total · 4 written …[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m2[0m [2mBROKE ruff check .: [0m[1;2m[[0m[2m1m[0m[1;2m[[0m[2m91mF821 [0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m1mUndefined name `name`[0m[1;2m[[0m[2m0m[0m
-[33m⠦[0m [1;36mpart 2/13[0m [2m·[0m BROKE ruff check .: [1m[91mF821 [0m[1mUndefined name `name`[0m [2m· 2m20s in part · 3m45s…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m2[0m [2mBROKE pytest -q: [0m
-[2m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m31mF[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m32m.[0m[1;2m[[0m[1;2;36m0[0m[2m…[0m
-[33m⠦[0m [1;36mpart 2/13[0m [2m·[0m BROKE pytest -q: [32m.[0m[32m.[0m[31mF[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.…
+[33m⠋[0m [1;36mpart 2/13[0m [2m·[0m catalogue.py [2m· 30s in part · 2m13s total · 5 written · 13 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m2[0m [36mread_file shop/orders.py[0m
+[33m⠧[0m [1;36mpart 2/13[0m [2m·[0m orders.py [2m· 33s in part · 2m16s total · 5 written · 14 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m2[0m [32mwrite_file shop/orders.py[0m
+[33m⠧[0m [1;36mpart 2/13[0m [2m·[0m orders.py [2m· 44s in part · 2m27s total · 6 written · 15 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m2[0m [33mwrite_file HAND-OFF FROM PART [0m[1;33m2[0m
+[33m⠼[0m [1;36mpart 2/13[0m [2m·[0m write_file HAND-OFF FROM PART 2 [2m· 52s in part · 2m35s total · 6 written · 16 calls[0m
 [2K[1;36m  part [0m[1;36m3[0m[1;36m of [0m[1;36m13[0m
-[33m⠦[0m [1;36mpart 3/13[0m [2m·[0m starting [2m· 0s in part · 3m45s total · 4 written · 10 calls[0m
+[33m⠹[0m [1;36mpart 3/13[0m [2m·[0m starting [2m· 0s in part · 2m43s total · 6 written · 16 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m3[0m [36mread_file shop/payments.py[0m
-[33m⠙[0m [1;36mpart 3/13[0m [2m·[0m payments.py [2m· 4s in part · 3m49s total · 4 written · 11 calls[0m
+[33m⠦[0m [1;36mpart 3/13[0m [2m·[0m payments.py [2m· 4s in part · 2m47s total · 6 written · 17 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m3[0m [32mwrite_file shop/payments.py[0m
+[33m⠹[0m [1;36mpart 3/13[0m [2m·[0m payments.py [2m· 15s in part · 2m58s total · 7 written · 18 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m3[0m [36mread_file shop/checkout.py[0m
-[33m⠙[0m [1;36mpart 3/13[0m [2m·[0m checkout.py [2m· 4s in part · 3m49s total · 4 written · 12 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m3[0m [32mreplace_lines shop/payments.py[0m
-[33m⠦[0m [1;36mpart 3/13[0m [2m·[0m payments.py [2m· 20s in part · 4m06s total · 5 written · 13 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m3[0m [32mreplace_lines shop/checkout.py[0m
-[33m⠦[0m [1;36mpart 3/13[0m [2m·[0m checkout.py [2m· 25s in part · 4m10s total · 6 written · 14 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m3[0m [32mreplace_lines shop/checkout.py[0m
-[33m⠧[0m [1;36mpart 3/13[0m [2m·[0m checkout.py [2m· 48s in part · 4m34s total · 7 written · 15 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m3[0m [2mreply hit the [0m[1;2;36m1[0m[2m,[0m[1;2;36m134[0m[2m-token cap and was cut off[0m
-[33m⠧[0m [1;36mpart 3/13[0m [2m·[0m reply hit the 1,134-token cap and was cut off [2m· 1m13s in part · 4m58s total · 7 writte…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m3[0m [2mBROKE shop/checkout.py: unexpected indent [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m23[0m[1;2m)[0m
-[33m⠼[0m [1;36mpart 3/13[0m [2m·[0m checkout.py: unexpected indent (<unknown>, line 23) [2m· 1m25s in part · 5m10s total · 7 …[0m
+[33m⠋[0m [1;36mpart 3/13[0m [2m·[0m checkout.py [2m· 17s in part · 3m00s total · 7 written · 19 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m3[0m [32mwrite_file shop/payments.py[0m
+[33m⠇[0m [1;36mpart 3/13[0m [2m·[0m payments.py [2m· 27s in part · 3m11s total · 8 written · 20 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m3[0m [32mwrite_file shop/checkout.py[0m
+[33m⠦[0m [1;36mpart 3/13[0m [2m·[0m checkout.py [2m· 37s in part · 3m20s total · 9 written · 21 calls[0m
 [2K[1;36m  part [0m[1;36m4[0m[1;36m of [0m[1;36m13[0m
-[33m⠼[0m [1;36mpart 4/13[0m [2m·[0m starting [2m· 0s in part · 5m10s total · 7 written · 15 calls[0m
+[33m⠴[0m [1;36mpart 4/13[0m [2m·[0m starting [2m· 0s in part · 3m30s total · 9 written · 21 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/discounts.py[0m
-[33m⠇[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 5s in part · 5m15s total · 7 written · 16 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mlist_dir shop/tax[0m
-[33m⠇[0m [1;36mpart 4/13[0m [2m·[0m tax [2m· 5s in part · 5m15s total · 7 written · 17 calls[0m
+[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 5s in part · 3m36s total · 9 written · 22 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/tax/rates.py[0m
-[33m⠦[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 7s in part · 5m18s total · 7 written · 18 calls[0m
+[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 5s in part · 3m36s total · 9 written · 23 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m4[0m [32mreplace_lines shop/discounts.py[0m
-[33m⠴[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 20s in part · 5m30s total · 8 written · 19 calls[0m
+[33m⠙[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 14s in part · 3m45s total · 10 written · 24 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/discounts.py[0m
-[33m⠋[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 22s in part · 5m33s total · 8 written · 20 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mreply hit the [0m[1;2;36m1[0m[2m,[0m[1;2;36m308[0m[2m-token cap and was cut off[0m
-[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m reply hit the 1,308-token cap and was cut off [2m· 50s in part · 6m01s total · 8 written …[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m4[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (1 of 4) [2m· 50s in part · 6m01s to…[0m
+[33m⠴[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 18s in part · 3m49s total · 10 written · 25 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m4[0m [32mreplace_lines shop/discounts.py[0m
+[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 23s in part · 3m54s total · 11 written · 26 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m4[0m [32mreplace_lines shop/discounts.py[0m
+[33m⠧[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 29s in part · 4m00s total · 12 written · 27 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mno room for read_file — compacted [0m[1;2;36m677[0m[2m tokens and retried[0m
+[33m⠧[0m [1;36mpart 4/13[0m [2m·[0m no room for read_file — compacted 677 tokens and retried [2m· 33s in part · 4m04s total ·…[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/discounts.py[0m
+[33m⠧[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 33s in part · 4m04s total · 12 written · 28 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m4[0m [32mwrite_file shop/discounts.py[0m
+[33m⠸[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 47s in part · 4m18s total · 13 written · 29 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m4[0m [33mceiling reached — compacted [0m[1;33m261[0m[33m tokens of stale tool results, back to [0m[1;33m6[0m[33m,[0m[1;33m095[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
+[33m⠼[0m [1;36mpart 4/13[0m [2m·[0m ceiling reached — compacted 261 tokens of stale tool results, back to 6,095 of 6,412 [2m·…[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mno room for read_file — compacted [0m[1;2;36m672[0m[2m tokens and retried[0m
+[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m no room for read_file — compacted 672 tokens and retried [2m· 51s in part · 4m22s total ·…[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/tax/rates.py[0m
-[33m⠼[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 58s in part · 6m09s total · 8 written · 21 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/tax/rates.py[0m
-[33m⠏[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 1m03s in part · 6m14s total · 8 written · 22 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m4[0m [32mreplace_lines shop/tax/rates.py[0m
-[33m⠧[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 1m13s in part · 6m23s total · 9 written · 23 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m4[0m [33mceiling reached — compacted [0m[1;33m677[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m734[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠇[0m [1;36mpart 4/13[0m [2m·[0m ceiling reached — compacted 677 tokens of stale tool results, back to 5,734 of 6,412 [2m·…[0m
+[33m⠸[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 51s in part · 4m22s total · 13 written · 30 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m4[0m [32mwrite_file shop/tax/rates.py[0m
-[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 1m28s in part · 6m39s total · 10 written · 24 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mno room for read_file — compacted [0m[1;2;36m908[0m[2m tokens and retried[0m
-[33m⠋[0m [1;36mpart 4/13[0m [2m·[0m no room for read_file — compacted 908 tokens and retried [2m· 1m32s in part · 6m43s total…[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m4[0m [36mread_file shop/discounts.py[0m
-[33m⠋[0m [1;36mpart 4/13[0m [2m·[0m discounts.py [2m· 1m32s in part · 6m43s total · 10 written · 25 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mreply hit the [0m[1;2;36m573[0m[2m-token cap and was cut off[0m
-[33m⠴[0m [1;36mpart 4/13[0m [2m·[0m reply hit the 573-token cap and was cut off [2m· 1m46s in part · 6m57s total · 10 written…[0m
+[33m⠏[0m [1;36mpart 4/13[0m [2m·[0m rates.py [2m· 1m04s in part · 4m35s total · 14 written · 31 calls[0m
 [2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mBROKE shop/discounts.py: unterminated string literal [0m[1;2m([0m[2mdetected at line [0m[1;2;36m22[0m[1;2m)[0m[2m [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, [0m
 [2mline [0m[1;2;36m22[0m[1;2m)[0m
-[33m⠦[0m [1;36mpart 4/13[0m [2m·[0m discounts.py: unterminated string literal (detected at line 22) (<unknown>, line 22) [2m·…[0m
+[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m discounts.py: unterminated string literal (detected at line 22) (<unknown>, line 22) [2m·…[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m4[0m [2mBROKE ruff check .: [0m[1;2m[[0m[2m1m[0m[1;2m[[0m[2m91minvalid-syntax: [0m[1;2m[[0m[2m0m[0m[1;2m[[0m[2m1mmissing closing quote in string [0m
+[2mliteral[0m[1;2m[[0m[2m0m[0m
+[33m⠹[0m [1;36mpart 4/13[0m [2m·[0m BROKE ruff check .: [1m[91minvalid-syntax: [0m[1mmissing closing quote in string liter…
 [2K[1;36m  part [0m[1;36m5[0m[1;36m of [0m[1;36m13[0m
-[33m⠦[0m [1;36mpart 5/13[0m [2m·[0m starting [2m· 0s in part · 7m15s total · 10 written · 25 calls[0m
+[33m⠹[0m [1;36mpart 5/13[0m [2m·[0m starting [2m· 0s in part · 4m45s total · 14 written · 31 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m5[0m [36mread_file shop/inventory.py[0m
-[33m⠼[0m [1;36mpart 5/13[0m [2m·[0m inventory.py [2m· 7s in part · 7m22s total · 10 written · 26 calls[0m
+[33m⠋[0m [1;36mpart 5/13[0m [2m·[0m inventory.py [2m· 4s in part · 4m50s total · 14 written · 32 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m5[0m [36mread_file shop/tax/calculator.py[0m
-[33m⠼[0m [1;36mpart 5/13[0m [2m·[0m calculator.py [2m· 7s in part · 7m22s total · 10 written · 27 calls[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m5[0m [33mstopped with [0m[1;33m2[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠋[0m [1;36mpart 5/13[0m [2m·[0m stopped with 2 of 2 file(s) unchanged — asking again (1 of 4) [2m· 36s in part · 7m52s to…[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m5[0m [32mreplace_lines shop/inventory.py[0m
-[33m⠇[0m [1;36mpart 5/13[0m [2m·[0m inventory.py [2m· 45s in part · 8m00s total · 11 written · 28 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m5[0m [36mread_file shop/inventory.py[0m
-[33m⠦[0m [1;36mpart 5/13[0m [2m·[0m inventory.py [2m· 48s in part · 8m03s total · 11 written · 29 calls[0m
+[33m⠋[0m [1;36mpart 5/13[0m [2m·[0m calculator.py [2m· 4s in part · 4m50s total · 14 written · 33 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m5[0m [32mwrite_file shop/inventory.py[0m
-[33m⠏[0m [1;36mpart 5/13[0m [2m·[0m inventory.py [2m· 1m01s in part · 8m16s total · 12 written · 30 calls[0m
+[33m⠧[0m [1;36mpart 5/13[0m [2m·[0m inventory.py [2m· 21s in part · 5m07s total · 15 written · 34 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m5[0m [32mwrite_file shop/tax/calculator.py[0m
-[33m⠏[0m [1;36mpart 5/13[0m [2m·[0m calculator.py [2m· 1m07s in part · 8m23s total · 13 written · 31 calls[0m
+[33m⠼[0m [1;36mpart 5/13[0m [2m·[0m calculator.py [2m· 26s in part · 5m12s total · 16 written · 35 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m5[0m [33mreplace_lines README.md[0m
+[33m⠇[0m [1;36mpart 5/13[0m [2m·[0m replace_lines README.md [2m· 34s in part · 5m20s total · 16 written · 36 calls[0m
 [2K[1;36m  part [0m[1;36m6[0m[1;36m of [0m[1;36m13[0m
-[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m starting [2m· 0s in part · 8m36s total · 13 written · 31 calls[0m
+[33m⠸[0m [1;36mpart 6/13[0m [2m·[0m starting [2m· 0s in part · 5m29s total · 16 written · 36 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m6[0m [36mread_file shop/customers.py[0m
-[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 5s in part · 8m42s total · 13 written · 32 calls[0m
+[33m⠇[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 4s in part · 5m33s total · 16 written · 37 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m6[0m [36mread_file shop/csv_export.py[0m
-[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m csv_export.py [2m· 5s in part · 8m42s total · 13 written · 33 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mreplace_lines shop/customers.py[0m
-[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 35s in part · 9m11s total · 14 written · 34 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mreplace_lines shop/csv_export.py[0m
-[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m csv_export.py [2m· 42s in part · 9m18s total · 15 written · 35 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m6[0m [36mread_file shop/csv_export.py[0m
-[33m⠧[0m [1;36mpart 6/13[0m [2m·[0m csv_export.py [2m· 46s in part · 9m22s total · 15 written · 36 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mwrite_file shop/csv_export.py[0m
-[33m⠇[0m [1;36mpart 6/13[0m [2m·[0m csv_export.py [2m· 56s in part · 9m32s total · 16 written · 37 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m6[0m [33mceiling reached — compacted [0m[1;33m496[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m727[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠏[0m [1;36mpart 6/13[0m [2m·[0m ceiling reached — compacted 496 tokens of stale tool results, back to 5,727 of 6,412 [2m·…[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mreplace_lines shop/customers.py[0m
-[33m⠼[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 1m10s in part · 9m46s total · 17 written · 38 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m6[0m [33mceiling reached — compacted [0m[1;33m838[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m846[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m ceiling reached — compacted 838 tokens of stale tool results, back to 5,846 of 6,412 [2m·…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mno room for read_file — compacted [0m[1;2;36m354[0m[2m tokens and retried[0m
-[33m⠦[0m [1;36mpart 6/13[0m [2m·[0m no room for read_file — compacted 354 tokens and retried [2m· 1m14s in part · 9m50s total…[0m
+[33m⠏[0m [1;36mpart 6/13[0m [2m·[0m csv_export.py [2m· 4s in part · 5m33s total · 16 written · 38 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mreply hit the [0m[1;2;36m2[0m[2m,[0m[1;2;36m415[0m[2m-token cap and was cut off[0m
+[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m reply hit the 2,415-token cap and was cut off [2m· 53s in part · 6m22s total · 16 written…[0m
+[2K    [33m·[0m [2mpart [0m[1;2;36m6[0m [33mstopped with [0m[1;33m2[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
+[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m stopped with 2 of 2 file(s) unchanged — asking again (1 of 4) [2m· 53s in part · 6m22s to…[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mwrite_file shop/customers.py[0m
+[33m⠋[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 1m10s in part · 6m39s total · 17 written · 39 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m6[0m [36mread_file shop/customers.py[0m
-[33m⠦[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 1m14s in part · 9m50s total · 17 written · 39 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mreply hit the [0m[1;2;36m278[0m[2m-token cap and was cut off[0m
-[33m⠙[0m [1;36mpart 6/13[0m [2m·[0m reply hit the 278-token cap and was cut off [2m· 1m22s in part · 9m59s total · 17 written…[0m
+[33m⠼[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 1m13s in part · 6m42s total · 17 written · 40 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mwrite_file shop/customers.py[0m
+[33m⠇[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 1m23s in part · 6m52s total · 18 written · 41 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m6[0m [32mwrite_file shop/customers.py[0m
+[33m⠸[0m [1;36mpart 6/13[0m [2m·[0m customers.py [2m· 1m43s in part · 7m12s total · 19 written · 42 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mreply hit the [0m[1;2;36m555[0m[2m-token cap and was cut off[0m
+[33m⠸[0m [1;36mpart 6/13[0m [2m·[0m reply hit the 555-token cap and was cut off [2m· 1m56s in part · 7m25s total · 19 written…[0m
+[2K    [33m·[0m [2mpart [0m[1;2;36m6[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m2[0m[33m of [0m[1;33m4[0m[1;33m)[0m
+[33m⠸[0m [1;36mpart 6/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (2 of 4) [2m· 1m56s in part · 7m25s …[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mreply hit the [0m[1;2;36m444[0m[2m-token cap and was cut off[0m
+[33m⠇[0m [1;36mpart 6/13[0m [2m·[0m reply hit the 444-token cap and was cut off [2m· 2m08s in part · 7m37s total · 19 written…[0m
 [2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mBROKE shop/customers.py: closing parenthesis [0m[2;32m'[0m[2;32m)[0m[2;32m'[0m[2m does not match opening parenthesis [0m[2;32m'[0m[2;32m[[0m[2;32m'[0m[2m [0m
-[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m42[0m[1;2m)[0m
-[33m⠧[0m [1;36mpart 6/13[0m [2m·[0m customers.py: closing parenthesis ')' does not match opening parenthesis '[' (<unknown…
-[2K    [2m·[0m [2mpart [0m[1;2;36m6[0m [2mBROKE shop/csv_export.py: unexpected character after line continuation character [0m
-[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m11[0m[1;2m)[0m
-[33m⠧[0m [1;36mpart 6/13[0m [2m·[0m csv_export.py: unexpected character after line continuation character (<unknown>, line…
+[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m37[0m[1;2m)[0m
+[33m⠴[0m [1;36mpart 6/13[0m [2m·[0m customers.py: closing parenthesis ')' does not match opening parenthesis '[' (<unknown…
 [2K[1;36m  part [0m[1;36m7[0m[1;36m of [0m[1;36m13[0m
-[33m⠧[0m [1;36mpart 7/13[0m [2m·[0m starting [2m· 0s in part · 10m07s total · 17 written · 39 calls[0m
+[33m⠴[0m [1;36mpart 7/13[0m [2m·[0m starting [2m· 0s in part · 7m38s total · 19 written · 42 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m7[0m [36mread_file shop/reporting.py[0m
-[33m⠏[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 5s in part · 10m13s total · 17 written · 40 calls[0m
+[33m⠴[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 4s in part · 7m42s total · 19 written · 43 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m7[0m [36mread_file shop/shipping/parcels.py[0m
-[33m⠏[0m [1;36mpart 7/13[0m [2m·[0m parcels.py [2m· 5s in part · 10m13s total · 17 written · 41 calls[0m
+[33m⠴[0m [1;36mpart 7/13[0m [2m·[0m parcels.py [2m· 4s in part · 7m42s total · 19 written · 44 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m7[0m [32mreplace_lines shop/reporting.py[0m
-[33m⠹[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 53s in part · 11m01s total · 18 written · 42 calls[0m
+[33m⠸[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 26s in part · 8m04s total · 20 written · 45 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m7[0m [36mread_file shop/reporting.py[0m
-[33m⠹[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 57s in part · 11m05s total · 18 written · 43 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m7[0m [2mBROKE shop/reporting.py: closing parenthesis [0m[2;32m'[0m[2;32m}[0m[2;32m'[0m[2m does not match opening parenthesis [0m[2;32m'[0m[2;32m[[0m[2;32m'[0m[2m [0m
-[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m30[0m[1;2m)[0m
-[33m⠦[0m [1;36mpart 7/13[0m [2m·[0m reporting.py: closing parenthesis '}' does not match opening parenthesis '[' (<unknown…
-[2K    [31mx[0m [2mpart [0m[1;2;36m7[0m [31mfailed: backend call failed: ValueError: XML syntax error on line [0m[1;31m87[0m[31m: unexpected EOF[0m
-[33m⠦[0m [1;36mpart 7/13[0m [2m·[0m failed: backend call failed: ValueError: XML syntax error on line 87: unexpected EOF [2m·…[0m
+[33m⠙[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 29s in part · 8m07s total · 20 written · 46 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m7[0m [32mwrite_file shop/reporting.py[0m
+[33m⠇[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 49s in part · 8m27s total · 21 written · 47 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m7[0m [36mread_file shop/reporting.py[0m
+[33m⠧[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 59s in part · 8m37s total · 21 written · 48 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m7[0m [2mreply hit the [0m[1;2;36m808[0m[2m-token cap and was cut off[0m
+[33m⠋[0m [1;36mpart 7/13[0m [2m·[0m reply hit the 808-token cap and was cut off [2m· 1m17s in part · 8m56s total · 21 written…[0m
+[2K    [33m·[0m [2mpart [0m[1;2;36m7[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
+[33m⠋[0m [1;36mpart 7/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (1 of 4) [2m· 1m17s in part · 8m56s …[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m7[0m [2mno room for read_file — compacted [0m[1;2;36m509[0m[2m tokens and retried[0m
+[33m⠦[0m [1;36mpart 7/13[0m [2m·[0m no room for read_file — compacted 509 tokens and retried [2m· 1m24s in part · 9m02s total…[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m7[0m [36mread_file shop/reporting.py[0m
+[33m⠦[0m [1;36mpart 7/13[0m [2m·[0m reporting.py [2m· 1m24s in part · 9m02s total · 21 written · 49 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m7[0m [2mreply hit the [0m[1;2;36m601[0m[2m-token cap and was cut off[0m
+[33m⠏[0m [1;36mpart 7/13[0m [2m·[0m reply hit the 601-token cap and was cut off [2m· 1m39s in part · 9m17s total · 21 written…[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m7[0m [2mBROKE shop/reporting.py: invalid syntax [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m36[0m[1;2m)[0m
+[33m⠏[0m [1;36mpart 7/13[0m [2m·[0m reporting.py: invalid syntax (<unknown>, line 36) [2m· 2m09s in part · 9m47s total · 21 w…[0m
 [2K[1;36m  part [0m[1;36m8[0m[1;36m of [0m[1;36m13[0m
-[33m⠦[0m [1;36mpart 8/13[0m [2m·[0m starting [2m· 0s in part · 11m27s total · 18 written · 43 calls[0m
+[33m⠏[0m [1;36mpart 8/13[0m [2m·[0m starting [2m· 0s in part · 9m47s total · 21 written · 49 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mread_file shop/legacy_invoice.py[0m
-[33m⠦[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 5s in part · 11m33s total · 18 written · 44 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mlist_dir shop/shipping[0m
-[33m⠦[0m [1;36mpart 8/13[0m [2m·[0m shipping [2m· 5s in part · 11m33s total · 18 written · 45 calls[0m
+[33m⠴[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 4s in part · 9m52s total · 21 written · 50 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mread_file shop/shipping/carriers.py[0m
-[33m⠴[0m [1;36mpart 8/13[0m [2m·[0m carriers.py [2m· 7s in part · 11m35s total · 18 written · 46 calls[0m
+[33m⠴[0m [1;36mpart 8/13[0m [2m·[0m carriers.py [2m· 4s in part · 9m52s total · 21 written · 51 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m8[0m [33mreplace_lines shop/legacy_invoice.py[0m
+[33m⠸[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 45s in part · 10m33s total · 21 written · 52 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m8[0m [32mreplace_lines shop/legacy_invoice.py[0m
-[33m⠋[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 43s in part · 12m11s total · 19 written · 47 calls[0m
+[33m⠸[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m14s in part · 11m02s total · 22 written · 53 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mread_file shop/legacy_invoice.py[0m
-[33m⠧[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 47s in part · 12m15s total · 19 written · 48 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mread_file shop/shipping/carriers.py[0m
-[33m⠧[0m [1;36mpart 8/13[0m [2m·[0m carriers.py [2m· 47s in part · 12m15s total · 19 written · 49 calls[0m
+[33m⠴[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m18s in part · 11m06s total · 22 written · 54 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m8[0m [33mreplace_lines shop/legacy_invoice.py[0m
+[33m⠇[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m27s in part · 11m15s total · 22 written · 55 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m8[0m [32mreplace_lines shop/legacy_invoice.py[0m
+[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m33s in part · 11m21s total · 23 written · 56 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m8[0m [32mwrite_file shop/legacy_invoice.py[0m
-[33m⠙[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m00s in part · 12m28s total · 20 written · 50 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mreply hit the [0m[1;2;36m633[0m[2m-token cap and was cut off[0m
-[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m reply hit the 633-token cap and was cut off [2m· 1m15s in part · 12m43s total · 20 writte…[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m8[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (1 of 4) [2m· 1m15s in part · 12m43s…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mno room for read_file — compacted [0m[1;2;36m400[0m[2m tokens and retried[0m
-[33m⠼[0m [1;36mpart 8/13[0m [2m·[0m no room for read_file — compacted 400 tokens and retried [2m· 1m22s in part · 12m49s tota…[0m
+[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m48s in part · 11m36s total · 24 written · 57 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mread_file shop/legacy_invoice.py[0m
-[33m⠼[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m22s in part · 12m49s total · 20 written · 51 calls[0m
+[33m⠴[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m58s in part · 11m46s total · 24 written · 58 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m8[0m [32mwrite_file shop/legacy_invoice.py[0m
-[33m⠸[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m35s in part · 13m03s total · 21 written · 52 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m8[0m [33mceiling reached — compacted [0m[1;33m418[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m795[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠼[0m [1;36mpart 8/13[0m [2m·[0m ceiling reached — compacted 418 tokens of stale tool results, back to 5,795 of 6,412 [2m·…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mno room for read_file — compacted [0m[1;2;36m301[0m[2m tokens and retried[0m
-[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m no room for read_file — compacted 301 tokens and retried [2m· 1m42s in part · 13m09s tota…[0m
+[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 2m10s in part · 11m58s total · 25 written · 59 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m8[0m [33mceiling reached — compacted [0m[1;33m400[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m834[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
+[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m ceiling reached — compacted 400 tokens of stale tool results, back to 5,834 of 6,412 [2m·…[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m8[0m [32mwrite_file shop/legacy_invoice.py[0m
+[33m⠧[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 2m18s in part · 12m06s total · 26 written · 60 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mno room for read_file — compacted [0m[1;2;36m418[0m[2m tokens and retried[0m
+[33m⠸[0m [1;36mpart 8/13[0m [2m·[0m no room for read_file — compacted 418 tokens and retried [2m· 2m22s in part · 12m10s tota…[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m8[0m [36mread_file shop/legacy_invoice.py[0m
-[33m⠹[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 1m42s in part · 13m09s total · 21 written · 53 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mreply hit the [0m[1;2;36m497[0m[2m-token cap and was cut off[0m
-[33m⠏[0m [1;36mpart 8/13[0m [2m·[0m reply hit the 497-token cap and was cut off [2m· 1m54s in part · 13m22s total · 21 writte…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mBROKE shop/legacy_invoice.py: f-string: expecting [0m[2;32m'[0m[2;32m}[0m[2;32m'[0m[2m, or format specs [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m
-[1;2;36m17[0m[1;2m)[0m
-[33m⠧[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py: f-string: expecting '}', or format specs (<unknown>, line 17) [2m· 2m0…[0m
+[33m⠸[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 2m22s in part · 12m10s total · 26 written · 61 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m8[0m [33mread_file shop/legacy_invoice.py[0m
+[33m⠧[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py [2m· 2m27s in part · 12m15s total · 26 written · 62 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m8[0m [33mwindow ceiling reached [0m[1;33m([0m[1;33m6[0m[33m,[0m[1;33m118[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m[1;33m)[0m[33m — handing off[0m
+[33m⠇[0m [1;36mpart 8/13[0m [2m·[0m window ceiling reached (6,118 of 6,412) — handing off [2m· 2m27s in part · 12m15s total ·…[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mBROKE shop/legacy_invoice.py: f-string: expecting [0m[2;32m'='[0m[2m, or [0m[2;32m'!'[0m[2m, or [0m[2;32m':'[0m[2m, or [0m[2;32m'[0m[2;32m}[0m[2;32m'[0m[2m [0m
+[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m15[0m[1;2m)[0m
+[33m⠋[0m [1;36mpart 8/13[0m [2m·[0m legacy_invoice.py: f-string: expecting '=', or '!', or ':', or '}' (<unknown>, line 15…
+[2K    [2m·[0m [2mpart [0m[1;2;36m8[0m [2mBROKE pytest -q: ============================================== ERRORS [0m
+[2m==============================================[0m
+[33m⠋[0m [1;36mpart 8/13[0m [2m·[0m BROKE pytest -q: ============================================== ERRORS ===============…
 [2K[1;36m  part [0m[1;36m9[0m[1;36m of [0m[1;36m13[0m
-[33m⠧[0m [1;36mpart 9/13[0m [2m·[0m starting [2m· 0s in part · 13m30s total · 21 written · 53 calls[0m
+[33m⠋[0m [1;36mpart 9/13[0m [2m·[0m starting [2m· 0s in part · 12m28s total · 26 written · 62 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m9[0m [36mread_file shop/shipping/quotes.py[0m
-[33m⠸[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 5s in part · 13m35s total · 21 written · 54 calls[0m
+[33m⠦[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 5s in part · 12m34s total · 26 written · 63 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m9[0m [36mread_file shop/shipping/tracking.py[0m
-[33m⠸[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 5s in part · 13m35s total · 21 written · 55 calls[0m
+[33m⠦[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 5s in part · 12m34s total · 26 written · 64 calls[0m
 [2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mreplace_lines shop/shipping/quotes.py[0m
-[33m⠧[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 29s in part · 13m59s total · 22 written · 56 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m9[0m [33mreplace_lines shop/shipping/quotes.py[0m
-[33m⠋[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 33s in part · 14m04s total · 22 written · 57 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mreplace_lines shop/shipping/tracking.py[0m
-[33m⠼[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 42s in part · 14m12s total · 23 written · 58 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m9[0m [36mread_file shop/shipping/tracking.py[0m
-[33m⠙[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 45s in part · 14m15s total · 23 written · 59 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mwrite_file shop/shipping/tracking.py[0m
-[33m⠼[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 55s in part · 14m25s total · 24 written · 60 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mwrite_file shop/shipping/tracking.py[0m
-[33m⠋[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 1m05s in part · 14m35s total · 25 written · 61 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m9[0m [33mceiling reached — compacted [0m[1;33m363[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m942[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠙[0m [1;36mpart 9/13[0m [2m·[0m ceiling reached — compacted 363 tokens of stale tool results, back to 5,942 of 6,412 [2m·…[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m9[0m [2mno room for read_file — compacted [0m[1;2;36m446[0m[2m tokens and retried[0m
-[33m⠼[0m [1;36mpart 9/13[0m [2m·[0m no room for read_file — compacted 446 tokens and retried [2m· 1m09s in part · 14m39s tota…[0m
+[33m⠹[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 55s in part · 13m24s total · 27 written · 65 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mreplace_lines shop/shipping/quotes.py[0m
+[33m⠙[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 1m01s in part · 13m30s total · 28 written · 66 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m9[0m [36mread_file shop/shipping/quotes.py[0m
-[33m⠼[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 1m09s in part · 14m39s total · 25 written · 62 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mwrite_file shop/shipping/quotes.py[0m
-[33m⠦[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 1m19s in part · 14m50s total · 26 written · 63 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m9[0m [33mceiling reached — compacted [0m[1;33m288[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m998[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
-[33m⠧[0m [1;36mpart 9/13[0m [2m·[0m ceiling reached — compacted 288 tokens of stale tool results, back to 5,998 of 6,412 [2m·…[0m
+[33m⠦[0m [1;36mpart 9/13[0m [2m·[0m quotes.py [2m· 1m05s in part · 13m34s total · 28 written · 67 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m9[0m [32mreplace_lines shop/shipping/tracking.py[0m
+[33m⠙[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 1m12s in part · 13m41s total · 29 written · 68 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m9[0m [2mno room for read_file — compacted [0m[1;2;36m363[0m[2m tokens and retried[0m
+[33m⠋[0m [1;36mpart 9/13[0m [2m·[0m no room for read_file — compacted 363 tokens and retried [2m· 1m16s in part · 13m45s tota…[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m9[0m [36mread_file shop/shipping/tracking.py[0m
+[33m⠋[0m [1;36mpart 9/13[0m [2m·[0m tracking.py [2m· 1m16s in part · 13m45s total · 29 written · 69 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m9[0m [2mreply hit the [0m[1;2;36m342[0m[2m-token cap and was cut off[0m
+[33m⠙[0m [1;36mpart 9/13[0m [2m·[0m reply hit the 342-token cap and was cut off [2m· 1m26s in part · 13m55s total · 29 writte…[0m
 [2K    [2m·[0m [2mpart [0m[1;2;36m9[0m [2mBROKE shop/shipping/tracking.py: expected an indented block after function definition on[0m
-[2mline [0m[1;2;36m31[0m[2m [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m31[0m[1;2m)[0m
-[33m⠦[0m [1;36mpart 9/13[0m [2m·[0m tracking.py: expected an indented block after function definition on line 31 (<unknown…
+[2mline [0m[1;2;36m31[0m[2m [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m32[0m[1;2m)[0m
+[33m⠙[0m [1;36mpart 9/13[0m [2m·[0m tracking.py: expected an indented block after function definition on line 31 (<unknown…
 [2K[1;36m  part [0m[1;36m10[0m[1;36m of [0m[1;36m13[0m
-[33m⠦[0m [1;36mpart 10/13[0m [2m·[0m starting [2m· 0s in part · 14m58s total · 26 written · 63 calls[0m
+[33m⠙[0m [1;36mpart 10/13[0m [2m·[0m starting [2m· 0s in part · 14m04s total · 29 written · 69 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m10[0m [36mread_file shop/tax/exemptions.py[0m
-[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 5s in part · 15m03s total · 26 written · 64 calls[0m
+[33m⠦[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 5s in part · 14m09s total · 29 written · 70 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m10[0m [36mread_file shop/notifications/dispatch.py[0m
-[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m dispatch.py [2m· 5s in part · 15m03s total · 26 written · 65 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m10[0m [33mreplace_lines shop/tax/exemptions.py[0m
-[33m⠇[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 16s in part · 15m15s total · 26 written · 66 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m10[0m [2mreply hit the [0m[1;2;36m2[0m[2m,[0m[1;2;36m414[0m[2m-token cap and was cut off[0m
-[33m⠹[0m [1;36mpart 10/13[0m [2m·[0m reply hit the 2,414-token cap and was cut off [2m· 1m06s in part · 16m04s total · 26 wri…[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m10[0m [33mstopped with [0m[1;33m2[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠹[0m [1;36mpart 10/13[0m [2m·[0m stopped with 2 of 2 file(s) unchanged — asking again (1 of 4) [2m· 1m06s in part · 16m04…[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m10[0m [32mwrite_file shop/tax/exemptions.py[0m
-[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 1m19s in part · 16m17s total · 27 written · 67 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m10[0m [32mwrite_file shop/notifications/dispatch.py[0m
-[33m⠧[0m [1;36mpart 10/13[0m [2m·[0m dispatch.py [2m· 1m25s in part · 16m23s total · 28 written · 68 calls[0m
+[33m⠦[0m [1;36mpart 10/13[0m [2m·[0m dispatch.py [2m· 5s in part · 14m09s total · 29 written · 71 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m10[0m [32mreplace_lines shop/tax/exemptions.py[0m
+[33m⠧[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 17s in part · 14m21s total · 30 written · 72 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m10[0m [36mread_file shop/tax/exemptions.py[0m
+[33m⠴[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 20s in part · 14m24s total · 30 written · 73 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m10[0m [32mreplace_lines shop/tax/exemptions.py[0m
+[33m⠦[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 24s in part · 14m28s total · 31 written · 74 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m10[0m [36mread_file shop/tax/exemptions.py[0m
+[33m⠇[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 30s in part · 14m35s total · 31 written · 75 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m10[0m [32mreplace_lines shop/tax/exemptions.py[0m
+[33m⠧[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 38s in part · 14m42s total · 32 written · 76 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m10[0m [36mread_file shop/tax/exemptions.py[0m
+[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 42s in part · 14m46s total · 32 written · 77 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m10[0m [33mceiling reached — compacted [0m[1;33m417[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m747[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
+[33m⠴[0m [1;36mpart 10/13[0m [2m·[0m ceiling reached — compacted 417 tokens of stale tool results, back to 5,747 of 6,412 [2m…[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m10[0m [32mreplace_lines shop/tax/exemptions.py[0m
+[33m⠇[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 49s in part · 14m53s total · 33 written · 78 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m10[0m [2mreply hit the [0m[1;2;36m362[0m[2m-token cap and was cut off[0m
+[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m reply hit the 362-token cap and was cut off [2m· 59s in part · 15m03s total · 33 written…[0m
+[2K    [33m·[0m [2mpart [0m[1;2;36m10[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
+[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (1 of 4) [2m· 59s in part · 15m03s …[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m10[0m [33mceiling reached — compacted [0m[1;33m288[0m[33m tokens of stale tool results, back to [0m[1;33m5[0m[33m,[0m[1;33m875[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m
+[33m⠴[0m [1;36mpart 10/13[0m [2m·[0m ceiling reached — compacted 288 tokens of stale tool results, back to 5,875 of 6,412 [2m…[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m10[0m [2mno room for read_file — compacted [0m[1;2;36m257[0m[2m tokens and retried[0m
+[33m⠼[0m [1;36mpart 10/13[0m [2m·[0m no room for read_file — compacted 257 tokens and retried [2m· 1m04s in part · 15m08s tot…[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m10[0m [36mread_file shop/tax/exemptions.py[0m
+[33m⠴[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py [2m· 1m04s in part · 15m08s total · 33 written · 79 calls[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m10[0m [2mreply hit the [0m[1;2;36m359[0m[2m-token cap and was cut off[0m
+[33m⠏[0m [1;36mpart 10/13[0m [2m·[0m reply hit the 359-token cap and was cut off [2m· 1m14s in part · 15m18s total · 33 writt…[0m
+[2K    [2m·[0m [2mpart [0m[1;2;36m10[0m [2mBROKE shop/tax/exemptions.py: expected [0m[2;32m':'[0m[2m [0m[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m19[0m[1;2m)[0m
+[33m⠧[0m [1;36mpart 10/13[0m [2m·[0m exemptions.py: expected ':' (<unknown>, line 19) [2m· 1m26s in part · 15m30s total · 33 …[0m
 [2K[1;36m  part [0m[1;36m11[0m[1;36m of [0m[1;36m13[0m
-[33m⠧[0m [1;36mpart 11/13[0m [2m·[0m starting [2m· 0s in part · 16m36s total · 28 written · 68 calls[0m
+[33m⠇[0m [1;36mpart 11/13[0m [2m·[0m starting [2m· 0s in part · 15m30s total · 33 written · 79 calls[0m
+[2K    [36m·[0m [2mpart [0m[1;2;36m11[0m [36mread_file shop/notifications/digest.py[0m
+[33m⠏[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 4s in part · 15m35s total · 33 written · 80 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m11[0m [36mread_file shop/__init__.py[0m
-[33m⠏[0m [1;36mpart 11/13[0m [2m·[0m __init__.py [2m· 7s in part · 16m43s total · 28 written · 69 calls[0m
+[33m⠏[0m [1;36mpart 11/13[0m [2m·[0m __init__.py [2m· 4s in part · 15m35s total · 33 written · 81 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mreplace_lines shop/notifications/digest.py[0m
+[33m⠙[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 25s in part · 15m55s total · 34 written · 82 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mwrite_file shop/notifications/digest.py[0m
+[33m⠦[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 35s in part · 16m05s total · 35 written · 83 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m11[0m [36mread_file shop/notifications/digest.py[0m
-[33m⠹[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 10s in part · 16m46s total · 28 written · 70 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mwrite_file shop/notifications/digest.py[0m
-[33m⠦[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 1m01s in part · 17m38s total · 29 written · 71 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mwrite_file shop/notifications/digest.py[0m
-[33m⠋[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 1m38s in part · 18m15s total · 30 written · 72 calls[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m11[0m [36mread_file shop/notifications/digest.py[0m
-[33m⠸[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 1m46s in part · 18m22s total · 30 written · 73 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mwrite_file shop/notifications/digest.py[0m
-[33m⠇[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 1m58s in part · 18m35s total · 31 written · 74 calls[0m
-[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mwrite_file shop/notifications/digest.py[0m
-[33m⠙[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 2m15s in part · 18m52s total · 32 written · 75 calls[0m
-[2K    [2m·[0m [2mpart [0m[1;2;36m11[0m [2mreply hit the [0m[1;2;36m571[0m[2m-token cap and was cut off[0m
-[33m⠴[0m [1;36mpart 11/13[0m [2m·[0m reply hit the 571-token cap and was cut off [2m· 2m29s in part · 19m06s total · 32 writt…[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m11[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠴[0m [1;36mpart 11/13[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (1 of 4) [2m· 2m29s in part · 19m06…[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m11[0m [33mread_file shop/notifications/digest.py[0m
-[33m⠼[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 2m35s in part · 19m11s total · 32 written · 76 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m11[0m [33mread_file shop/notifications/digest.py[0m
-[33m⠇[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 2m39s in part · 19m15s total · 32 written · 77 calls[0m
-[2K    [33m![0m [2mpart [0m[1;2;36m11[0m [33mwindow ceiling reached [0m[1;33m([0m[1;33m6[0m[33m,[0m[1;33m193[0m[33m of [0m[1;33m6[0m[33m,[0m[1;33m412[0m[1;33m)[0m[33m — handing off[0m
-[33m⠇[0m [1;36mpart 11/13[0m [2m·[0m window ceiling reached (6,193 of 6,412) — handing off [2m· 2m39s in part · 19m15s total …[0m
+[33m⠼[0m [1;36mpart 11/13[0m [2m·[0m digest.py [2m· 38s in part · 16m08s total · 35 written · 84 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mreplace_lines shop/__init__.py[0m
+[33m⠹[0m [1;36mpart 11/13[0m [2m·[0m __init__.py [2m· 55s in part · 16m25s total · 36 written · 85 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m11[0m [32mwrite_file shop/__init__.py[0m
+[33m⠹[0m [1;36mpart 11/13[0m [2m·[0m __init__.py [2m· 1m02s in part · 16m32s total · 37 written · 86 calls[0m
 [2K[1;36m  part [0m[1;36m12[0m[1;36m of [0m[1;36m13[0m
-[33m⠸[0m [1;36mpart 12/13[0m [2m·[0m starting [2m· 0s in part · 19m30s total · 32 written · 77 calls[0m
+[33m⠋[0m [1;36mpart 12/13[0m [2m·[0m starting [2m· 0s in part · 16m45s total · 37 written · 86 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m12[0m [36mread_file shop/notifications/__init__.py[0m
-[33m⠦[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 5s in part · 19m35s total · 32 written · 78 calls[0m
+[33m⠏[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 4s in part · 16m50s total · 37 written · 87 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m12[0m [36mread_file shop/shipping/__init__.py[0m
-[33m⠦[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 5s in part · 19m35s total · 32 written · 79 calls[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m12[0m [33mstopped with [0m[1;33m2[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠴[0m [1;36mpart 12/13[0m [2m·[0m stopped with 2 of 2 file(s) unchanged — asking again (1 of 4) [2m· 12s in part · 19m43s …[0m
+[33m⠼[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 6s in part · 16m52s total · 37 written · 88 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m12[0m [32mwrite_file shop/notifications/__init__.py[0m
+[33m⠋[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 12s in part · 16m58s total · 38 written · 89 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m12[0m [32mwrite_file shop/notifications/__init__.py[0m
+[33m⠏[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 24s in part · 17m10s total · 39 written · 90 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m12[0m [32mwrite_file shop/shipping/__init__.py[0m
+[33m⠼[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 31s in part · 17m17s total · 40 written · 91 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m12[0m [36mread_file shop/notifications/__init__.py[0m
-[33m⠙[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 26s in part · 19m56s total · 32 written · 80 calls[0m
+[33m⠏[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 40s in part · 17m26s total · 40 written · 92 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m12[0m [32mwrite_file shop/notifications/__init__.py[0m
+[33m⠏[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 43s in part · 17m29s total · 41 written · 93 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m12[0m [32mwrite_file shop/notifications/__init__.py[0m
+[33m⠋[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 50s in part · 17m36s total · 42 written · 94 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m12[0m [32mwrite_file shop/notifications/__init__.py[0m
+[33m⠋[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 58s in part · 17m44s total · 43 written · 95 calls[0m
+[2K    [33m![0m [2mpart [0m[1;2;36m12[0m [33mwrite_file shop/notifications/__init__.py[0m
+[33m⠙[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 1m01s in part · 17m47s total · 43 written · 96 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m12[0m [36mread_file shop/shipping/__init__.py[0m
-[33m⠙[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 26s in part · 19m56s total · 32 written · 81 calls[0m
+[33m⠙[0m [1;36mpart 12/13[0m [2m·[0m __init__.py [2m· 1m04s in part · 17m50s total · 43 written · 97 calls[0m
 [2K[1;36m  part [0m[1;36m13[0m[1;36m of [0m[1;36m13[0m
-[33m⠙[0m [1;36mpart 13/13[0m [2m·[0m starting [2m· 0s in part · 20m09s total · 32 written · 81 calls[0m
+[33m⠙[0m [1;36mpart 13/13[0m [2m·[0m starting [2m· 0s in part · 17m58s total · 43 written · 97 calls[0m
 [2K    [36m·[0m [2mpart [0m[1;2;36m13[0m [36mread_file shop/tax/__init__.py[0m
-[33m⠇[0m [1;36mpart 13/13[0m [2m·[0m __init__.py [2m· 4s in part · 20m14s total · 32 written · 82 calls[0m
-[2K    [33m·[0m [2mpart [0m[1;2;36m13[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m1[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠏[0m [1;36mpart 13/13[0m [2m·[0m stopped with 1 of 1 file(s) unchanged — asking again (1 of 4) [2m· 8s in part · 20m18s t…[0m
-[2K    [36m·[0m [2mpart [0m[1;2;36m13[0m [36mread_file shop/tax/__init__.py[0m
-[33m⠹[0m [1;36mpart 13/13[0m [2m·[0m __init__.py [2m· 12s in part · 20m21s total · 32 written · 83 calls[0m
-[2K[2m  [0m[1;2;36m7[0m[2m [0m[1;2;35mfile[0m[1;2m([0m[2ms[0m[1;2m)[0m[2m the plan assigned were never changed - repairing[0m
-[33m⠸[0m [1;36mpart 13/13[0m [2m·[0m 7 file(s) the plan assigned were never changed - repairing [2m· 16s in part · 20m25s tot…[0m
-[2K[1;36m  repair [0m[1;36m1[0m[1;36m of [0m[1;36m4[0m
-[33m⠸[0m [1;36mrepair 1/4[0m [2m·[0m starting [2m· 0s in part · 20m25s total · 32 written · 83 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/orders.py[0m
-[33m⠹[0m [1;36mrepair 1/4[0m [2m·[0m orders.py [2m· 4s in part · 20m30s total · 32 written · 84 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/parcels.py[0m
-[33m⠹[0m [1;36mrepair 1/4[0m [2m·[0m parcels.py [2m· 4s in part · 20m30s total · 32 written · 85 calls[0m
-[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [32mreplace_lines shop/orders.py[0m
-[33m⠹[0m [1;36mrepair 1/4[0m [2m·[0m orders.py [2m· 11s in part · 20m37s total · 33 written · 86 calls[0m
-[2K    [33m![0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [33mread_file shop/money.py[0m
-[33m⠋[0m [1;36mrepair 1/4[0m [2m·[0m money.py [2m· 14s in part · 20m40s total · 33 written · 87 calls[0m
-[2K    [33m![0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [33mread_file shop/money.py[0m
-[33m⠏[0m [1;36mrepair 1/4[0m [2m·[0m money.py [2m· 27s in part · 20m53s total · 33 written · 88 calls[0m
-[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [32mreplace_lines shop/shipping/parcels.py[0m
-[33m⠦[0m [1;36mrepair 1/4[0m [2m·[0m parcels.py [2m· 42s in part · 21m08s total · 34 written · 89 calls[0m
-[2K    [33m![0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [33mreplace_lines shop/shipping/parcels.py[0m
-[33m⠸[0m [1;36mrepair 1/4[0m [2m·[0m parcels.py [2m· 48s in part · 21m13s total · 34 written · 90 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/parcels.py[0m
-[33m⠧[0m [1;36mrepair 1/4[0m [2m·[0m parcels.py [2m· 51s in part · 21m17s total · 34 written · 91 calls[0m
-[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [32mreplace_lines shop/shipping/parcels.py[0m
-[33m⠹[0m [1;36mrepair 1/4[0m [2m·[0m parcels.py [2m· 59s in part · 21m25s total · 35 written · 92 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/orders.py[0m
-[33m⠹[0m [1;36mrepair 1/4[0m [2m·[0m orders.py [2m· 1m09s in part · 21m35s total · 35 written · 93 calls[0m
-[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [32mreplace_lines shop/orders.py[0m
-[33m⠇[0m [1;36mrepair 1/4[0m [2m·[0m orders.py [2m· 1m22s in part · 21m48s total · 36 written · 94 calls[0m
-[2K    [2m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [2mno room for read_file — compacted [0m[1;2;36m466[0m[2m tokens and retried[0m
-[33m⠇[0m [1;36mrepair 1/4[0m [2m·[0m no room for read_file — compacted 466 tokens and retried [2m· 1m30s in part · 21m56s tot…[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/orders.py[0m
-[33m⠏[0m [1;36mrepair 1/4[0m [2m·[0m orders.py [2m· 1m30s in part · 21m56s total · 36 written · 95 calls[0m
-[2K[1;36m  repair [0m[1;36m2[0m[1;36m of [0m[1;36m4[0m
-[33m⠏[0m [1;36mrepair 2/4[0m [2m·[0m starting [2m· 0s in part · 22m14s total · 36 written · 95 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/carriers.py[0m
-[33m⠏[0m [1;36mrepair 2/4[0m [2m·[0m carriers.py [2m· 10s in part · 22m24s total · 36 written · 96 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/__init__.py[0m
-[33m⠋[0m [1;36mrepair 2/4[0m [2m·[0m __init__.py [2m· 10s in part · 22m24s total · 36 written · 97 calls[0m
-[2K    [32m+[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [32mreplace_lines shop/shipping/carriers.py[0m
-[33m⠏[0m [1;36mrepair 2/4[0m [2m·[0m carriers.py [2m· 27s in part · 22m41s total · 37 written · 98 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/__init__.py[0m
-[33m⠹[0m [1;36mrepair 2/4[0m [2m·[0m __init__.py [2m· 29s in part · 22m44s total · 37 written · 99 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/carriers.py[0m
-[33m⠼[0m [1;36mrepair 2/4[0m [2m·[0m carriers.py [2m· 34s in part · 22m48s total · 37 written · 100 calls[0m
-[2K    [33m![0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [33mlist_dir shipments/tax/rates.py[0m
-[33m⠋[0m [1;36mrepair 2/4[0m [2m·[0m rates.py [2m· 40s in part · 22m55s total · 37 written · 101 calls[0m
-[2K    [33m![0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [33mwrite_file shop/__init__.new_check.txt[0m
-[33m⠦[0m [1;36mrepair 2/4[0m [2m·[0m __init__.new_check.txt [2m· 47s in part · 23m01s total · 37 written · 102 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/__init__.py[0m
-[33m⠴[0m [1;36mrepair 2/4[0m [2m·[0m __init__.py [2m· 53s in part · 23m07s total · 37 written · 103 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/carriers.py[0m
-[33m⠇[0m [1;36mrepair 2/4[0m [2m·[0m carriers.py [2m· 1m01s in part · 23m15s total · 37 written · 104 calls[0m
-[2K    [33m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [33mstopped with [0m[1;33m1[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠙[0m [1;36mrepair 2/4[0m [2m·[0m stopped with 1 of 2 file(s) unchanged — asking again (1 of 4) [2m· 1m05s in part · 23m20…[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/carriers.py[0m
-[33m⠏[0m [1;36mrepair 2/4[0m [2m·[0m carriers.py [2m· 1m11s in part · 23m26s total · 37 written · 105 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/__init__.py[0m
-[33m⠏[0m [1;36mrepair 2/4[0m [2m·[0m __init__.py [2m· 1m12s in part · 23m26s total · 37 written · 106 calls[0m
-[2K    [2m·[0m [2mrepair [0m[1;2;36m2[0m[2m of [0m[1;2;36m4[0m [2mreply hit the [0m[1;2;36m797[0m[2m-token cap and was cut off[0m
-[33m⠹[0m [1;36mrepair 2/4[0m [2m·[0m reply hit the 797-token cap and was cut off [2m· 1m30s in part · 23m45s total · 37 writt…[0m
-[2K[1;36m  repair [0m[1;36m3[0m[1;36m of [0m[1;36m4[0m
-[33m⠹[0m [1;36mrepair 3/4[0m [2m·[0m starting [2m· 0s in part · 23m45s total · 37 written · 106 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m3[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/notifications/__init__.py[0m
-[33m⠸[0m [1;36mrepair 3/4[0m [2m·[0m __init__.py [2m· 10s in part · 23m56s total · 37 written · 107 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m3[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/__init__.py[0m
-[33m⠸[0m [1;36mrepair 3/4[0m [2m·[0m __init__.py [2m· 10s in part · 23m56s total · 37 written · 108 calls[0m
-[2K    [33m·[0m [2mrepair [0m[1;2;36m3[0m[2m of [0m[1;2;36m4[0m [33mstopped with [0m[1;33m2[0m[33m of [0m[1;33m2[0m[33m [0m[1;33mfile[0m[1;33m([0m[33ms[0m[1;33m)[0m[33m unchanged — asking again [0m[1;33m([0m[1;33m1[0m[33m of [0m[1;33m4[0m[1;33m)[0m
-[33m⠸[0m [1;36mrepair 3/4[0m [2m·[0m stopped with 2 of 2 file(s) unchanged — asking again (1 of 4) [2m· 15s in part · 24m01s …[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m3[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/notifications/__init__.py[0m
-[33m⠙[0m [1;36mrepair 3/4[0m [2m·[0m __init__.py [2m· 22s in part · 24m08s total · 37 written · 109 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m3[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/shipping/__init__.py[0m
-[33m⠴[0m [1;36mrepair 3/4[0m [2m·[0m __init__.py [2m· 24s in part · 24m10s total · 37 written · 110 calls[0m
-[2K[1;36m  repair [0m[1;36m4[0m[1;36m of [0m[1;36m4[0m
-[33m⠸[0m [1;36mrepair 4/4[0m [2m·[0m starting [2m· 0s in part · 24m14s total · 37 written · 110 calls[0m
-[2K    [36m·[0m [2mrepair [0m[1;2;36m4[0m[2m of [0m[1;2;36m4[0m [36mread_file shop/tax/__init__.py[0m
-[33m⠇[0m [1;36mrepair 4/4[0m [2m·[0m __init__.py [2m· 14s in part · 24m28s total · 37 written · 111 calls[0m
+[33m⠋[0m [1;36mpart 13/13[0m [2m·[0m __init__.py [2m· 5s in part · 18m04s total · 43 written · 98 calls[0m
+[2K    [32m+[0m [2mpart [0m[1;2;36m13[0m [32mwrite_file shop/tax/__init__.py[0m
+[33m⠼[0m [1;36mpart 13/13[0m [2m·[0m __init__.py [2m· 10s in part · 18m09s total · 44 written · 99 calls[0m
+[2K[2m  [0m[1;2;36m4[0m[2m [0m[1;2;35mfile[0m[1;2m([0m[2ms[0m[1;2m)[0m[2m the plan assigned were never changed - repairing[0m
+[33m⠴[0m [1;36mpart 13/13[0m [2m·[0m 4 file(s) the plan assigned were never changed - repairing [2m· 21s in part · 18m20s tot…[0m
+[2K[1;36m  repair [0m[1;36m1[0m[1;36m of [0m[1;36m2[0m
+[33m⠴[0m [1;36mrepair 1/2[0m [2m·[0m starting [2m· 0s in part · 18m20s total · 44 written · 99 calls[0m
+[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [36mread_file shop/csv_export.py[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 5s in part · 18m26s total · 44 written · 100 calls[0m
+[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [36mread_file shop/shipping/parcels.py[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m parcels.py [2m· 5s in part · 18m26s total · 44 written · 101 calls[0m
+[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [32mreplace_lines shop/csv_export.py[0m
+[33m⠼[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 52s in part · 19m13s total · 45 written · 102 calls[0m
+[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [32mreplace_lines shop/csv_export.py[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 58s in part · 19m18s total · 46 written · 103 calls[0m
+[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [36mread_file shop/csv_export.py[0m
+[33m⠙[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 1m01s in part · 19m21s total · 46 written · 104 calls[0m
+[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [32mwrite_file shop/csv_export.py[0m
+[33m⠋[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 1m11s in part · 19m32s total · 47 written · 105 calls[0m
+[2K    [32m+[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [32mwrite_file shop/csv_export.py[0m
+[33m⠙[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 1m31s in part · 19m52s total · 48 written · 106 calls[0m
+[2K    [36m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [36mread_file shop/csv_export.py[0m
+[33m⠏[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py [2m· 1m36s in part · 19m56s total · 48 written · 107 calls[0m
+[2K    [2m·[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [2mBROKE shop/csv_export.py: unexpected character after line continuation character [0m
+[1;2m([0m[1;2m<[0m[1;2;95munknown[0m[1;2m>[0m[2m, line [0m[1;2;36m11[0m[1;2m)[0m
+[33m⠴[0m [1;36mrepair 1/2[0m [2m·[0m csv_export.py: unexpected character after line continuation character (<unknown>, lin…
+[2K    [31mx[0m [2mrepair [0m[1;2;36m1[0m[2m of [0m[1;2;36m2[0m [31mfailed: backend call failed: ValueError: XML syntax error on line [0m[1;31m2[0m[31m: element [0m
+[1;31m<[0m[1;31mfunction[0m[31m> closed by <[0m[31m/[0m[31mparameter[0m[1;31m>[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m parameter> [2m· 1m41s in part · 20m02s total · 48 written · 107 calls[0m
 [2K[2m  verifying[0m
-[33m⠴[0m [1;36mrepair 4/4[0m [2m·[0m verifying [2m· 21s in part · 24m35s total · 37 written · 111 calls[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m verifying [2m· 1m41s in part · 20m02s total · 48 written · 107 calls[0m
 [2K[2m  syntax FAILED - it passed before this run[0m
-[33m⠴[0m [1;36mrepair 4/4[0m [2m·[0m syntax FAILED - it passed before this run [2m· 21s in part · 24m36s total · 37 written ·…[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m syntax FAILED - it passed before this run [2m· 1m42s in part · 20m02s total · 48 written…[0m
 [2K[2m  ruff check . FAILED - it passed before this run[0m
-[33m⠴[0m [1;36mrepair 4/4[0m [2m·[0m ruff check . FAILED - it passed before this run [2m· 21s in part · 24m36s total · 37 wri…[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m ruff check . FAILED - it passed before this run [2m· 1m42s in part · 20m02s total · 48 w…[0m
 [2K[2m  pytest -q FAILED - it passed before this run[0m
-[33m⠴[0m [1;36mrepair 4/4[0m [2m·[0m pytest -q FAILED - it passed before this run [2m· 21s in part · 24m36s total · 37 writte…[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m pytest -q FAILED - it passed before this run [2m· 1m42s in part · 20m02s total · 48 writ…[0m
 [2K[2m  reviewing the diff [0m[1;2m([0m[2man opinion — it changes nothing above[0m[1;2m)[0m
-[33m⠴[0m [1;36mrepair 4/4[0m [2m·[0m reviewing the diff (an opinion — it changes nothing above) [2m· 21s in part · 24m36s tot…[0m
-[2K[2m  [0m[1;2;36m8[0m[2m [0m[1;2;35mfinding[0m[1;2m([0m[2ms[0m[1;2m)[0m[2m survived checking[0m
-[33m⠹[0m [1;36mrepair 4/4[0m [2m·[0m 8 finding(s) survived checking [2m· 39s in part · 24m53s total · 37 written · 111 calls[0m
-[2K[33m⠸[0m [1;36mrepair 4/4[0m [2m·[0m 8 finding(s) survived checking [2m· 39s in part · 24m53s total · 37 written · 111 calls[0m
+[33m⠦[0m [1;36mrepair 1/2[0m [2m·[0m reviewing the diff (an opinion — it changes nothing above) [2m· 1m42s in part · 20m02s t…[0m
+[2K[2m  [0m[1;2;36m4[0m[2m [0m[1;2;35mfinding[0m[1;2m([0m[2ms[0m[1;2m)[0m[2m survived checking[0m
+[33m⠙[0m [1;36mrepair 1/2[0m [2m·[0m 4 finding(s) survived checking [2m· 1m57s in part · 20m17s total · 48 written · 107 calls[0m
+[2K[33m⠹[0m [1;36mrepair 1/2[0m [2m·[0m 4 finding(s) survived checking [2m· 1m57s in part · 20m17s total · 48 written · 107 calls[0m
 [?25h
 [1A[2K

@@ -140,12 +140,12 @@ body, never anything the model said — so the part keeps working instead of sto
 
 ### And it tells you whether it worked
 
-![The end of a pharos run: thirteen parts and four repair parts, each marked done, thin or failed; then a scorecard reading FAILED, 84% coverage against 72% for the plan alone, a part named for every file it broke, 6,370 tokens reclaimed by compaction, a clean audit, and three verification checks that passed before this run and fail after it](docs/shot-run.svg)
+![The end of a pharos run: thirteen parts and a repair part, each marked done, thin or failed; then a scorecard reading FAILED, 88% coverage against 84% for the plan alone, a part named for every file it broke, 4,622 tokens reclaimed by compaction, a clean audit, and three verification checks that passed before this run and fail after it](docs/shot-run.svg)
 
-**That is a run that went badly, photographed exactly as it came out.** Part 7 died on a tool
-call the backend could not parse; the six parts after it ran anyway, because a bad reply in one
-conversation says nothing about the next. The model wrote 21 of 25 files and left seven of them
-unparseable. Pharos measured all of it, named a part against every break, and exited 1.
+**That is a run that went badly, photographed exactly as it came out.** All thirteen parts ran,
+the repair part after them died on a tool call the backend could not parse, and the model left
+seven of the 22 files it wrote unparseable. Pharos measured all of it, named a part against every
+break, and exited 1.
 
 Nothing in that scorecard required asking a model anything: coverage is writes over scope, the
 audit re-indexes the tree after every part so a write that was claimed and never landed would be
@@ -153,14 +153,15 @@ named, and the verification lines are your own `ruff` and `pytest` — run once 
 part as a baseline, then after each one. Only a check that **passed before and fails after** can
 fail the run.
 
-Three lines are worth reading together. `compaction 6,370 tokens reclaimed across 6 parts` is six
-parts that would otherwise have stopped at their ceiling; `headroom 104%` is how close to the
-edge they ran anyway; and `repair … the plan alone reached 72%` is the sweep that took coverage
-to 84% afterwards. That is what a 12 GB card's leftover window looks like from the inside.
+Three lines are worth reading together. `compaction 4,622 tokens reclaimed across 6 parts` is six
+parts that would otherwise have stopped at their ceiling; `headroom 95%` is how close to the edge
+the largest request any part actually sent came; and `repair … the plan alone reached 84%` is the
+sweep that took coverage to 88% afterwards. That is what a 12 GB card's leftover window looks
+like from the inside.
 
 The opinion comes last, under a verdict it cannot change:
 
-![The review panel: eight findings, each naming a file and a line, five labelled bug and three labelled risk, with a note that two findings were discarded for naming a file the run did not change or a line the diff does not contain](docs/shot-review.svg)
+![The review panel: four findings, each naming a file and a line, two labelled bug and two labelled risk, with a note that two findings were discarded for naming a file the run did not change or a line the diff does not contain](docs/shot-review.svg)
 
 `--review` shows the model the diff and prints what it says. Every finding is checked in code
 first — it must name a file this run changed and point at a line inside a hunk the model was
@@ -228,16 +229,16 @@ window — captured by `docs/capture_cli.py` and reproducible with it:
 
 | | |
 |---|---|
-| parts | 13 planned, 13 run (part 7 failed and the run carried on), plus 4 repair parts |
-| coverage | 84% — 21 of 25 files; the plan alone reached 72%, the repair sweep rescued 3 |
-| the 4 misses | every one a one-line `__init__.py` a part opened and correctly left alone |
-| continuity | 8 of 12 hand-offs, largest 256 of the 500 reserved, 21 files carried by the record |
-| compaction | **6,370 tokens reclaimed across 6 parts**, 0 parts abandoned |
-| headroom | 104% of a part's ceiling at the worst part |
-| drift | 0.89–1.03x over **129 paired requests**, worst shortfall 326 tokens |
-| audit | clean — 21 changes on disk, every one claimed by the part that made it |
+| parts | 13 planned, 13 run, plus a repair part that failed on an unparseable tool call |
+| coverage | 88% — 22 of 25 files; the plan alone reached 84%, the repair sweep rescued 1 |
+| the 3 misses | every one a file a part opened and left alone, reported as such |
+| continuity | 10 of 12 hand-offs, largest 219 of the 500 reserved, 21 files carried by the record |
+| compaction | **4,622 tokens reclaimed across 6 parts**, 0 parts abandoned |
+| headroom | 95% of a part's ceiling at the largest request actually sent |
+| drift | 0.89–1.01x over **118 paired requests**, worst shortfall 314 tokens |
+| audit | clean — 22 changes on disk, every one claimed by the part that made it |
 | verdict | `FAILED`, exit 1 — a part could not finish, and three checks broke |
-| wall time | 25 minutes |
+| wall time | 20 minutes |
 
 The failure is the interesting half. A part died on a tool call the backend could not parse, seven
 files were left unparseable, and every one of those facts is in the report with a part number

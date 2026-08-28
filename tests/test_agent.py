@@ -387,6 +387,37 @@ async def test_every_request_sent_stayed_under_the_ceiling(workspace: Workspace)
         assert _count(body) <= session.ceiling + session.catalogue_tokens
 
 
+async def test_the_peak_never_exceeds_the_ceiling_it_is_reported_against(
+    workspace: Workspace,
+) -> None:
+    """A live run printed `headroom 104% of a part's ceiling`.
+
+    The peak was taken at the top of the loop, which is the one moment the conversation is
+    allowed to be over the ceiling: a tool result has just been appended and the checks that
+    compact it back or end the part have not run yet. Reported as a fraction of the ceiling,
+    that reads as a limit being exceeded -- and the whole guarantee is that it cannot be,
+    because nothing unproven goes on the wire. The peak now measures what was actually sent.
+    """
+    filler = "y = 2\n" * 400
+    (workspace.root / "src" / "filler.py").write_text(filler, encoding="utf-8")
+    read_call = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"function": {"name": "read_file", "arguments": {"path": "src/filler.py"}}}],
+    }
+    backend = FakeBackend([read_call])
+    box = _box(workspace, {"src/filler.py": ScopeEntry("src/filler.py")})
+    session = _session(backend, box, budget=4000)
+
+    result = await session.run("Read it repeatedly.")
+
+    assert result.stopped_early, "this part is meant to run out of window"
+    assert result.ceiling > 0
+    assert result.peak_tokens <= result.ceiling, (
+        f"peak {result.peak_tokens} over a ceiling of {result.ceiling}"
+    )
+
+
 # --- path spellings ---------------------------------------------------------------------
 
 

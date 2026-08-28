@@ -6,6 +6,24 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.6 — "A fraction of a limit that cannot be exceeded"
+
+- **`headroom` reported 104% of a part's ceiling.** It is peak-over-ceiling, so above 100% it
+  describes a limit being exceeded — and the limit is the one thing in a run that by
+  construction cannot be: nothing goes on the wire until it has been proven to fit.
+
+  Nothing was wrong with the ceiling. The **peak** was taken at the top of the loop, which is
+  the single moment a conversation is legitimately over it: a tool result has just been
+  appended, and the two checks that either compact it back or end the part have not run yet.
+  So the high-water mark included a state that was never sent, and then reported it as a
+  fraction of what may be sent.
+
+  The peak is now taken past both checks, immediately before the request goes out: the largest
+  conversation this part *actually sent*, which is what the line always claimed to be. The
+  excursion is not lost — it is exactly what the compaction and hand-off lines report, by name
+  and in tokens, at the moment it happens. A test pins the invariant, since the number is one a
+  reader uses to decide whether the next slightly larger file breaks the run.
+
 ## v1.1.5 — "One bad part is not a bad run"
 
 Both of these came out of the run photographed for the front page, which is the argument for

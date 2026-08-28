@@ -447,7 +447,6 @@ class AgentSession:
 
         while steps < _MAX_STEPS:
             projected = self._projected()
-            peak = max(peak, projected)
             if self._projected_for_ceiling() > self._ceiling and self._compact_enabled:
                 # Compaction runs BEFORE the refusal and cannot skip it: whatever it gives
                 # back, the projection is measured again against the same ceiling, and a part
@@ -455,7 +454,6 @@ class AgentSession:
                 reclaimed = self._compact()
                 if reclaimed:
                     projected = self._projected()
-                    peak = max(peak, projected)
                     self._on_event(
                         f"ceiling reached — compacted {reclaimed:,} tokens of stale tool "
                         f"results, back to {projected:,} of {self._ceiling:,}"
@@ -476,6 +474,15 @@ class AgentSession:
                 )
                 stopped_early = True
                 break
+
+            # Only here, past both checks, is this conversation going on the wire — and only
+            # what went on the wire can be a fraction of the ceiling that let it through.
+            # Measured at the top of the loop instead, `peak` also caught the moment a tool
+            # result had pushed the conversation OVER the ceiling, which is the state the two
+            # checks above exist to undo: a run reported `headroom 104%`, a fraction of a
+            # limit that by construction cannot be exceeded. The excursion is not lost — it is
+            # what the compaction and hand-off lines above report, by name and in tokens.
+            peak = max(peak, projected)
 
             try:
                 message, reported = await self._chat(self._tools)
