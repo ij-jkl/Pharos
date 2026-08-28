@@ -6,6 +6,38 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.5 — "One bad part is not a bad run"
+
+Both of these came out of the run photographed for the front page, which is the argument for
+photographing a run that went badly.
+
+- **A part that failed ended the run.** Part 11 of 13 died because the model emitted a tool
+  call the backend could not parse — `XML syntax error on line 2: element <function> closed by
+  </parameter>` — and parts 12 and 13 were never sent. Each part is its own conversation
+  against its own files, seeded only by the hand-off and the record, so a call that came back
+  wrong says nothing about the next part.
+
+  A failed part is now recorded, said, and stepped over. What ends a run is **two failures
+  back to back**: that is the shape of a backend that has gone away rather than a reply that
+  came back malformed, and grinding through eleven more parts to discover it is not a knowable
+  cost. The verdict is unchanged — any failed part still makes the run `FAILED` — and the
+  repair sweep now runs after a single failure, because the files that part never wrote are
+  exactly the leftovers it exists for. It still does not run after an abort or a
+  `--stop-on-break`: there is either nothing left to ask, or a tree that no longer parses.
+
+  The failed part's **writes go into the record either way**. They landed on disk; dropping
+  them because the call after them failed would hand the next part a record missing files it
+  can see. Its hand-off does not: a part that failed produced no closing summary, and passing
+  the previous part's on would describe work this part never did.
+
+- **The part table renamed the plan underneath itself.** The header read *"divided into 13
+  parts"* and the rows below it were numbered *"part 1/11"* through *"part 11/11"* — the
+  denominator was how many parts had executed, so a run that ended early silently restated how
+  many there had been. One screen disagreeing with itself about the only number on it a reader
+  can check. The rows now count against the plan, and a line under the table says how many
+  parts never ran and that their files still count against coverage — which they always did
+  (`planned_files`), invisibly.
+
 ## v1.1.4 — "Show it, then say it"
 
 No behaviour changed. The front page did.

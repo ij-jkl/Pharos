@@ -528,15 +528,16 @@ def _render_parts(console: Console, outcome: RunOutcome) -> None:
     table.add_column(justify="right", min_width=7)  # rounds
     table.add_column(style="dim", overflow="ellipsis")  # detail
 
-    planned = len(outcome.parts) - outcome.repair_parts
+    # Two different numbers, and the rows carry the second. `ran` is where the repair parts
+    # start; `planned` is what the header above said the plan divided the work into. They
+    # differ whenever a run ended early, and a table numbering eleven rows "of 11" under a
+    # header reading "divided into 13 parts" is one screen disagreeing with itself.
+    ran = len(outcome.parts) - outcome.repair_parts
+    planned = max(ran, len(outcome.plan.parts) if outcome.plan and outcome.divided else ran)
     for index, result in enumerate(outcome.parts, start=1):
         scoped, written = len(result.scoped), len(result.files_written)
         glyph, style = _part_glyph(result, scoped, written)
-        name = (
-            f"part {index}/{planned}"
-            if index <= planned
-            else f"repair {index - planned}"
-        )
+        name = f"part {index}/{planned}" if index <= ran else f"repair {index - ran}"
         files = f"{written}/{scoped}" if scoped else str(written)
         detail = _shorten(result.files_written) if result.files_written else ""
         if result.error:
@@ -557,6 +558,16 @@ def _render_parts(console: Console, outcome: RunOutcome) -> None:
         )
     console.print()
     console.print(table)
+    if planned > ran:
+        # Said rather than left to arithmetic on the row numbers. The files those parts were
+        # given are already counted against coverage (`planned_files`), so a reader who cannot
+        # see them here reads the coverage figure without knowing why it is low.
+        missing = planned - ran
+        console.print(
+            f"[yellow]  {missing} part(s) never ran[/] "
+            f"[dim]— the run ended at part {ran} of {planned}; their files count against "
+            f"coverage below[/]"
+        )
 
 
 def _add_untouched_row(body: Table, card: Scorecard) -> None:

@@ -2564,3 +2564,96 @@ this project has recorded: **72 f-string interpolations** (the previous best was
 **"Stopped early" was doing the work of two facts.** Both parts that hit the ceiling in §27 had
 already written every file they owned — they ran out of window checking their work over, not
 with files untouched. The scorecard now says how many, beside the count and folded into nothing.
+
+
+---
+
+## ☑ 29. The front page's own run, and the two defects it exposed (v1.1.5, live)
+
+**Runs completed 2026-08-27.** `docs/capture_cli.py` photographs the CLI by running it, so the
+README's run shot is a real run against a real model — and the first one it took found two
+things nothing else had. Both are Pharos's, not the model's, which is the argument for putting
+a bad run on the front page rather than a good one.
+
+The fixture is the script's own: a 22-module `shop/` package formatting with `%`, 13 tests, a
+clean `ruff` baseline, `num_ctx = 8192`. 25 files in scope, `max_files_per_part = 2`, so the
+plan comes out at 13 parts. `--semantic --compact --review`, `--exclude` on the file the prompt
+forbids.
+
+### One malformed tool call cost the last two parts
+
+Part 11 of 13 came back with `backend call failed: ValueError: XML syntax error on line 2:
+element <function> closed by </parameter>` — the model emitted a tool call Ollama could not
+parse. The run stopped there. Parts 12 and 13 were never sent, and their five files went
+straight into the coverage figure as untouched.
+
+That was `break` on the first failure, and it is wrong for the same reason the division works
+at all: **a part is its own conversation**, seeded only by the hand-off and the record, against
+its own files. A reply that came back malformed says nothing about the next part's.
+
+What it does say something about is the backend, when it happens twice. So a failed part is now
+recorded, said, and stepped over, and **two failures back to back** end the run — one bad reply
+against a backend that has gone away, and the cost of being wrong about the first is one part
+where the cost of not stopping is all of them.
+
+Two smaller decisions fell out of it:
+
+* **The failed part's writes go into the record.** They landed on disk before the call that
+  failed; a later part reading the record would otherwise find files missing from it that it
+  can see in the tree. Its **hand-off** does not — a part that failed wrote no closing summary,
+  and carrying the previous part's forward would describe work this part never did.
+* **The repair sweep now runs after a single failure**, since the files that part never wrote
+  are exactly the leftovers it exists for. Still not after two (nothing left to ask) and still
+  not after `--stop-on-break` (a tree that no longer parses).
+
+### The part table renamed the plan underneath itself
+
+The same shot, four lines apart:
+
+```
+  divided into 13 parts of ≤ 2,811 tokens
+  ✓ part 1/11     2/2   7 rnd errors.py, money.py
+  ...
+  ✗ part 11/11    2/2   8 rnd backend call failed: ...
+```
+
+The denominator was `len(outcome.parts) - repair_parts` — how many parts *executed*. So a run
+that ended early restated how many there had been, and the one number on that screen a reader
+can check disagreed with itself. It counts against the plan now, with a line under the table
+saying how many never ran and that their files still count against coverage — which they always
+did, through `planned_files`, invisibly.
+
+### Measured, the same prompt on the same fixture
+
+| | before the fix | after |
+|---|---|---|
+| parts planned / run | 13 / **11** | 13 / **13** (part 7 failed, the rest ran) |
+| repair parts | 0 (skipped after a failure) | 4 |
+| coverage | 68% (17 of 25) | **84%** (21 of 25) · the plan alone 72% |
+| the misses | 8 files, 3 of them never opened | 4 files, **all four** opened and left alone |
+| compaction | 8,856 tokens over 9 parts | 6,370 over 6 |
+| hand-offs | 10 of 10 | 8 of 12, 3 thin |
+| drift | 0.90–1.03x over 112 requests | 0.89–1.03x over 129 |
+| audit | clean | clean |
+| verdict | `FAILED`, exit 1 | `FAILED`, exit 1 |
+| wall time | 22m | 25m |
+
+The verdict is unchanged on purpose: **a failed part still fails the run.** What changed is that
+six more parts got to try, four `__init__.py` files that nobody had looked at are now four that
+a part opened and correctly left alone, and the difference between those two facts is the whole
+reason `untouched_but_examined` exists.
+
+### Not fixed, recorded: headroom read 104%
+
+The second run reports `headroom 104% of a part's ceiling, at the worst part`. Peak over
+ceiling is a fraction that should not exceed 1, so either the ceiling moved under a part that
+compacted or a single request is being measured against a ceiling computed before it. It is a
+reporting figure, it is on the safe side (it overstates pressure rather than hiding it), and
+nothing else depends on it. Left as found, and written down here rather than explained.
+
+### What these runs do NOT establish
+
+Coverage went 68% → 84% across two runs of one prompt, and six more parts ran in the second
+because the first stopped early. That is the fix working as designed; it is not a measurement
+of how much the fix is worth. Two runs of one task against one model cannot separate it from
+the roll of the dice, and §28 is the standing warning about exactly this.

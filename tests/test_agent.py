@@ -25,7 +25,7 @@ from rich.console import Console
 
 from pharos.agent.audit import own_paths
 from pharos.agent.cli import _render_footer, _render_way_back
-from pharos.agent.ledger import names_its_work
+from pharos.agent.ledger import FileChange, names_its_work
 from pharos.agent.runner import (
     RunOutcome,
     _edit_target,
@@ -2248,3 +2248,222 @@ def test_reserved_device_matches_the_stem_not_the_whole_name() -> None:
     assert reserved_device(Path("console.py")) is None
     assert reserved_device(Path("nullable.py")) is None
     assert reserved_device(Path("com10.py")) is None  # only COM1-9 are reserved
+
+
+# --- one part failing is not the run failing ----------------------------------------------------
+#
+# A live run of thirteen parts lost parts 12 and 13 because the model emitted one malformed
+# tool call in part 11 and the backend refused to parse it. Each part is its own conversation
+# against its own files, so that says nothing about the parts after it -- but two in a row is
+# a backend that has gone away, and sending the rest at it is not a knowable cost.
+
+
+class _FailingSession:
+    """Stands in for AgentSession and fails on the parts it was told to fail on."""
+
+    fail_on: set[int] = set()
+    seen: list[str] = []
+
+    def __init__(self, **kwargs: object) -> None:
+        toolbox = kwargs["toolbox"]
+        self._root = Path(str(toolbox.workspace.root))  # type: ignore[union-attr]
+        scope = getattr(toolbox, "scope", None)
+        self._scoped = sorted(scope) if scope else []
+
+    async def run(self, part_body: str) -> PartResult:
+        _FailingSession.seen.append(part_body)
+        index = len(_FailingSession.seen)
+        written: list[str] = []
+        for name in self._scoped:
+            path = self._root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("changed = True" + chr(10), encoding="utf-8")
+            written.append(name)
+        changes = [FileChange(display=name, added=("changed = True",), added_total=1)
+                   for name in written]
+        if index in _FailingSession.fail_on:
+            # Exactly the live shape: the part wrote a file and then died on the next call.
+            return PartResult(
+                text="", steps=1, files_written=written, peak_tokens=10,
+                reported_tokens=None, stopped_early=False, scoped=list(self._scoped),
+                changes=changes,
+                error="backend call failed: ValueError: XML syntax error",
+            )
+        return PartResult(
+            text="done", steps=1, files_written=written, peak_tokens=10,
+            reported_tokens=None, stopped_early=False, scoped=list(self._scoped),
+            changes=changes,
+        )
+
+
+async def _run_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, fail_on: set[int]
+) -> RunOutcome:
+    from dataclasses import replace as _replace
+
+    from pharos.accountant import Accountant
+    from pharos.agent import runner
+    from pharos.preflight.check import run_check as _run_check
+    from pharos.profiler.types import BackendInfo, EnvironmentProfile, GpuInfo
+
+    (tmp_path / "src").mkdir(exist_ok=True)
+    names = ["alpha.py", "beta.py", "gamma.py"]
+    for name in names:
+        (tmp_path / "src" / name).write_text("x = 1" + chr(10), encoding="utf-8")
+
+    config = PharosConfig(  # type: ignore[call-arg]
+        model="test-model",
+        target_folder=str(tmp_path),
+        observations_file=str(tmp_path / "obs.json"),
+        template_memory_file=str(tmp_path / "templates.json"),
+        verify=False,
+        repair_pass=False,  # the sweep is a separate question; this is about the loop
+        max_files_per_part=1,  # one file per part, so three files are three parts
+    )
+    prompt = "Document `src/alpha.py`, `src/beta.py` and `src/gamma.py`"
+    report = await _run_check(config, prompt, skip_profile=True, target=100_000)
+    gpu = GpuInfo(available=False, name=None, total_mib=None, used_mib=None, free_mib=None)
+    report = _replace(
+        report,
+        profile=EnvironmentProfile(
+            gpu=gpu,
+            backend=BackendInfo(
+                reachable=True, base_url=config.backend_url, model="test-model",
+                advertised_max_ctx=100_000, loaded_ctx=100_000,
+            ),
+            budget=Accountant(config).report(loaded_ctx=100_000, gpu=gpu),
+            ctx_mismatch=False,
+            ctx_mismatch_ratio=None,
+        ),
+    )
+
+    async def _check(*args: object, **kwargs: object) -> object:
+        return report
+
+    async def _window(*args: object, **kwargs: object) -> object:
+        return report
+
+    async def _reachable(*args: object, **kwargs: object) -> bool:
+        return False
+
+    _FailingSession.seen = []
+    _FailingSession.fail_on = fail_on
+    monkeypatch.setattr(runner, "run_check", _check)
+    monkeypatch.setattr(runner, "_ensure_window", _window)
+    monkeypatch.setattr(runner, "_reachable", _reachable)
+    monkeypatch.setattr(runner, "AgentSession", _FailingSession)
+    return await runner.run_task(config, prompt, use_git=False, audit=False)
+
+
+async def test_one_failed_part_does_not_end_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outcome = await _run_failing(tmp_path, monkeypatch, fail_on={2})
+
+    assert len(outcome.parts) == 3, "the parts after the failure were never sent"
+    assert outcome.parts[1].error is not None
+    assert outcome.parts[2].error is None
+    assert not outcome.ok, "a run with a failed part in it is still a failed run"
+
+
+async def test_a_failed_part_still_writes_into_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The writes landed. Dropping them because the call after them failed would hand the next
+    part a record missing files it can see on disk."""
+    outcome = await _run_failing(tmp_path, monkeypatch, fail_on={1})
+
+    assert outcome.ledger_on
+    assert outcome.ledger_files >= 1, "the failed part's write never reached the next part"
+
+
+async def test_two_failures_in_a_row_end_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One is a bad reply; two is a backend that is gone."""
+    outcome = await _run_failing(tmp_path, monkeypatch, fail_on={1, 2})
+
+    assert len(outcome.parts) == 2, "the run kept sending parts at a backend that had stopped"
+
+
+# --- the table and the header have to agree on how many parts there were -------------------------
+
+
+def _plan_of(parts: int) -> Any:
+    from pharos.preflight.split import Part, SplitMode, SplitPlan
+
+    return SplitPlan(
+        mode=SplitMode.SCOPE,
+        target_per_part=2_811,
+        target_label="test",
+        parts=[
+            Part(index=i, total=parts, body="do it", files=[], projected_tokens=10,
+                 fits=True, over_by=0)
+            for i in range(1, parts + 1)
+        ],
+    )
+
+
+def _ran(count: int, *, last_failed: bool = False) -> list[PartResult]:
+    out = []
+    for i in range(count):
+        failed = last_failed and i == count - 1
+        out.append(
+            PartResult(
+                text="done", steps=1, files_written=["src/alpha.py"], peak_tokens=10,
+                reported_tokens=None, stopped_early=False, scoped=["src/alpha.py"],
+                error="backend call failed" if failed else None,
+            )
+        )
+    return out
+
+
+def test_the_part_table_counts_against_the_plan_not_against_what_ran(tmp_path: Path) -> None:
+    """A live capture read "divided into 13 parts" over rows numbered "part 1/11".
+
+    The denominator was the number of parts that executed, so a run that ended early renamed
+    the plan underneath itself -- one screen disagreeing with itself about the only number on
+    it that a reader can check.
+    """
+    from pharos.agent.cli import _render_parts
+
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(plan=_plan_of(13), parts=_ran(11, last_failed=True))
+
+    _render_parts(console, outcome)
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "part 1/13" in text
+    assert "part 11/13" in text
+    assert "/11" not in text
+    assert "2 part(s) never ran" in text
+
+
+def test_a_run_that_finished_every_part_says_nothing_about_parts_that_never_ran(
+    tmp_path: Path,
+) -> None:
+    from pharos.agent.cli import _render_parts
+
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(plan=_plan_of(3), parts=_ran(3))
+
+    _render_parts(console, outcome)
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "part 3/3" in text
+    assert "never ran" not in text
+
+
+def test_repair_parts_are_still_labelled_repairs_after_a_short_run(tmp_path: Path) -> None:
+    """The repair rows start where the executed plan parts end, not where the plan does."""
+    from pharos.agent.cli import _render_parts
+
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(plan=_plan_of(5), parts=_ran(4), repair_parts=1)
+
+    _render_parts(console, outcome)
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "part 3/5" in text
+    assert "repair 1" in text
+    assert "2 part(s) never ran" in text

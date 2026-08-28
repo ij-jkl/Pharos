@@ -91,6 +91,10 @@ from pharos.tokenizer.resolver import resolve_gguf_path
 _logger = logging.getLogger("pharos.agent")
 
 _HEURISTIC_CHARS_PER_TOKEN = 4
+# How many parts have to fail back to back before the run gives up on the backend. One is a
+# bad reply; two is a backend that is gone. Deliberately small: the cost of being wrong here
+# is one wasted part, and the cost of not stopping is every remaining part.
+_CONSECUTIVE_FAILURES_THAT_END_A_RUN = 2
 
 
 @dataclass
@@ -656,7 +660,14 @@ async def run_task(
             outcome.parts.append(result)
             return result
 
-        failed = False
+        # One part failing does not end the run. Each part is its own conversation against its
+        # own files, so a call the backend could not answer says nothing about the next one --
+        # and a live run lost parts 12 and 13 of 13 because the model emitted one malformed
+        # tool call in part 11. What DOES end the run is two in a row: that is the shape of a
+        # backend that has gone away rather than a reply that came back wrong, and grinding
+        # through eleven more parts to discover it is not a knowable cost.
+        aborted = False
+        in_a_row = 0
         for index, (body, files) in enumerate(bodies, start=1):
             say(f"part {index} of {len(bodies)}")
             if ledger_text:
@@ -676,10 +687,30 @@ async def run_task(
                 else False
             )
             close_audit(f"part {index}", result)
+            # The record takes what a part wrote whether or not the call after it succeeded,
+            # for the same reason the damage parser runs first: the writes landed. Dropping
+            # them because the part died afterwards would hand the next part a record that is
+            # missing files it can see on disk.
+            record.record(f"part {index}", result.changes)
             if result.error:
+                in_a_row += 1
                 say(f"  [part {index}] failed: {result.error}")
-                failed = True
-                break
+                if in_a_row >= _CONSECUTIVE_FAILURES_THAT_END_A_RUN:
+                    aborted = True
+                    say(
+                        f"  [part {index}] {in_a_row} parts in a row failed — stopping here "
+                        f"rather than sending the rest at a backend that is not answering"
+                    )
+                    break
+                # Nothing crossed the gap but the record: a part that failed produced no
+                # hand-off, and passing the previous part's on would describe work this part
+                # never did.
+                ledger_text, _, _, _ = _carry(
+                    record, "", config.handoff_reserve, count, ledger=ledger_on
+                )
+                handoff = None
+                continue
+            in_a_row = 0
             if broke and halt_on_break:
                 outcome.stopped_on_break = f"part {index}"
                 say(
@@ -687,7 +718,6 @@ async def run_task(
                     f"one would inherit a tree that does not parse"
                 )
                 break
-            record.record(f"part {index}", result.changes)
             ledger_text, carried, cut, prose_reserve = _carry(
                 record, result.text, config.handoff_reserve, count, ledger=ledger_on
             )
@@ -708,7 +738,10 @@ async def run_task(
         # Not after a stop-on-break either. The sweep exists to finish work the plan left
         # undone, and running it over a tree that no longer parses is the compounding the
         # flag was set to prevent.
-        if not failed and outcome.stopped_on_break is None and divide and config.repair_pass:
+        # A single failed part is not a reason to skip it — its files are exactly the kind of
+        # leftover the sweep exists for. A run the backend abandoned is: there is nothing left
+        # to ask.
+        if not aborted and outcome.stopped_on_break is None and divide and config.repair_pass:
             missed = _untouched(outcome.parts)
             if missed:
                 say(f"{len(missed)} file(s) the plan assigned were never changed - repairing")

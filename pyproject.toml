@@ -1,6 +1,6 @@
 [project]
 name = "pharos"
-version = "1.1.4"
+version = "1.1.5"
 description = "Transparent, context-aware orchestration proxy and live terminal dashboard for local LLM backends."
 readme = "README.md"
 license = { file = "LICENSE" }

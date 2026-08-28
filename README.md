@@ -140,23 +140,27 @@ body, never anything the model said — so the part keeps working instead of sto
 
 ### And it tells you whether it worked
 
-![The end of a pharos run: eleven parts each marked done, thin or failed; then a scorecard reading FAILED, 68% coverage, 10 of 10 hand-offs, three parts named for breaking the build, 8,856 tokens reclaimed by compaction, a clean audit, and three verification checks that passed before this run and fail after it](docs/shot-run.svg)
+![The end of a pharos run: thirteen parts and four repair parts, each marked done, thin or failed; then a scorecard reading FAILED, 84% coverage against 72% for the plan alone, a part named for every file it broke, 6,370 tokens reclaimed by compaction, a clean audit, and three verification checks that passed before this run and fail after it](docs/shot-run.svg)
 
-**That is a run that went badly, photographed exactly as it came out.** The model wrote 17 files,
-broke three of them, and one part died on a malformed tool call; Pharos measured all of it, named
-the parts responsible, and exited 1. Nothing in that scorecard required asking a model anything:
-coverage is writes over scope, the audit re-indexes the tree after every part so a write that was
-claimed and never landed would be named, and the verification lines are your own `ruff` and
-`pytest` — run once before the first part as a baseline, then after each one. Only a check that
-**passed before and fails after** can fail the run.
+**That is a run that went badly, photographed exactly as it came out.** Part 7 died on a tool
+call the backend could not parse; the six parts after it ran anyway, because a bad reply in one
+conversation says nothing about the next. The model wrote 21 of 25 files and left seven of them
+unparseable. Pharos measured all of it, named a part against every break, and exited 1.
 
-Two lines are worth reading together: `compaction 8,856 tokens reclaimed across 9 parts` is nine
-parts that would otherwise have stopped at their ceiling, and `headroom 100%` is how close to the
-edge they ran anyway. That is what a 12 GB card's leftover window looks like from the inside.
+Nothing in that scorecard required asking a model anything: coverage is writes over scope, the
+audit re-indexes the tree after every part so a write that was claimed and never landed would be
+named, and the verification lines are your own `ruff` and `pytest` — run once before the first
+part as a baseline, then after each one. Only a check that **passed before and fails after** can
+fail the run.
+
+Three lines are worth reading together. `compaction 6,370 tokens reclaimed across 6 parts` is six
+parts that would otherwise have stopped at their ceiling; `headroom 104%` is how close to the
+edge they ran anyway; and `repair … the plan alone reached 72%` is the sweep that took coverage
+to 84% afterwards. That is what a 12 GB card's leftover window looks like from the inside.
 
 The opinion comes last, under a verdict it cannot change:
 
-![The review panel: eight findings, each naming a file and a line, four labelled bug and four labelled risk, with a note that one finding was discarded for naming a file the run did not change or a line the diff does not contain](docs/shot-review.svg)
+![The review panel: eight findings, each naming a file and a line, five labelled bug and three labelled risk, with a note that two findings were discarded for naming a file the run did not change or a line the diff does not contain](docs/shot-review.svg)
 
 `--review` shows the model the diff and prints what it says. Every finding is checked in code
 first — it must name a file this run changed and point at a line inside a hunk the model was
@@ -224,17 +228,18 @@ window — captured by `docs/capture_cli.py` and reproducible with it:
 
 | | |
 |---|---|
-| planned / executed parts | 13 / 11 (the run ended when part 11's backend call failed) |
-| coverage | 68% — 17 of 25 files, 5 of the misses opened and left alone |
-| continuity | 10 of 10 hand-offs, largest 224 of the 500 reserved |
-| compaction | **8,856 tokens reclaimed across 9 parts**, 0 parts abandoned |
-| headroom | 100% of a part's ceiling at the worst part |
-| drift | 0.90–1.03x over **112 paired requests**, worst shortfall 299 tokens |
-| audit | clean — 17 changes on disk, every one claimed by the part that made it |
-| verdict | `FAILED`, exit 1, three checks broken and three parts named |
-| wall time | 22 minutes |
+| parts | 13 planned, 13 run (part 7 failed and the run carried on), plus 4 repair parts |
+| coverage | 84% — 21 of 25 files; the plan alone reached 72%, the repair sweep rescued 3 |
+| the 4 misses | every one a one-line `__init__.py` a part opened and correctly left alone |
+| continuity | 8 of 12 hand-offs, largest 256 of the 500 reserved, 21 files carried by the record |
+| compaction | **6,370 tokens reclaimed across 6 parts**, 0 parts abandoned |
+| headroom | 104% of a part's ceiling at the worst part |
+| drift | 0.89–1.03x over **129 paired requests**, worst shortfall 326 tokens |
+| audit | clean — 21 changes on disk, every one claimed by the part that made it |
+| verdict | `FAILED`, exit 1 — a part could not finish, and three checks broke |
+| wall time | 25 minutes |
 
-The failure is the interesting half. A part died on a tool call the backend could not parse, three
+The failure is the interesting half. A part died on a tool call the backend could not parse, seven
 files were left unparseable, and every one of those facts is in the report with a part number
 against it — which is the difference between a tool that ran and a tool that tells you what
 happened.
