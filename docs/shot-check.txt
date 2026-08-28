@@ -1,0 +1,47 @@
+
+[1mPharos pre-flight[0m · qwen3.[1;92m5:9b[0m · tokenizer gguf [1m([0mexact[1m)[0m
+
+prompt text                      1,064  [2mexact                  [0m
+shop\errors.py                     257  [2mexact                  [0m
+shop\money.py                      309  [2mexact                  [0m
+shop\catalogue.py                  300  [2mexact                  [0m
+shop\orders.py                     342  [2mexact                  [0m
+shop\payments.py                   275  [2mexact                  [0m
+shop\checkout.py                   267  [2mexact                  [0m
+shop\discounts.py                  505  [2mexact                  [0m
+shop\inventory.py                  493  [2mexact                  [0m
+shop\customers.py                  364  [2mexact                  [0m
+shop\reporting.py                  391  [2mexact                  [0m
+shop\csv_export.py                 292  [2mexact                  [0m
+shop\legacy_invoice.py             317  [2mexact                  [0m
+shop\shipping\carriers.py          308  [2mexact                  [0m
+shop\shipping\parcels.py           257  [2mexact                  [0m
+shop\shipping\quotes.py            265  [2mexact                  [0m
+shop\shipping\tracking.py          323  [2mexact                  [0m
+shop\tax\rates.py                  191  [2mexact                  [0m
+shop\tax\calculator.py             137  [2mexact                  [0m
+shop\tax\exemptions.py             300  [2mexact                  [0m
+shop\notifications\dispatch.py     200  [2mexact                  [0m
+shop\notifications\digest.py       349  [2mexact                  [0m
+shop\notifications\templates.py    171  [2mexact                  [0m
+shop (directory, if fully read)    +59  [2mestimate — 4 text files[0m
+
+[1mFLOOR    ≥ [0m[1;36m7[0m[1m,[0m[1;36m677[0m[1m tokens[0m
+[1mCEILING  ≤ [0m[1;36m7[0m[1m,[0m[1;36m736[0m[1m tokens[0m [2mif every named directory is read in full[0m
+[2mA lower bound: exact for the files named above; the agent may read files it was not told about, and [0m
+[2mthose are not in this number.[0m
+[2mClient overhead unknown — run traffic through the Pharos proxy to calibrate it, or set [0m
+[2mclient_overhead_tokens in pharos.toml. The floor omits it.[0m
+[2mWhat the agent opens on its own is unknown: no traffic has been seen for this model yet -- it is [0m
+[2mlearned from whole agent conversations that go past the Pharos proxy. Set agent_read_tokens in [0m
+[2mpharos.toml to pin it.[0m
+
+Budget    [1;36m7[0m,[1;36m168[0m usable  [1;2m([0m[2mloaded [0m[1;2;36m8[0m[2m,[0m[1;2;36m192[0m[2m − reserve [0m[1;2;36m1[0m[2m,[0m[1;2;36m024[0m[1;2m)[0m
+Verdict   [1;31mEXCEEDS[0m — the floor alone is 509 over the usable budget; anything the agent reads on its 
+own makes it worse
+
+[2mRun the same prompt through `pharos split` [0m[1;2m([0m[2mor add --split[0m[1;2m)[0m[2m to cut it into sub-prompts that fit.[0m
+
+===== everything below is the live progress written to stderr while the above was being produced =====
+
+

@@ -1,0 +1,318 @@
+
+[1mPharos pre-flight[0m · qwen3.[1;92m5:9b[0m · tokenizer gguf [1m([0mexact[1m)[0m
+
+prompt text                      1,064  [2mexact                  [0m
+shop\errors.py                     257  [2mexact                  [0m
+shop\money.py                      309  [2mexact                  [0m
+shop\catalogue.py                  300  [2mexact                  [0m
+shop\orders.py                     342  [2mexact                  [0m
+shop\payments.py                   275  [2mexact                  [0m
+shop\checkout.py                   267  [2mexact                  [0m
+shop\discounts.py                  505  [2mexact                  [0m
+shop\inventory.py                  493  [2mexact                  [0m
+shop\customers.py                  364  [2mexact                  [0m
+shop\reporting.py                  391  [2mexact                  [0m
+shop\csv_export.py                 292  [2mexact                  [0m
+shop\legacy_invoice.py             317  [2mexact                  [0m
+shop\shipping\carriers.py          308  [2mexact                  [0m
+shop\shipping\parcels.py           257  [2mexact                  [0m
+shop\shipping\quotes.py            265  [2mexact                  [0m
+shop\shipping\tracking.py          323  [2mexact                  [0m
+shop\tax\rates.py                  191  [2mexact                  [0m
+shop\tax\calculator.py             137  [2mexact                  [0m
+shop\tax\exemptions.py             300  [2mexact                  [0m
+shop\notifications\dispatch.py     200  [2mexact                  [0m
+shop\notifications\digest.py       349  [2mexact                  [0m
+shop\notifications\templates.py    171  [2mexact                  [0m
+shop (directory, if fully read)    +59  [2mestimate — 4 text files[0m
+
+[1mFLOOR    ≥ [0m[1;36m7[0m[1m,[0m[1;36m677[0m[1m tokens[0m
+[1mCEILING  ≤ [0m[1;36m7[0m[1m,[0m[1;36m736[0m[1m tokens[0m [2mif every named directory is read in full[0m
+[2mA lower bound: exact for the files named above; the agent may read files it was not told about, and [0m
+[2mthose are not in this number.[0m
+[2mClient overhead unknown — run traffic through the Pharos proxy to calibrate it, or set [0m
+[2mclient_overhead_tokens in pharos.toml. The floor omits it.[0m
+[2mWhat the agent opens on its own is unknown: no traffic has been seen for this model yet -- it is [0m
+[2mlearned from whole agent conversations that go past the Pharos proxy. Set agent_read_tokens in [0m
+[2mpharos.toml to pin it.[0m
+
+Budget    [1;36m7[0m,[1;36m168[0m usable  [1;2m([0m[2mloaded [0m[1;2;36m8[0m[2m,[0m[1;2;36m192[0m[2m − reserve [0m[1;2;36m1[0m[2m,[0m[1;2;36m024[0m[1;2m)[0m
+Verdict   [1;31mEXCEEDS[0m — the floor alone is 509 over the usable budget; anything the agent reads on its 
+own makes it worse
+
+
+[1mSplit plan[0m · [1;36m2[0m parts · ≤ [1;36m5[0m,[1;36m734[0m tokens each [1;2m([0m[2mwarn threshold[0m[1;2m)[0m
+[2mSplit by SCOPE — every part repeats the task and narrows it to a subset of the files. Run them in [0m
+[2morder, pasting each part's hand-off above the next.[0m
+[33mgrouped by position[0m [2m— the proposal was rejected — it proposed [0m[1;2;36m5[0m[2m parts against a ceiling of [0m[1;2;36m4[0m
+[2mEach part holds back [0m[1;2;36m500[0m[2m tokens for the hand-off pasted above it, and parts [0m[1;2;36m2[0m[2m+ count it.[0m
+
+part 1/2  ≥ 5,305  [2mshop\errors.py (whole file), shop\money.py (whole file), shop\catalogue.py (whole [0m
+                   [2mfile), shop\orders.py (whole file), shop\payments.py (whole file),                [0m
+                   [2mshop\checkout.py (whole file), shop\discounts.py (whole file), shop\inventory.py  [0m
+                   [2m(whole file), shop\customers.py (whole file), shop\reporting.py (whole file),     [0m
+                   [2mshop\__init__.py (whole file · from shop), shop\notifications\__init__.py (whole  [0m
+                   [2mfile · from shop), shop\shipping\__init__.py (whole file · from shop),            [0m
+                   [2mshop\tax\__init__.py (whole file · from shop)                                     [0m
+part 2/2  ≥ 5,313  [2mshop\csv_export.py (whole file), shop\legacy_invoice.py (whole file),             [0m
+                   [2mshop\shipping\carriers.py (whole file), shop\shipping\parcels.py (whole file),    [0m
+                   [2mshop\shipping\quotes.py (whole file), shop\shipping\tracking.py (whole file),     [0m
+                   [2mshop\tax\rates.py (whole file), shop\tax\calculator.py (whole file),              [0m
+                   [2mshop\tax\exemptions.py (whole file), shop\notifications\dispatch.py (whole file), [0m
+                   [2mshop\notifications\digest.py (whole file), shop\notifications\templates.py (whole [0m
+                   [2mfile)                                                                             [0m
+
+[2mEach projection is a floor on the same terms as the verdict above: it holds while the agent stays [0m
+[2minside the part's scope.[0m
+
+[32m╭─[0m[32m part 1 of 2 [0m[32m────────────────────────────────────────────────────────────────────────────────────[0m[32m─╮[0m
+[32m│[0m [Pharos] Part 1 of 2 — this task was split to fit the context window.                             [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m IN SCOPE for this part — read and change only these:                                              [32m│[0m
+[32m│[0m   - shop\errors.py (whole file)                                                                   [32m│[0m
+[32m│[0m   - shop\money.py (whole file)                                                                    [32m│[0m
+[32m│[0m   - shop\catalogue.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\orders.py (whole file)                                                                   [32m│[0m
+[32m│[0m   - shop\payments.py (whole file)                                                                 [32m│[0m
+[32m│[0m   - shop\checkout.py (whole file)                                                                 [32m│[0m
+[32m│[0m   - shop\discounts.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\inventory.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\customers.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\reporting.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\__init__.py (whole file · from shop)                                                     [32m│[0m
+[32m│[0m   - shop\notifications\__init__.py (whole file · from shop)                                       [32m│[0m
+[32m│[0m   - shop\shipping\__init__.py (whole file · from shop)                                            [32m│[0m
+[32m│[0m   - shop\tax\__init__.py (whole file · from shop)                                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m OUT OF SCOPE — do not open these in this part; other parts cover them:                            [32m│[0m
+[32m│[0m   - shop\csv_export.py (whole file)                                                               [32m│[0m
+[32m│[0m   - shop\legacy_invoice.py (whole file)                                                           [32m│[0m
+[32m│[0m   - shop\shipping\carriers.py (whole file)                                                        [32m│[0m
+[32m│[0m   - shop\shipping\parcels.py (whole file)                                                         [32m│[0m
+[32m│[0m   - shop\shipping\quotes.py (whole file)                                                          [32m│[0m
+[32m│[0m   - shop\shipping\tracking.py (whole file)                                                        [32m│[0m
+[32m│[0m   - shop\tax\rates.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\tax\calculator.py (whole file)                                                           [32m│[0m
+[32m│[0m   - shop\tax\exemptions.py (whole file)                                                           [32m│[0m
+[32m│[0m   - shop\notifications\dispatch.py (whole file)                                                   [32m│[0m
+[32m│[0m   - shop\notifications\digest.py (whole file)                                                     [32m│[0m
+[32m│[0m   - shop\notifications\templates.py (whole file)                                                  [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m RULE: open ONLY the in-scope files. Opening anything else is what overflowed the window in the    [32m│[0m
+[32m│[0m first place, and it will overflow again. If you believe you need a deferred file to proceed, do   [32m│[0m
+[32m│[0m NOT open it — say which one and why, and stop.                                                    [32m│[0m
+[32m│[0m When you finish, end with a hand-off of at most 10 lines: what you changed and what part 2 needs  [32m│[0m
+[32m│[0m to know. Paste that hand-off above the next part.                                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m --- TASK (identical in all 2 parts) ---                                                           [32m│[0m
+[32m│[0m # Modernise every string in `shop/` to f-strings                                                  [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m The package predates f-strings and formats with the `%` operator throughout. Convert all of it,   [32m│[0m
+[32m│[0m file by file, without changing behaviour or the text any user sees.                               [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 1. Scope                                                                                       [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Convert every `%`-format expression in each of these, and nothing else:                           [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m - `shop/errors.py` - the exception messages the support team reads                                [32m│[0m
+[32m│[0m - `shop/money.py` - `__str__`, `symbol`, `audit_line`                                             [32m│[0m
+[32m│[0m - `shop/catalogue.py` - `Product.__repr__`, `Product.label`, `Catalogue.summary`                  [32m│[0m
+[32m│[0m - `shop/orders.py` - `Line.__str__`, `Order.describe`                                             [32m│[0m
+[32m│[0m - `shop/payments.py` - `Gateway.__str__`, `Receipt.render`, the two decline messages              [32m│[0m
+[32m│[0m - `shop/checkout.py` - `quote_lines`                                                              [32m│[0m
+[32m│[0m - `shop/discounts.py` - `Voucher.__str__` and `explain`                                           [32m│[0m
+[32m│[0m - `shop/inventory.py` - `Stock.__str__`, `Warehouse.reorder_list`, `Warehouse.report`             [32m│[0m
+[32m│[0m - `shop/customers.py` - `Address.one_line`, `Address.label`, `Customer.__str__`, `directory`      [32m│[0m
+[32m│[0m - `shop/reporting.py` - `Row.__str__`, `share`, `table`                                           [32m│[0m
+[32m│[0m - `shop/csv_export.py` - `quote`, `order_rows`, `export`                                          [32m│[0m
+[32m│[0m - `shop/legacy_invoice.py` - `render` and `footer`                                                [32m│[0m
+[32m│[0m - `shop/shipping/carriers.py` - `Carrier.__str__`                                                 [32m│[0m
+[32m│[0m - `shop/shipping/parcels.py` - `Parcel.__str__`, `manifest`                                       [32m│[0m
+[32m│[0m - `shop/shipping/quotes.py` - `Quote.__str__`, `cheapest`, `compare`                              [32m│[0m
+[32m│[0m - `shop/shipping/tracking.py` - `Event.__str__`, `Tracking.latest`, `Tracking.history`            [32m│[0m
+[32m│[0m - `shop/tax/rates.py` - `rate_for`, `describe`, `table`                                           [32m│[0m
+[32m│[0m - `shop/tax/calculator.py` - `breakdown`                                                          [32m│[0m
+[32m│[0m - `shop/tax/exemptions.py` - `Exemption.__str__` and `explain`                                    [32m│[0m
+[32m│[0m - `shop/notifications/dispatch.py` - `send`, `log`                                                [32m│[0m
+[32m│[0m - `shop/notifications/digest.py` - `Entry.__str__` and `Digest.render`                            [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Do not touch `shop/notifications/templates.py`: those constants are `%`-templates applied at      [32m│[0m
+[32m│[0m call time and marketing owns the wording. Do not touch the tests.                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 2. Rules                                                                                       [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m 1. Every converted expression is an f-string. No percent operator, no `str` formatting method,    [32m│[0m
+[32m│[0m    no string concatenation.                                                                       [32m│[0m
+[32m│[0m 2. The rendered output must be byte-for-byte what it was. The tests assert on it.                 [32m│[0m
+[32m│[0m 3. Width and precision specifiers carry over into the format spec: `%-20s` becomes `:<20`,        [32m│[0m
+[32m│[0m    `%10s` becomes `:>10`, `%.2f` becomes `:.2f`, `%3d` becomes `:3d`, `%03d` becomes `:03d`.      [32m│[0m
+[32m│[0m 4. A literal percent sign is `%%` in a `%`-format string and a single `%` in an f-string.         [32m│[0m
+[32m│[0m    `shop/tax/rates.py` and `shop/legacy_invoice.py` both publish percentages this way and both    [32m│[0m
+[32m│[0m    are easy to get wrong.                                                                         [32m│[0m
+[32m│[0m 5. Do not rename anything, do not reorder functions, do not add or remove behaviour, do not       [32m│[0m
+[32m│[0m    introduce a helper to do the formatting.                                                       [32m│[0m
+[32m│[0m 6. Keep every line within 100 columns; the project's ruff config enforces it.                     [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 3. Worked examples                                                                             [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Before:                                                                                           [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m     return "sku %s: wanted %d, only %d in stock" % (sku, wanted, held)                            [32m│[0m
+[32m│[0m     return "%-20s %10s" % (label, str(amount))                                                    [32m│[0m
+[32m│[0m     return "%s: %.2f%%" % (country, rate_for(country))                                            [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m After:                                                                                            [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m     return f"sku {sku}: wanted {wanted:d}, only {held:d} in stock"                                [32m│[0m
+[32m│[0m     return f"{label:<20} {str(amount):>10}"                                                       [32m│[0m
+[32m│[0m     return f"{country}: {rate_for(country):.2f}%"                                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 4. Order of work                                                                               [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Start at the leaves and work up, so a mistake surfaces in a small file first: `errors.py`,        [32m│[0m
+[32m│[0m `money.py`, then the shipping and tax packages, then `catalogue.py`, `orders.py`,                 [32m│[0m
+[32m│[0m `payments.py`, `checkout.py`, and `legacy_invoice.py` last because it is the longest.             [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 5. Definition of done                                                                          [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m - `python -m ast` parses every file that was changed.                                             [32m│[0m
+[32m│[0m - `ruff check .` is clean.                                                                        [32m│[0m
+[32m│[0m - `pytest -q` passes all thirteen tests, unchanged.                                               [32m│[0m
+[32m│[0m - `grep -rn "%" shop/` returns hits only in `shop/notifications/templates.py`.                    [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m --- REMINDER --- In this part you may open ONLY: shop\errors.py (whole file), shop\money.py       [32m│[0m
+[32m│[0m (whole file), shop\catalogue.py (whole file), shop\orders.py (whole file), shop\payments.py       [32m│[0m
+[32m│[0m (whole file), shop\checkout.py (whole file), shop\discounts.py (whole file), shop\inventory.py    [32m│[0m
+[32m│[0m (whole file), shop\customers.py (whole file), shop\reporting.py (whole file), shop\__init__.py    [32m│[0m
+[32m│[0m (whole file · from shop), shop\notifications\__init__.py (whole file · from shop),                [32m│[0m
+[32m│[0m shop\shipping\__init__.py (whole file · from shop), shop\tax\__init__.py (whole file · from       [32m│[0m
+[32m│[0m shop). The other 12 file(s) listed above belong to other parts.                                   [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m╰───────────────────────────────────────────────────────────────────────────────────────────────────╯[0m
+[32m╭─[0m[32m part 2 of 2 [0m[32m────────────────────────────────────────────────────────────────────────────────────[0m[32m─╮[0m
+[32m│[0m [Pharos] Part 2 of 2 — this task was split to fit the context window.                             [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m IN SCOPE for this part — read and change only these:                                              [32m│[0m
+[32m│[0m   - shop\csv_export.py (whole file)                                                               [32m│[0m
+[32m│[0m   - shop\legacy_invoice.py (whole file)                                                           [32m│[0m
+[32m│[0m   - shop\shipping\carriers.py (whole file)                                                        [32m│[0m
+[32m│[0m   - shop\shipping\parcels.py (whole file)                                                         [32m│[0m
+[32m│[0m   - shop\shipping\quotes.py (whole file)                                                          [32m│[0m
+[32m│[0m   - shop\shipping\tracking.py (whole file)                                                        [32m│[0m
+[32m│[0m   - shop\tax\rates.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\tax\calculator.py (whole file)                                                           [32m│[0m
+[32m│[0m   - shop\tax\exemptions.py (whole file)                                                           [32m│[0m
+[32m│[0m   - shop\notifications\dispatch.py (whole file)                                                   [32m│[0m
+[32m│[0m   - shop\notifications\digest.py (whole file)                                                     [32m│[0m
+[32m│[0m   - shop\notifications\templates.py (whole file)                                                  [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m OUT OF SCOPE — do not open these in this part; other parts cover them:                            [32m│[0m
+[32m│[0m   - shop\errors.py (whole file)                                                                   [32m│[0m
+[32m│[0m   - shop\money.py (whole file)                                                                    [32m│[0m
+[32m│[0m   - shop\catalogue.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\orders.py (whole file)                                                                   [32m│[0m
+[32m│[0m   - shop\payments.py (whole file)                                                                 [32m│[0m
+[32m│[0m   - shop\checkout.py (whole file)                                                                 [32m│[0m
+[32m│[0m   - shop\discounts.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\inventory.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\customers.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\reporting.py (whole file)                                                                [32m│[0m
+[32m│[0m   - shop\__init__.py (whole file · from shop)                                                     [32m│[0m
+[32m│[0m   - shop\notifications\__init__.py (whole file · from shop)                                       [32m│[0m
+[32m│[0m   - shop\shipping\__init__.py (whole file · from shop)                                            [32m│[0m
+[32m│[0m   - shop\tax\__init__.py (whole file · from shop)                                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m RULE: open ONLY the in-scope files. Opening anything else is what overflowed the window in the    [32m│[0m
+[32m│[0m first place, and it will overflow again. If you believe you need a deferred file to proceed, do   [32m│[0m
+[32m│[0m NOT open it — say which one and why, and stop.                                                    [32m│[0m
+[32m│[0m This is the final part — no hand-off is needed after it.                                          [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m --- TASK (identical in all 2 parts) ---                                                           [32m│[0m
+[32m│[0m # Modernise every string in `shop/` to f-strings                                                  [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m The package predates f-strings and formats with the `%` operator throughout. Convert all of it,   [32m│[0m
+[32m│[0m file by file, without changing behaviour or the text any user sees.                               [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 1. Scope                                                                                       [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Convert every `%`-format expression in each of these, and nothing else:                           [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m - `shop/errors.py` - the exception messages the support team reads                                [32m│[0m
+[32m│[0m - `shop/money.py` - `__str__`, `symbol`, `audit_line`                                             [32m│[0m
+[32m│[0m - `shop/catalogue.py` - `Product.__repr__`, `Product.label`, `Catalogue.summary`                  [32m│[0m
+[32m│[0m - `shop/orders.py` - `Line.__str__`, `Order.describe`                                             [32m│[0m
+[32m│[0m - `shop/payments.py` - `Gateway.__str__`, `Receipt.render`, the two decline messages              [32m│[0m
+[32m│[0m - `shop/checkout.py` - `quote_lines`                                                              [32m│[0m
+[32m│[0m - `shop/discounts.py` - `Voucher.__str__` and `explain`                                           [32m│[0m
+[32m│[0m - `shop/inventory.py` - `Stock.__str__`, `Warehouse.reorder_list`, `Warehouse.report`             [32m│[0m
+[32m│[0m - `shop/customers.py` - `Address.one_line`, `Address.label`, `Customer.__str__`, `directory`      [32m│[0m
+[32m│[0m - `shop/reporting.py` - `Row.__str__`, `share`, `table`                                           [32m│[0m
+[32m│[0m - `shop/csv_export.py` - `quote`, `order_rows`, `export`                                          [32m│[0m
+[32m│[0m - `shop/legacy_invoice.py` - `render` and `footer`                                                [32m│[0m
+[32m│[0m - `shop/shipping/carriers.py` - `Carrier.__str__`                                                 [32m│[0m
+[32m│[0m - `shop/shipping/parcels.py` - `Parcel.__str__`, `manifest`                                       [32m│[0m
+[32m│[0m - `shop/shipping/quotes.py` - `Quote.__str__`, `cheapest`, `compare`                              [32m│[0m
+[32m│[0m - `shop/shipping/tracking.py` - `Event.__str__`, `Tracking.latest`, `Tracking.history`            [32m│[0m
+[32m│[0m - `shop/tax/rates.py` - `rate_for`, `describe`, `table`                                           [32m│[0m
+[32m│[0m - `shop/tax/calculator.py` - `breakdown`                                                          [32m│[0m
+[32m│[0m - `shop/tax/exemptions.py` - `Exemption.__str__` and `explain`                                    [32m│[0m
+[32m│[0m - `shop/notifications/dispatch.py` - `send`, `log`                                                [32m│[0m
+[32m│[0m - `shop/notifications/digest.py` - `Entry.__str__` and `Digest.render`                            [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Do not touch `shop/notifications/templates.py`: those constants are `%`-templates applied at      [32m│[0m
+[32m│[0m call time and marketing owns the wording. Do not touch the tests.                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 2. Rules                                                                                       [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m 1. Every converted expression is an f-string. No percent operator, no `str` formatting method,    [32m│[0m
+[32m│[0m    no string concatenation.                                                                       [32m│[0m
+[32m│[0m 2. The rendered output must be byte-for-byte what it was. The tests assert on it.                 [32m│[0m
+[32m│[0m 3. Width and precision specifiers carry over into the format spec: `%-20s` becomes `:<20`,        [32m│[0m
+[32m│[0m    `%10s` becomes `:>10`, `%.2f` becomes `:.2f`, `%3d` becomes `:3d`, `%03d` becomes `:03d`.      [32m│[0m
+[32m│[0m 4. A literal percent sign is `%%` in a `%`-format string and a single `%` in an f-string.         [32m│[0m
+[32m│[0m    `shop/tax/rates.py` and `shop/legacy_invoice.py` both publish percentages this way and both    [32m│[0m
+[32m│[0m    are easy to get wrong.                                                                         [32m│[0m
+[32m│[0m 5. Do not rename anything, do not reorder functions, do not add or remove behaviour, do not       [32m│[0m
+[32m│[0m    introduce a helper to do the formatting.                                                       [32m│[0m
+[32m│[0m 6. Keep every line within 100 columns; the project's ruff config enforces it.                     [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 3. Worked examples                                                                             [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Before:                                                                                           [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m     return "sku %s: wanted %d, only %d in stock" % (sku, wanted, held)                            [32m│[0m
+[32m│[0m     return "%-20s %10s" % (label, str(amount))                                                    [32m│[0m
+[32m│[0m     return "%s: %.2f%%" % (country, rate_for(country))                                            [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m After:                                                                                            [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m     return f"sku {sku}: wanted {wanted:d}, only {held:d} in stock"                                [32m│[0m
+[32m│[0m     return f"{label:<20} {str(amount):>10}"                                                       [32m│[0m
+[32m│[0m     return f"{country}: {rate_for(country):.2f}%"                                                 [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 4. Order of work                                                                               [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m Start at the leaves and work up, so a mistake surfaces in a small file first: `errors.py`,        [32m│[0m
+[32m│[0m `money.py`, then the shipping and tax packages, then `catalogue.py`, `orders.py`,                 [32m│[0m
+[32m│[0m `payments.py`, `checkout.py`, and `legacy_invoice.py` last because it is the longest.             [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m ## 5. Definition of done                                                                          [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m - `python -m ast` parses every file that was changed.                                             [32m│[0m
+[32m│[0m - `ruff check .` is clean.                                                                        [32m│[0m
+[32m│[0m - `pytest -q` passes all thirteen tests, unchanged.                                               [32m│[0m
+[32m│[0m - `grep -rn "%" shop/` returns hits only in `shop/notifications/templates.py`.                    [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m│[0m --- REMINDER --- In this part you may open ONLY: shop\csv_export.py (whole file),                 [32m│[0m
+[32m│[0m shop\legacy_invoice.py (whole file), shop\shipping\carriers.py (whole file),                      [32m│[0m
+[32m│[0m shop\shipping\parcels.py (whole file), shop\shipping\quotes.py (whole file),                      [32m│[0m
+[32m│[0m shop\shipping\tracking.py (whole file), shop\tax\rates.py (whole file), shop\tax\calculator.py    [32m│[0m
+[32m│[0m (whole file), shop\tax\exemptions.py (whole file), shop\notifications\dispatch.py (whole file),   [32m│[0m
+[32m│[0m shop\notifications\digest.py (whole file), shop\notifications\templates.py (whole file). The      [32m│[0m
+[32m│[0m other 14 file(s) listed above belong to other parts.                                              [32m│[0m
+[32m│[0m                                                                                                   [32m│[0m
+[32m╰───────────────────────────────────────────────────────────────────────────────────────────────────╯[0m
+
+===== everything below is the live progress written to stderr while the above was being produced =====
+
+

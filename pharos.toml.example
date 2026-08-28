@@ -78,8 +78,9 @@ proxy_port = 11435
 # The TUI owns the terminal, so request/error detail goes to a rotating log file instead.
 log_file = "pharos.log"
 
-# Root that `pharos check` resolves file references against (the repo you point your coding
-# agent at). Unset: the current directory is used, with a warning.
+# The project Pharos works on: the root `check` and `split` resolve file references against,
+# and the tree `run` reads, writes and audits. Set it to the repository you want worked on and
+# Pharos can live anywhere. Unset: the current directory is used, with a warning.
 # target_folder = "."
 
 # --- pharos run --------------------------------------------------------------------------

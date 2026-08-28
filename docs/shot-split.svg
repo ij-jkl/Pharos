@@ -1,0 +1,209 @@
+<svg class="rich-terminal" viewBox="0 0 1238 952.8" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <style>
+
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Regular"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Regular.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Regular.woff") format("woff");
+        font-style: normal;
+        font-weight: 400;
+    }
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Bold"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Bold.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Bold.woff") format("woff");
+        font-style: bold;
+        font-weight: 700;
+    }
+
+    .terminal-2504037988-matrix {
+        font-family: Fira Code, monospace;
+        font-size: 20px;
+        line-height: 24.4px;
+        font-variant-east-asian: full-width;
+    }
+
+    .terminal-2504037988-title {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }
+
+    .terminal-2504037988-r1 { fill: #d9d9d9;font-weight: bold }
+.terminal-2504037988-r2 { fill: #58d1eb;font-weight: bold }
+.terminal-2504037988-r3 { fill: #d9d9d9 }
+.terminal-2504037988-r4 { fill: #878787 }
+.terminal-2504037988-r5 { fill: #878787;font-weight: bold }
+.terminal-2504037988-r6 { fill: #398291;font-weight: bold }
+.terminal-2504037988-r7 { fill: #f4005f;font-weight: bold }
+.terminal-2504037988-r8 { fill: #fd971f }
+    </style>
+
+    <defs>
+    <clipPath id="terminal-2504037988-clip-terminal">
+      <rect x="0" y="0" width="1219.0" height="901.8" />
+    </clipPath>
+    <clipPath id="terminal-2504037988-line-0">
+    <rect x="0" y="1.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-1">
+    <rect x="0" y="25.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-2">
+    <rect x="0" y="50.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-3">
+    <rect x="0" y="74.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-4">
+    <rect x="0" y="99.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-5">
+    <rect x="0" y="123.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-6">
+    <rect x="0" y="147.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-7">
+    <rect x="0" y="172.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-8">
+    <rect x="0" y="196.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-9">
+    <rect x="0" y="221.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-10">
+    <rect x="0" y="245.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-11">
+    <rect x="0" y="269.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-12">
+    <rect x="0" y="294.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-13">
+    <rect x="0" y="318.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-14">
+    <rect x="0" y="343.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-15">
+    <rect x="0" y="367.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-16">
+    <rect x="0" y="391.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-17">
+    <rect x="0" y="416.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-18">
+    <rect x="0" y="440.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-19">
+    <rect x="0" y="465.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-20">
+    <rect x="0" y="489.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-21">
+    <rect x="0" y="513.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-22">
+    <rect x="0" y="538.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-23">
+    <rect x="0" y="562.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-24">
+    <rect x="0" y="587.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-25">
+    <rect x="0" y="611.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-26">
+    <rect x="0" y="635.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-27">
+    <rect x="0" y="660.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-28">
+    <rect x="0" y="684.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-29">
+    <rect x="0" y="709.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-30">
+    <rect x="0" y="733.5" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-31">
+    <rect x="0" y="757.9" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-32">
+    <rect x="0" y="782.3" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-33">
+    <rect x="0" y="806.7" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-34">
+    <rect x="0" y="831.1" width="1220" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2504037988-line-35">
+    <rect x="0" y="855.5" width="1220" height="24.65"/>
+            </clipPath>
+    </defs>
+
+    <rect fill="#0c0c0c" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="1236" height="950.8" rx="8"/><text class="terminal-2504037988-title" fill="#d9d9d9" text-anchor="middle" x="618" y="27">pharos&#160;split&#160;--semantic&#160;&#160;&#160;·&#160;&#160;&#160;exit&#160;0&#160;&#160;(excerpt)</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
+            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
+            <circle cx="44" cy="0" r="7" fill="#28c840"/>
+            </g>
+        
+    <g transform="translate(9, 41)" clip-path="url(#terminal-2504037988-clip-terminal)">
+    
+    <g class="terminal-2504037988-matrix">
+    <text class="terminal-2504037988-r1" x="0" y="20" textLength="134.2" clip-path="url(#terminal-2504037988-line-0)">FLOOR&#160;&#160;&#160;&#160;≥&#160;</text><text class="terminal-2504037988-r2" x="134.2" y="20" textLength="12.2" clip-path="url(#terminal-2504037988-line-0)">7</text><text class="terminal-2504037988-r1" x="146.4" y="20" textLength="12.2" clip-path="url(#terminal-2504037988-line-0)">,</text><text class="terminal-2504037988-r2" x="158.6" y="20" textLength="36.6" clip-path="url(#terminal-2504037988-line-0)">677</text><text class="terminal-2504037988-r1" x="195.2" y="20" textLength="85.4" clip-path="url(#terminal-2504037988-line-0)">&#160;tokens</text><text class="terminal-2504037988-r3" x="1220" y="20" textLength="12.2" clip-path="url(#terminal-2504037988-line-0)">
+</text><text class="terminal-2504037988-r1" x="0" y="44.4" textLength="134.2" clip-path="url(#terminal-2504037988-line-1)">CEILING&#160;&#160;≤&#160;</text><text class="terminal-2504037988-r2" x="134.2" y="44.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-1)">7</text><text class="terminal-2504037988-r1" x="146.4" y="44.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-1)">,</text><text class="terminal-2504037988-r2" x="158.6" y="44.4" textLength="36.6" clip-path="url(#terminal-2504037988-line-1)">736</text><text class="terminal-2504037988-r1" x="195.2" y="44.4" textLength="85.4" clip-path="url(#terminal-2504037988-line-1)">&#160;tokens</text><text class="terminal-2504037988-r4" x="292.8" y="44.4" textLength="488" clip-path="url(#terminal-2504037988-line-1)">if&#160;every&#160;named&#160;directory&#160;is&#160;read&#160;in&#160;full</text><text class="terminal-2504037988-r3" x="1220" y="44.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-1)">
+</text><text class="terminal-2504037988-r4" x="0" y="68.8" textLength="1220" clip-path="url(#terminal-2504037988-line-2)">A&#160;lower&#160;bound:&#160;exact&#160;for&#160;the&#160;files&#160;named&#160;above;&#160;the&#160;agent&#160;may&#160;read&#160;files&#160;it&#160;was&#160;not&#160;told&#160;about,&#160;and&#160;</text><text class="terminal-2504037988-r3" x="1220" y="68.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-2)">
+</text><text class="terminal-2504037988-r4" x="0" y="93.2" textLength="353.8" clip-path="url(#terminal-2504037988-line-3)">those&#160;are&#160;not&#160;in&#160;this&#160;number.</text><text class="terminal-2504037988-r3" x="1220" y="93.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-3)">
+</text><text class="terminal-2504037988-r4" x="0" y="117.6" textLength="1061.4" clip-path="url(#terminal-2504037988-line-4)">Client&#160;overhead&#160;unknown&#160;—&#160;run&#160;traffic&#160;through&#160;the&#160;Pharos&#160;proxy&#160;to&#160;calibrate&#160;it,&#160;or&#160;set&#160;</text><text class="terminal-2504037988-r3" x="1220" y="117.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-4)">
+</text><text class="terminal-2504037988-r4" x="0" y="142" textLength="707.6" clip-path="url(#terminal-2504037988-line-5)">client_overhead_tokens&#160;in&#160;pharos.toml.&#160;The&#160;floor&#160;omits&#160;it.</text><text class="terminal-2504037988-r3" x="1220" y="142" textLength="12.2" clip-path="url(#terminal-2504037988-line-5)">
+</text><text class="terminal-2504037988-r4" x="0" y="166.4" textLength="1183.4" clip-path="url(#terminal-2504037988-line-6)">What&#160;the&#160;agent&#160;opens&#160;on&#160;its&#160;own&#160;is&#160;unknown:&#160;no&#160;traffic&#160;has&#160;been&#160;seen&#160;for&#160;this&#160;model&#160;yet&#160;--&#160;it&#160;is&#160;</text><text class="terminal-2504037988-r3" x="1220" y="166.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-6)">
+</text><text class="terminal-2504037988-r4" x="0" y="190.8" textLength="1159" clip-path="url(#terminal-2504037988-line-7)">learned&#160;from&#160;whole&#160;agent&#160;conversations&#160;that&#160;go&#160;past&#160;the&#160;Pharos&#160;proxy.&#160;Set&#160;agent_read_tokens&#160;in&#160;</text><text class="terminal-2504037988-r3" x="1220" y="190.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-7)">
+</text><text class="terminal-2504037988-r4" x="0" y="215.2" textLength="268.4" clip-path="url(#terminal-2504037988-line-8)">pharos.toml&#160;to&#160;pin&#160;it.</text><text class="terminal-2504037988-r3" x="1220" y="215.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-8)">
+</text><text class="terminal-2504037988-r3" x="1220" y="239.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-9)">
+</text><text class="terminal-2504037988-r3" x="0" y="264" textLength="122" clip-path="url(#terminal-2504037988-line-10)">Budget&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r2" x="122" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">7</text><text class="terminal-2504037988-r3" x="134.2" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">,</text><text class="terminal-2504037988-r2" x="146.4" y="264" textLength="36.6" clip-path="url(#terminal-2504037988-line-10)">168</text><text class="terminal-2504037988-r3" x="183" y="264" textLength="109.8" clip-path="url(#terminal-2504037988-line-10)">&#160;usable&#160;&#160;</text><text class="terminal-2504037988-r5" x="292.8" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">(</text><text class="terminal-2504037988-r4" x="305" y="264" textLength="85.4" clip-path="url(#terminal-2504037988-line-10)">loaded&#160;</text><text class="terminal-2504037988-r6" x="390.4" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">8</text><text class="terminal-2504037988-r4" x="402.6" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">,</text><text class="terminal-2504037988-r6" x="414.8" y="264" textLength="36.6" clip-path="url(#terminal-2504037988-line-10)">192</text><text class="terminal-2504037988-r4" x="451.4" y="264" textLength="134.2" clip-path="url(#terminal-2504037988-line-10)">&#160;−&#160;reserve&#160;</text><text class="terminal-2504037988-r6" x="585.6" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">1</text><text class="terminal-2504037988-r4" x="597.8" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">,</text><text class="terminal-2504037988-r6" x="610" y="264" textLength="36.6" clip-path="url(#terminal-2504037988-line-10)">024</text><text class="terminal-2504037988-r5" x="646.6" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">)</text><text class="terminal-2504037988-r3" x="1220" y="264" textLength="12.2" clip-path="url(#terminal-2504037988-line-10)">
+</text><text class="terminal-2504037988-r3" x="0" y="288.4" textLength="122" clip-path="url(#terminal-2504037988-line-11)">Verdict&#160;&#160;&#160;</text><text class="terminal-2504037988-r7" x="122" y="288.4" textLength="85.4" clip-path="url(#terminal-2504037988-line-11)">EXCEEDS</text><text class="terminal-2504037988-r3" x="207.4" y="288.4" textLength="1000.4" clip-path="url(#terminal-2504037988-line-11)">&#160;—&#160;the&#160;floor&#160;alone&#160;is&#160;509&#160;over&#160;the&#160;usable&#160;budget;&#160;anything&#160;the&#160;agent&#160;reads&#160;on&#160;its&#160;</text><text class="terminal-2504037988-r3" x="1220" y="288.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-11)">
+</text><text class="terminal-2504037988-r3" x="0" y="312.8" textLength="219.6" clip-path="url(#terminal-2504037988-line-12)">own&#160;makes&#160;it&#160;worse</text><text class="terminal-2504037988-r3" x="1220" y="312.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-12)">
+</text><text class="terminal-2504037988-r3" x="1220" y="337.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-13)">
+</text><text class="terminal-2504037988-r3" x="1220" y="361.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-14)">
+</text><text class="terminal-2504037988-r1" x="0" y="386" textLength="122" clip-path="url(#terminal-2504037988-line-15)">Split&#160;plan</text><text class="terminal-2504037988-r3" x="122" y="386" textLength="36.6" clip-path="url(#terminal-2504037988-line-15)">&#160;·&#160;</text><text class="terminal-2504037988-r2" x="158.6" y="386" textLength="12.2" clip-path="url(#terminal-2504037988-line-15)">2</text><text class="terminal-2504037988-r3" x="170.8" y="386" textLength="134.2" clip-path="url(#terminal-2504037988-line-15)">&#160;parts&#160;·&#160;≤&#160;</text><text class="terminal-2504037988-r2" x="305" y="386" textLength="12.2" clip-path="url(#terminal-2504037988-line-15)">5</text><text class="terminal-2504037988-r3" x="317.2" y="386" textLength="12.2" clip-path="url(#terminal-2504037988-line-15)">,</text><text class="terminal-2504037988-r2" x="329.4" y="386" textLength="36.6" clip-path="url(#terminal-2504037988-line-15)">734</text><text class="terminal-2504037988-r3" x="366" y="386" textLength="158.6" clip-path="url(#terminal-2504037988-line-15)">&#160;tokens&#160;each&#160;</text><text class="terminal-2504037988-r5" x="524.6" y="386" textLength="12.2" clip-path="url(#terminal-2504037988-line-15)">(</text><text class="terminal-2504037988-r4" x="536.8" y="386" textLength="170.8" clip-path="url(#terminal-2504037988-line-15)">warn&#160;threshold</text><text class="terminal-2504037988-r5" x="707.6" y="386" textLength="12.2" clip-path="url(#terminal-2504037988-line-15)">)</text><text class="terminal-2504037988-r3" x="1220" y="386" textLength="12.2" clip-path="url(#terminal-2504037988-line-15)">
+</text><text class="terminal-2504037988-r4" x="0" y="410.4" textLength="1195.6" clip-path="url(#terminal-2504037988-line-16)">Split&#160;by&#160;SCOPE&#160;—&#160;every&#160;part&#160;repeats&#160;the&#160;task&#160;and&#160;narrows&#160;it&#160;to&#160;a&#160;subset&#160;of&#160;the&#160;files.&#160;Run&#160;them&#160;in&#160;</text><text class="terminal-2504037988-r3" x="1220" y="410.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-16)">
+</text><text class="terminal-2504037988-r4" x="0" y="434.8" textLength="622.2" clip-path="url(#terminal-2504037988-line-17)">order,&#160;pasting&#160;each&#160;part&#x27;s&#160;hand-off&#160;above&#160;the&#160;next.</text><text class="terminal-2504037988-r3" x="1220" y="434.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-17)">
+</text><text class="terminal-2504037988-r8" x="0" y="459.2" textLength="231.8" clip-path="url(#terminal-2504037988-line-18)">grouped&#160;by&#160;position</text><text class="terminal-2504037988-r4" x="244" y="459.2" textLength="512.4" clip-path="url(#terminal-2504037988-line-18)">—&#160;the&#160;proposal&#160;was&#160;rejected&#160;—&#160;it&#160;proposed&#160;</text><text class="terminal-2504037988-r6" x="756.4" y="459.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-18)">5</text><text class="terminal-2504037988-r4" x="768.6" y="459.2" textLength="341.6" clip-path="url(#terminal-2504037988-line-18)">&#160;parts&#160;against&#160;a&#160;ceiling&#160;of&#160;</text><text class="terminal-2504037988-r6" x="1110.2" y="459.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-18)">4</text><text class="terminal-2504037988-r3" x="1220" y="459.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-18)">
+</text><text class="terminal-2504037988-r4" x="0" y="483.6" textLength="256.2" clip-path="url(#terminal-2504037988-line-19)">Each&#160;part&#160;holds&#160;back&#160;</text><text class="terminal-2504037988-r6" x="256.2" y="483.6" textLength="36.6" clip-path="url(#terminal-2504037988-line-19)">500</text><text class="terminal-2504037988-r4" x="292.8" y="483.6" textLength="634.4" clip-path="url(#terminal-2504037988-line-19)">&#160;tokens&#160;for&#160;the&#160;hand-off&#160;pasted&#160;above&#160;it,&#160;and&#160;parts&#160;</text><text class="terminal-2504037988-r6" x="927.2" y="483.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-19)">2</text><text class="terminal-2504037988-r4" x="939.4" y="483.6" textLength="134.2" clip-path="url(#terminal-2504037988-line-19)">+&#160;count&#160;it.</text><text class="terminal-2504037988-r3" x="1220" y="483.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-19)">
+</text><text class="terminal-2504037988-r3" x="1220" y="508" textLength="12.2" clip-path="url(#terminal-2504037988-line-20)">
+</text><text class="terminal-2504037988-r3" x="0" y="532.4" textLength="231.8" clip-path="url(#terminal-2504037988-line-21)">part&#160;1/2&#160;&#160;≥&#160;5,305&#160;&#160;</text><text class="terminal-2504037988-r4" x="231.8" y="532.4" textLength="988.2" clip-path="url(#terminal-2504037988-line-21)">shop\errors.py&#160;(whole&#160;file),&#160;shop\money.py&#160;(whole&#160;file),&#160;shop\catalogue.py&#160;(whole</text><text class="terminal-2504037988-r3" x="1220" y="532.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-21)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="556.8" textLength="988.2" clip-path="url(#terminal-2504037988-line-22)">file),&#160;shop\orders.py&#160;(whole&#160;file),&#160;shop\payments.py&#160;(whole&#160;file),&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="556.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-22)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="581.2" textLength="988.2" clip-path="url(#terminal-2504037988-line-23)">shop\checkout.py&#160;(whole&#160;file),&#160;shop\discounts.py&#160;(whole&#160;file),&#160;shop\inventory.py&#160;</text><text class="terminal-2504037988-r3" x="1220" y="581.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-23)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="605.6" textLength="988.2" clip-path="url(#terminal-2504037988-line-24)">(whole&#160;file),&#160;shop\customers.py&#160;(whole&#160;file),&#160;shop\reporting.py&#160;(whole&#160;file),&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="605.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-24)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="630" textLength="988.2" clip-path="url(#terminal-2504037988-line-25)">shop\__init__.py&#160;(whole&#160;file&#160;·&#160;from&#160;shop),&#160;shop\notifications\__init__.py&#160;(whole&#160;</text><text class="terminal-2504037988-r3" x="1220" y="630" textLength="12.2" clip-path="url(#terminal-2504037988-line-25)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="654.4" textLength="988.2" clip-path="url(#terminal-2504037988-line-26)">file&#160;·&#160;from&#160;shop),&#160;shop\shipping\__init__.py&#160;(whole&#160;file&#160;·&#160;from&#160;shop),&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="654.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-26)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="678.8" textLength="988.2" clip-path="url(#terminal-2504037988-line-27)">shop\tax\__init__.py&#160;(whole&#160;file&#160;·&#160;from&#160;shop)&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="678.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-27)">
+</text><text class="terminal-2504037988-r3" x="0" y="703.2" textLength="231.8" clip-path="url(#terminal-2504037988-line-28)">part&#160;2/2&#160;&#160;≥&#160;5,313&#160;&#160;</text><text class="terminal-2504037988-r4" x="231.8" y="703.2" textLength="988.2" clip-path="url(#terminal-2504037988-line-28)">shop\csv_export.py&#160;(whole&#160;file),&#160;shop\legacy_invoice.py&#160;(whole&#160;file),&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="703.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-28)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="727.6" textLength="988.2" clip-path="url(#terminal-2504037988-line-29)">shop\shipping\carriers.py&#160;(whole&#160;file),&#160;shop\shipping\parcels.py&#160;(whole&#160;file),&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="727.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-29)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="752" textLength="988.2" clip-path="url(#terminal-2504037988-line-30)">shop\shipping\quotes.py&#160;(whole&#160;file),&#160;shop\shipping\tracking.py&#160;(whole&#160;file),&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="752" textLength="12.2" clip-path="url(#terminal-2504037988-line-30)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="776.4" textLength="988.2" clip-path="url(#terminal-2504037988-line-31)">shop\tax\rates.py&#160;(whole&#160;file),&#160;shop\tax\calculator.py&#160;(whole&#160;file),&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="776.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-31)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="800.8" textLength="988.2" clip-path="url(#terminal-2504037988-line-32)">shop\tax\exemptions.py&#160;(whole&#160;file),&#160;shop\notifications\dispatch.py&#160;(whole&#160;file),</text><text class="terminal-2504037988-r3" x="1220" y="800.8" textLength="12.2" clip-path="url(#terminal-2504037988-line-32)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="825.2" textLength="988.2" clip-path="url(#terminal-2504037988-line-33)">shop\notifications\digest.py&#160;(whole&#160;file),&#160;shop\notifications\templates.py&#160;(whole</text><text class="terminal-2504037988-r3" x="1220" y="825.2" textLength="12.2" clip-path="url(#terminal-2504037988-line-33)">
+</text><text class="terminal-2504037988-r4" x="231.8" y="849.6" textLength="988.2" clip-path="url(#terminal-2504037988-line-34)">file)&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2504037988-r3" x="1220" y="849.6" textLength="12.2" clip-path="url(#terminal-2504037988-line-34)">
+</text><text class="terminal-2504037988-r3" x="1220" y="874" textLength="12.2" clip-path="url(#terminal-2504037988-line-35)">
+</text><text class="terminal-2504037988-r4" x="0" y="898.4" textLength="1195.6" clip-path="url(#terminal-2504037988-line-36)">Each&#160;projection&#160;is&#160;a&#160;floor&#160;on&#160;the&#160;same&#160;terms&#160;as&#160;the&#160;verdict&#160;above:&#160;it&#160;holds&#160;while&#160;the&#160;agent&#160;stays&#160;</text><text class="terminal-2504037988-r3" x="1220" y="898.4" textLength="12.2" clip-path="url(#terminal-2504037988-line-36)">
+</text>
+    </g>
+    </g>
+</svg>

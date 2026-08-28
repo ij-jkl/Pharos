@@ -120,6 +120,20 @@ def test_readme_documents_every_run_flag() -> None:
     assert not missing, f"`pharos run` flags missing from the README: {missing}"
 
 
+def test_every_image_the_readme_embeds_is_in_the_repository() -> None:
+    """A README whose shots 404 is worse than a README with no shots.
+
+    The four images are generated (`docs/capture_dashboard.py`, `docs/capture_cli.py`) into
+    `docs/`, which means they are exactly the kind of file a `.gitignore` rule or a cleanup
+    sweep removes without anyone noticing until the front page is full of broken frames.
+    """
+    readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    embedded = re.findall(r"!\[[^\]]*\]\((docs/[^)]+)\)", readme)
+    assert embedded, "the README embeds no images at all"
+    missing = sorted(path for path in embedded if not (_REPO_ROOT / path).exists())
+    assert not missing, f"README embeds images that are not in the repository: {missing}"
+
+
 def test_the_files_per_part_default_is_the_measured_one() -> None:
     """Two, not four. On a 13-file task against qwen2.5-coder:14b a part completes about 1.5
     to 2.0 files whatever it is given; at four per part that task covered 46/62/46%, at two it
