@@ -1,8 +1,12 @@
 """`pharos-profile` — detect and print the environment profile, then exit.
 
-Checkpoint-2 deliverable: GPU (or N/A), model / quant / weight size, advertised vs loaded
-context + MISMATCH flag, usable budget, VRAM headroom. Runs cleanly even with no GPU and no
-reachable backend (this laptop's current double-degraded state).
+One panel: GPU (or N/A), model / quant / weight size, advertised vs loaded context with the
+MISMATCH flag, usable budget, and VRAM headroom. Every figure carries how it was obtained.
+
+Both halves degrade independently and are meant to: with no NVIDIA card the GPU and headroom
+rows read N/A with the reason, with no reachable backend the model and context rows do, and
+with neither the command still prints a complete profile and exits 0. A profiler that only
+runs on a fully configured machine cannot be used to find out why a machine is not configured.
 """
 
 from __future__ import annotations

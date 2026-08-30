@@ -464,5 +464,3 @@ def _reserve_warning(
         f"response_reserve {config.response_reserve:,} is below the observed typical output "
         f"of ~{typical:,} tokens (median) — the usable budget may be optimistic"
     )
-
-

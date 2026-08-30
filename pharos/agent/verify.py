@@ -250,7 +250,7 @@ def tokenise(command: str) -> list[str]:
     r"""Split a command line without eating Windows path separators.
 
     ``shlex`` in POSIX mode treats a backslash as an escape, which quietly turns
-    ``C:	ools\lint.exe`` into ``C:toolslint.exe`` and then reports the check as "not on
+    ``C:\tools\lint.exe`` into ``C:toolslint.exe`` and then reports the check as "not on
     PATH". Non-POSIX mode keeps the backslashes but leaves the quotes attached to the token,
     so they come off here -- subprocess re-quotes the arguments itself.
     """

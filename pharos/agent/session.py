@@ -164,6 +164,7 @@ _NO_WRITE_NUDGE = (
     "NO CHANGES NEEDED."
 )
 
+
 def _incomplete_nudge(missing: list[str], unread: list[str]) -> str:
     """Name the files still outstanding. A generic reminder is useless to a model that has
     already written something and believes it is finished."""
@@ -229,10 +230,6 @@ class PartResult:
     # a run where every one of them had to be asked for is a different run from one where none
     # did. See ``_ensure_handoff``.
     handoff_requested: bool = False
-
-    @property
-    def nudged(self) -> bool:
-        return self.nudges > 0
     scoped: list[str] = field(default_factory=list)  # the files this part owned
     handoff_tokens: int = 0  # size of the hand-off it produced
     # What the dispatcher saw land on disk, with the lines each write added. Pharos's own
@@ -263,6 +260,10 @@ class PartResult:
     # looked at. A scoped file that was read and left alone is a different outcome from one
     # nobody ever opened, and coverage alone cannot tell them apart.
     files_read: list[str] = field(default_factory=list)
+
+    @property
+    def nudged(self) -> bool:
+        return self.nudges > 0
 
 
 class AgentSession:

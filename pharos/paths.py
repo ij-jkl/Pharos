@@ -47,7 +47,7 @@ def shorten_path(path: str | Path, width: int) -> str:
     """A path that fits ``width``, keeping the end that identifies it.
 
     Rich hard-wraps a long line at the console edge, which breaks a path mid-token: a run under
-    `C:\\Users\\...\\AppData\\Local\\Temp\\claude\\<uuid>\\scratchpad\\proj` came out split across
+    `C:\\Users\\...\\AppData\\Local\\Temp\\pharos\\<uuid>\\scratchpad\\proj` came out split across
     three lines through the middle of the uuid, and could not be copied out of the terminal.
 
     Truncating the right would drop the leaf, which is the part a reader is actually looking

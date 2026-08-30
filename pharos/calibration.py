@@ -271,7 +271,6 @@ def _matching(observations: list[Observation], model: str | None) -> list[Observ
     return [o for o in observations if same_model(o.model, model)]
 
 
-
 # --- what the chat template costs -------------------------------------------------------------
 #
 # The second thing this module remembers, and it is learned by `pharos run` rather than by the

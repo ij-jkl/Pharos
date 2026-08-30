@@ -1,9 +1,9 @@
-"""Ollama backend adapter — a thin seam for a future backend-agnostic layer.
+"""Ollama backend adapter — the one place that knows Ollama's wire format.
 
 Reads /api/tags, /api/show and /api/ps to detect the loaded model, its quantization, the
 advertised max context (GGUF metadata) and the ACTUAL loaded context window. Degrades to
-BackendInfo(reachable=False, ...) when the backend cannot be reached (e.g. the dev laptop with
-no Ollama running) rather than raising.
+BackendInfo(reachable=False, ...) when the backend cannot be reached rather than raising:
+every caller is a report that still has to print.
 
 Field names — CONFIRMED against Ollama 0.31.1 (RTX 3060, qwen3.5-9b-heretic, 2026-07-24):
 
@@ -18,8 +18,8 @@ uses that exact key for the ADVERTISED max, so honouring it here would report
 advertised-as-loaded, yield ratio 1.0 and silently suppress the mismatch banner. A fallback
 that can be confidently wrong is worse than no fallback.
 
-Model names are matched tag-insensitively (see ``_normalize_model_name``): Ollama accepts an
-untagged name everywhere but reports ``name:tag`` back from /api/ps.
+Model names are matched tag-insensitively (``pharos.naming.normalize_model_name``): Ollama
+accepts an untagged name everywhere but reports ``name:tag`` back from /api/ps.
 """
 
 from __future__ import annotations

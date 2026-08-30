@@ -5,8 +5,9 @@ depend on them without import cycles. ``GpuInfo.available`` and ``BackendInfo.re
 two graceful-degradation flags: a machine with no NVIDIA GPU and/or no reachable backend still
 yields a complete profile instead of crashing.
 
-``ModelInfo``/``CtxInfo`` from the original sketch are folded into ``BackendInfo`` — the model and
-context facts all come from the same backend probe, so one flat record is simpler to pass around.
+The model and context facts all come from the same ``/api/show`` + ``/api/ps`` probe, so they
+share one flat ``BackendInfo`` record rather than being split across several — there is no state
+in which one of them is known and another is not.
 """
 
 from __future__ import annotations

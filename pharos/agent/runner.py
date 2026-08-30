@@ -126,13 +126,14 @@ class RunOutcome:
     # three otherwise reports 100%, because the four files nobody attempted are not in any
     # part's scope. True of a run stopped by an error too.
     planned_files: list[str] = field(default_factory=list)
-    # What earlier runs measured this model's chat template to cost, and whether any request
-    # still went out with nothing correcting its ceiling.
-    # What was IN FORCE during this run, and what the memory holds after it. Two different
-    # facts: the first says how this run's ceilings were computed, the second what the next
-    # run will start from. On a model's first run the seed is None and the memory is not.
+    # What earlier runs measured this model's chat template to cost: what was IN FORCE during
+    # this run, and what the memory holds after it. Two different facts -- the first says how
+    # this run's ceilings were computed, the second what the next run will start from. On a
+    # model's first run the seed is None and the memory is not.
     template_cost: TemplateCost | None = None
     template_learned: TemplateCost | None = None
+    # Requests that still went out with nothing correcting their ceiling. The number the
+    # template memory exists to drive to zero.
     exposed_requests: int = 0
     via_proxy: bool = True
     # What the DISK says each part did, against what the part said it did. Empty when the
@@ -559,11 +560,8 @@ async def run_task(
     watch = DamageWatch(root, parses_now, was_passing) if checking else None
     halt_on_break = stop_on_break and watch is not None
 
-    # What previous runs learned about this model's chat template. A part starts with no
-    # responses of its own, so without this its first request is enforced against a ceiling
-    # that has only SAFETY_MARGIN behind it -- and that constant measured 288-297 tokens short
-    # on nine live runs. Seeding costs nothing and is not a new measurement: it is the same
-    # correction the session already makes for itself, one request earlier.
+    # What previous runs learned about this model's chat template, so every part's ceiling
+    # starts corrected rather than earning the correction one request in. See _seed_from_memory.
     memory = Path(config.template_memory_file)
     seed = _seed_from_memory(memory, model, outcome, say)
 
@@ -735,9 +733,11 @@ async def run_task(
         # files. Deliberately ONE round: a second would be chasing a model that has declined
         # the same work twice, and an unbounded repair loop is how a run stops having a
         # knowable cost.
+        #
         # Not after a stop-on-break either. The sweep exists to finish work the plan left
         # undone, and running it over a tree that no longer parses is the compounding the
         # flag was set to prevent.
+        #
         # A single failed part is not a reason to skip it — its files are exactly the kind of
         # leftover the sweep exists for. A run the backend abandoned is: there is nothing left
         # to ask.
@@ -1107,11 +1107,11 @@ def _cap_handoff(handoff: str, reserve: int, count: Callable[[str], int]) -> tup
     truncating would be the context loss this project refuses, which is why the marker is
     part of the forwarded text rather than only a line in the report.
 
-    The marker is counted against the reserve too. Trimming the
-    prose to exactly the reserve and then appending forty tokens of explanation overran the
-    budget by forty tokens on every cut hand-off — the same failure the function exists to
-    prevent, committed by the fix for it, and invisible because nothing measured the total
-    that crossed the gap. The record carried beside the hand-off now does measure it.
+    The marker is counted against the reserve too. Trimming the prose to exactly the reserve
+    and then appending forty tokens of explanation overran the budget by forty tokens on every
+    cut hand-off — the same failure the function exists to prevent, committed by the fix for
+    it, and invisible because nothing measured the total that crossed the gap. The record
+    carried beside the hand-off now does measure it.
     """
     if reserve <= 0 or count(handoff) <= reserve:
         return handoff, False

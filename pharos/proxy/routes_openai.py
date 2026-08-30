@@ -16,6 +16,7 @@ from fastapi import APIRouter, Request, Response
 from pharos.proxy.forward import (
     InputSpec,
     ProxyState,
+    all_ints,
     content_text,
     counted_forward,
     json_text,
@@ -91,7 +92,7 @@ def _extract_completions(payload: dict[str, Any]) -> InputSpec:
     prompt = payload.get("prompt")
     model = payload_model(payload)
     stream = payload_stream(payload, default=False)
-    if isinstance(prompt, list) and prompt and _all_ints(prompt):
+    if isinstance(prompt, list) and prompt and all_ints(prompt):
         # A pre-tokenized prompt IS its own count: len(array) is exact by definition —
         # no tokenizer involved and no template shift to estimate around.
         return InputSpec(
@@ -111,7 +112,3 @@ def _extract_completions(payload: dict[str, Any]) -> InputSpec:
     return InputSpec(
         text=text, exact=False, model=model, stream=stream, user_text=user_text, message_count=1
     )
-
-
-def _all_ints(items: list[Any]) -> bool:
-    return all(isinstance(item, int) and not isinstance(item, bool) for item in items)

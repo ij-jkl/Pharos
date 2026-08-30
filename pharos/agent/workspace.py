@@ -183,7 +183,7 @@ class Workspace:
         return candidate
 
     def _locate(self, raw: str) -> Path:
-        """Resolve a path, treating a backslash as a separator only when that finds something.
+        r"""Resolve a path, treating a backslash as a separator only when that finds something.
 
         On Windows a backslash IS the separator. On POSIX it is a legal character in a file
         name, so "src\alpha.py" is a different file that does not exist — and a model that has

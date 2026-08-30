@@ -92,7 +92,7 @@ def test_shorten_path_keeps_the_end_that_identifies_the_run() -> None:
     through the middle of a uuid across three lines. It could not be copied out."""
     deep = (
         r"C:\Users\<you>\AppData\Local\Temp\pharos"
-        r"\pharos-workspace\a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\scratchpad\proj"
+        r"\runs\a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\scratchpad\proj"
     )
     out = shorten_path(deep, 76)
 

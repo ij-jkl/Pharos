@@ -18,6 +18,7 @@ from fastapi import APIRouter, Request, Response
 from pharos.proxy.forward import (
     InputSpec,
     ProxyState,
+    all_ints,
     content_text,
     counted_forward,
     json_text,
@@ -102,7 +103,7 @@ def _extract_generate(payload: dict[str, Any]) -> InputSpec:
     # with no text for the tokenizer to see. Measured +49 prompt tokens for 50 entries, so the
     # length is a close estimate but not exact — enough to drop the raw=true exactness claim.
     context = payload.get("context")
-    extra = len(context) if isinstance(context, list) and _all_ints(context) else 0
+    extra = len(context) if isinstance(context, list) and all_ints(context) else 0
     images = payload.get("images")
     has_image = isinstance(images, list) and bool(images)
     return InputSpec(
@@ -118,7 +119,3 @@ def _extract_generate(payload: dict[str, Any]) -> InputSpec:
         # /api/generate has no tool catalogue, so a system prompt is the only agent tell.
         agent_shaped=isinstance(payload.get("system"), str) and bool(payload.get("system")),
     )
-
-
-def _all_ints(items: list[Any]) -> bool:
-    return all(isinstance(item, int) and not isinstance(item, bool) for item in items)

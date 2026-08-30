@@ -666,6 +666,17 @@ def message_has_image(message: dict[str, Any]) -> bool:
     return content_has_image(message.get("content"))
 
 
+def all_ints(items: list[Any]) -> bool:
+    """Whether every element is a genuine integer — the tell for a pre-tokenized array.
+
+    Both endpoints accept one: ``context`` on /api/generate and ``prompt`` on /v1/completions,
+    each an already-tokenized sequence whose length is its own token count. ``bool`` is excluded
+    explicitly because it subclasses ``int``, so a stray ``[true, false]`` would otherwise be
+    read as a two-token prompt and counted as exact.
+    """
+    return all(isinstance(item, int) and not isinstance(item, bool) for item in items)
+
+
 def json_text(value: object) -> str:
     """Compact JSON for a structure the backend renders into the prompt (tools, tool_calls).
 

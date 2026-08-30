@@ -724,7 +724,11 @@ def _add_verification_row(body: Table, verification: Verification | None) -> Non
 
 
 def _render_scorecard(console: Console, card: Scorecard) -> None:
-    """The five questions, in the order they matter when a run disappoints."""
+    """Every measured line, in the order it matters when a run disappoints.
+
+    Ordered rather than counted: the count drifted out of date twice as questions were added,
+    and what a reader needs from this is the sequence, not the total.
+    """
     word, style, qualifier = _headline(card)
     body = Table.grid(padding=(0, 2))
     body.add_column(min_width=11)

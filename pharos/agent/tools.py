@@ -47,14 +47,14 @@ from pharos.paths import normalise_display
 from pharos.preflight.content import BinaryFile, read_countable
 from pharos.preflight.split import PartFile
 
-# Entries a directory listing never shows: noise that costs tokens and teaches the model
-# nothing about the task.
 # How much of a just-edited file is echoed back with its new numbers, so the next edit on
 # the same file does not need a whole re-read. Context either side, and a cap past which
 # echoing costs more than the read it saves -- see ToolBox._renumbered.
 _ECHO_CONTEXT = 3
 _ECHO_MAX_LINES = 40
 
+# Entries a directory listing never shows: noise that costs tokens and teaches the model
+# nothing about the task.
 _HIDDEN = frozenset({".git", "__pycache__", ".venv", "node_modules", ".mypy_cache",
                      ".pytest_cache", ".ruff_cache", ".pharos"})
 
@@ -199,9 +199,11 @@ class ToolBox:
                 f"tool description and try again.",
                 ok=False,
             )
-        return ToolResult(
-            f"Unknown tool {name!r}. Available: read_file, write_file, list_dir.", ok=False
-        )
+        # Derived from the catalogue rather than written out: the hand-maintained list had
+        # gone stale and omitted replace_lines, so a model that mistyped a tool name was told
+        # the one tool this module exists to steer it towards did not exist.
+        available = ", ".join(tool["function"]["name"] for tool in self.catalogue())
+        return ToolResult(f"Unknown tool {name!r}. Available: {available}.", ok=False)
 
     def _note_write(self, display: str) -> ToolResult | None:
         """Count a write, and cut a part off once it is plainly churning on one file."""
@@ -445,7 +447,6 @@ class ToolBox:
         return ToolResult(
             f"Replaced lines {start}-{end} of {display}.{moved}{window}", wrote=display
         )
-
 
     def _list(self, raw: str) -> ToolResult:
         path = self.workspace.resolve(raw or ".")

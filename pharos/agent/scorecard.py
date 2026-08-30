@@ -362,7 +362,7 @@ def score(
     template_runs: int = 0,
     audits: list[PartAudit] | None = None,
 ) -> Scorecard:
-    """Reduce a finished run to the five questions above."""
+    """Reduce a finished run to the six questions above."""
     # Coverage is "of the files the PLAN assigned", so the denominator is the plan when one
     # is given -- not the parts that happened to execute. A run halted after part 1 of three
     # otherwise reports 100%, because the files nobody attempted are in no part's scope: the
