@@ -6,8 +6,9 @@ them has to be a real session — a staged screenshot of a measurement tool is a
 Two scripts produce all of them, and both can be re-run whenever the output changes:
 
 ```bash
-uv run python docs/capture_dashboard.py     # docs/pharos-dashboard.svg
-uv run python docs/capture_cli.py           # shot-check, shot-split, shot-run, shot-review
+uv run python docs/capture_dashboard.py             # docs/pharos-dashboard.svg
+uv run python docs/capture_cli.py                   # shot-check, shot-split, shot-run, shot-review
+uv run --with pillow python docs/capture_video.py   # pharos-video.mp4, pharos-check.gif, cover
 ```
 
 Each capture is written twice: the SVG (or two, for a run) the README embeds, and
@@ -83,3 +84,31 @@ where its output is going. The words, the numbers, the verdict and the exit code
 
 A bad run is still a good shot. Coverage below 100%, a part named for breaking the build, a
 `complete: false` verdict — those are the tool working. The README says as much beside the image.
+
+## The video — `capture_video.py`
+
+A still image asks to be read. A feed asks to be watched, and a static screenshot of a tool
+whose whole argument is *what happens when you run it* loses the argument before anyone clicks.
+
+The video takes nothing new. It reads `shot-check.txt`, `shot-split.txt` and `shot-run.txt` —
+the same captures the SVGs come from, ANSI and all — parses their colour, and animates the
+reveal onto a 1080x1350 canvas. **No frame contains a line those files do not contain.** If the
+CLI's output changes, re-run `capture_cli.py` and then this, and the video follows.
+
+It needs `ffmpeg` on PATH and Pillow, which is not a project dependency — hence `--with pillow`
+rather than adding a rendering library to a measurement tool.
+
+Three things are drawn rather than typed, and each is a font gap rather than a liberty:
+
+- Consolas has no `U+2713` or `U+2717` at any weight, so the run's per-part ✓ and ✗ are two
+  strokes each on the cell's own grid.
+- Consolas **Bold** has no `╭╮╰╯` even though Consolas Regular does, so a bold scorecard border
+  renders as tofu. The corners are routed to the regular face; line art has no weight to lose.
+- The closing comparison panel is deliberately **not** styled as a terminal. Pharos never
+  printed those two runs side by side, and a screenshot of a screen that never existed is the
+  one thing this project cannot ship. It is a chart of two results, each captioned with the
+  file it was read from — `DESKTOP_VALIDATION.md` for the run that passed, `docs/shot-run.txt`
+  for the one that failed.
+
+Pacing lives in `build()`: every `lps` is lines per second, every `wait` is a hold in seconds.
+The whole thing re-renders in well under a minute.

@@ -14,6 +14,12 @@ builds — then names the part that broke it.
 
 The model stays big. The context stays small. The whole prompt still gets done.
 
+![pharos check counting a 22-module refactor spec: every file measured with the model's own tokenizer and labelled exact, a floor of 7,677 tokens against a usable budget of 7,168, and a red EXCEEDS verdict reading "the floor alone is 509 over the usable budget"](docs/pharos-check.gif)
+
+That is the first of four tools, and the whole run — check, split, thirteen parts, the scorecard
+and the review — is in [`docs/pharos-video.mp4`](docs/pharos-video.mp4), 49 seconds, rendered
+from the same captures the images below come from.
+
 ## Do it
 
 ```bash
