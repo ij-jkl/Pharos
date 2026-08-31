@@ -300,3 +300,48 @@ def test_log_sink_swallows_its_own_failures(fresh_sink: None) -> None:
             raise RuntimeError("interpreter is going down")
 
     sink(2, Exploding(), None)  # must not raise
+
+
+# --- the store lookup stays inside the store -----------------------------------------------------
+
+
+def _store(root: Path) -> Path:
+    """A minimal Ollama blob store holding one resolvable model."""
+    manifest = {
+        "layers": [
+            {"mediaType": "application/vnd.ollama.image.model", "digest": "sha256:deadbeef"}
+        ]
+    }
+    entry = root / "store" / "manifests" / "registry" / "library" / "qwen"
+    entry.mkdir(parents=True)
+    (entry / "latest").write_text(json.dumps(manifest), encoding="utf-8")
+    blobs = root / "store" / "blobs"
+    blobs.mkdir(parents=True)
+    (blobs / "sha256-deadbeef").write_text("weights", encoding="utf-8")
+    # A file of the same shape, outside the store, for a lookup to try to reach.
+    outside = root / "elsewhere"
+    outside.mkdir()
+    (outside / "latest").write_text(json.dumps(manifest), encoding="utf-8")
+    return root / "store"
+
+
+def test_a_model_name_cannot_walk_out_of_the_blob_store(tmp_path: Path) -> None:
+    """The name goes straight into a glob pattern, and `..` in a glob is resolved by the OS.
+
+    It arrives from pharos.toml or from whatever the backend reported at /api/ps, so it is not
+    hostile in any ordinary setup — but a lookup documented as "in an Ollama blob store" should
+    be one, and the digest check in resolve_from_store already holds that line for the blob
+    half. Measured before the fix: a name of `../../elsewhere` returned a manifest two
+    directories above the one being searched.
+    """
+    store = _store(tmp_path)
+
+    for name in ("../../elsewhere:latest", "registry/../../../elsewhere:latest"):
+        assert resolve_from_store(name, root=store) is None, name
+
+
+def test_an_ordinary_name_still_resolves(tmp_path: Path) -> None:
+    """The positive control: containment must not cost a lookup that was always legitimate."""
+    store = _store(tmp_path)
+
+    assert resolve_from_store("qwen:latest", root=store) == store / "blobs" / "sha256-deadbeef"

@@ -63,9 +63,29 @@ def _find_manifest(manifests: Path, model: str) -> Path | None:
     except (OSError, ValueError):
         return None
     for candidate in candidates:
-        if candidate.is_file():
+        if candidate.is_file() and _inside(candidate, manifests):
             return candidate
     return None
+
+
+def _inside(candidate: Path, root: Path) -> bool:
+    """Whether a globbed path really is under ``root``, after ``..`` has been collapsed.
+
+    The name being looked up reaches here from pharos.toml or from whatever the backend
+    reported at /api/ps, and it goes straight into a glob pattern. A name carrying ``..``
+    ("a/../../elsewhere") produces a pattern that walks back out of the store, and the OS
+    resolves it happily: measured returning a manifest two directories above the one being
+    searched. Nothing is leaked by it -- the digest read out of such a file is still confined
+    to ``blobs/`` by the separator check in ``resolve_from_store`` -- but a lookup that says
+    "in an Ollama blob store" should be one, and the sibling check there shows the intent.
+
+    Resolved-path containment rather than string matching, the same rule and for the same
+    reason as ``pharos.agent.workspace.Workspace.resolve``.
+    """
+    try:
+        return root.resolve() in candidate.resolve().parents
+    except OSError:
+        return False
 
 
 def _model_layer_digest(manifest_path: Path) -> str | None:

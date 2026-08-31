@@ -14,6 +14,7 @@ from collections.abc import Iterator
 
 import uvicorn
 
+from pharos import __version__
 from pharos.config import ConfigError, PharosConfig, load_config
 from pharos.console import force_utf8
 from pharos.events import EventBus
@@ -99,6 +100,11 @@ def main() -> None:
     force_utf8(sys.stdout, sys.stderr)
 
     argv = sys.argv[1:]
+    # Before the subcommands, because it is what a bug report opens with. The number already
+    # existed and CI already asserts the wheel prints it; nothing but the CLI could say it.
+    if argv and argv[0] in ("--version", "-V"):
+        print(f"pharos {__version__}")
+        return
     if argv and argv[0] == "check":
         from pharos.preflight.cli import main as check_main
 
@@ -115,8 +121,8 @@ def main() -> None:
         raise SystemExit(
             f"pharos: unknown arguments {argv!r} — run `pharos` for the dashboard, "
             f"`pharos check --help` for the pre-flight analyzer, `pharos split --help` "
-            f"to cut an oversized prompt into parts that fit, or `pharos run --help` to "
-            f"carry the task out"
+            f"to cut an oversized prompt into parts that fit, `pharos run --help` to "
+            f"carry the task out, or `pharos --version`"
         )
     try:
         config = load_config()

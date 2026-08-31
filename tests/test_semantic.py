@@ -13,6 +13,7 @@ any machine with no backend running.
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 
 import httpx
@@ -912,3 +913,45 @@ async def test_a_real_regrouping_does_not_claim_it_changed_nothing(
     assert plan.grouping is Grouping.SEMANTIC
     assert plan.grouping_note is not None
     assert "changed nothing" not in plan.grouping_note
+
+
+# --- the title is the one field nothing else can check -------------------------------------------
+
+
+def test_a_title_cannot_carry_control_or_bidi_characters() -> None:
+    r"""Every other field in a proposal is a filename that must already be in the input set.
+
+    The title is not: it is free text from a model prompted with the first five lines of the
+    user's own files, and it lands in a rendered part label. `\s` does not match a
+    right-to-left override, so one survived whitespace collapsing intact and reversed the
+    display of everything after it on the line. It cannot change a budget or a refusal — the
+    module is built so it cannot — but a label that garbles the report around it is not
+    something to hand a reader.
+    """
+    reply = json.dumps(
+        {
+            "groups": [
+                {"title": "Models‮ reversed", "files": ["a.py"]},
+                {"title": "Zero​width\x07", "files": ["b.py"]},
+            ]
+        }
+    )
+
+    proposal, error = parse(reply)
+
+    assert error is None and proposal is not None
+    titles = [group.title for group in proposal.groups]
+    assert titles == ["Models reversed", "Zerowidth"]
+    assert not any(
+        unicodedata.category(ch) in ("Cc", "Cf") for title in titles for ch in title
+    )
+
+
+def test_an_ordinary_title_is_left_alone() -> None:
+    """Stripping must cost a legitimate title nothing, accents and punctuation included."""
+    reply = json.dumps({"groups": [{"title": "Modelos de sesión (auth)", "files": ["a.py"]}]})
+
+    proposal, error = parse(reply)
+
+    assert error is None and proposal is not None
+    assert proposal.groups[0].title == "Modelos de sesión (auth)"

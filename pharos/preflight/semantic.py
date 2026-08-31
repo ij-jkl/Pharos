@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -397,10 +398,24 @@ def _names(values: list[str], limit: int = 3) -> str:
 
 
 def _clean_title(value: object) -> str:
-    """Collapse a model's free text into something safe to render, or nothing at all."""
+    """Collapse a model's free text into something safe to render, or nothing at all.
+
+    The title is the one thing in a proposal that is not checkable against anything: every
+    other field is a filename that must already be in the input set. It is free text from a
+    model, prompted with the first five lines of the user's files, and it lands in a rendered
+    part label — so it is the one place an injected line has any surface at all.
+
+    Control and format characters go first, before whitespace is collapsed. ``\\s`` does not
+    match them: a right-to-left override (U+202E) survives it intact and reverses the display
+    of everything after it on the line, and a zero-width joiner survives it invisibly. Neither
+    can change a budget, a projection or a refusal — the module's whole design is that they
+    cannot — but a label that garbles the report around it is not something to hand a reader,
+    and dropping them costs a title nothing it could legitimately want.
+    """
     if not isinstance(value, str):
         return ""
-    title = re.sub(r"\s+", " ", value).strip(" .")
+    printable = "".join(ch for ch in value if unicodedata.category(ch) not in ("Cc", "Cf"))
+    title = re.sub(r"\s+", " ", printable).strip(" .")
     if len(title) > _TITLE_LIMIT:
         title = title[: _TITLE_LIMIT - 1].rstrip() + "…"
     return title

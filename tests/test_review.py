@@ -297,3 +297,40 @@ def test_a_run_that_changed_nothing_still_answers_the_flag() -> None:
     indistinguishable from one that quietly failed."""
     text = _rendered(Review(note="the run changed no files, so there was no diff to read"))
     assert "not run" in text and "no diff to read" in text
+
+
+# --- a hunk that adds nothing holds no line ------------------------------------------------------
+
+
+def test_a_pure_deletion_hunk_holds_no_line() -> None:
+    """`+N,0` says the hunk adds nothing to the new file, and both git and difflib emit it.
+
+    `max(length, 1)` was there for the `@@ -1 +1 @@` form, where an absent count means one
+    line. Applied to an explicit zero it invented a line at N -- so a finding pointing at a
+    file the run had emptied passed the very check that exists to stop a model naming a line
+    it was never shown.
+    """
+    hunks = hunks_of("@@ -1,12 +0,0 @@\n-a\n-b\n")
+
+    assert all(not hunk.holds(line) for hunk in hunks for line in range(14))
+
+
+def test_an_absent_count_still_means_one_line() -> None:
+    """The form `max(length, 1)` was protecting must keep working."""
+    (hunk,) = hunks_of("@@ -1 +7 @@\n+x\n")
+
+    assert hunk.holds(7)
+    assert not hunk.holds(6) and not hunk.holds(8)
+
+
+def test_a_finding_on_an_emptied_file_is_discarded() -> None:
+    """End to end: the model reviews a file the run emptied and points inside it anyway."""
+    diff = FileDiff(
+        display="gone.py", text="@@ -1,3 +0,0 @@\n-a\n-b\n-c\n", hunks=hunks_of("@@ -1,3 +0,0 @@")
+    )
+    raw = [{"file": "gone.py", "line": 1, "severity": "bug", "note": "still wrong"}]
+
+    kept, discarded = validate(raw, [diff])
+
+    assert kept == []
+    assert discarded == 1

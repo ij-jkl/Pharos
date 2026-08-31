@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -100,3 +101,33 @@ def test_the_example_file_only_names_real_keys() -> None:
     unknown = sorted(named - set(PharosConfig.model_fields))
 
     assert not unknown, f"pharos.toml.example names keys the config would reject: {unknown}"
+
+
+def test_the_package_and_the_project_agree_on_the_version() -> None:
+    """`__version__` and pyproject's `version` are written out separately and must match.
+
+    They are read by different things -- the CLI and an installed wheel's metadata -- so a
+    mismatch ships a build that reports one number and identifies itself as another, and the
+    first person to notice is someone comparing a bug report against a release.
+    """
+    import tomllib
+
+    import pharos
+
+    with (_ROOT / "pyproject.toml").open("rb") as handle:
+        declared = tomllib.load(handle)["project"]["version"]
+
+    assert pharos.__version__ == declared, (
+        f"pharos.__version__ is {pharos.__version__} and pyproject says {declared}"
+    )
+
+
+def test_the_cli_can_say_its_own_version(capsys: pytest.CaptureFixture[str]) -> None:
+    """The first line of any bug report. The number existed; nothing could print it."""
+    import pharos
+    from pharos.__main__ import main
+
+    for flag in ("--version", "-V"):
+        sys.argv = ["pharos", flag]
+        main()  # must not raise SystemExit: asking the version is not an error
+        assert capsys.readouterr().out.strip() == f"pharos {pharos.__version__}"

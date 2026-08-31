@@ -206,8 +206,16 @@ def hunks_of(diff_text: str) -> tuple[Hunk, ...]:
     found: list[Hunk] = []
     for match in _HUNK.finditer(diff_text):
         start = int(match.group(1))
+        # An absent count means one line (`@@ -1 +1 @@`); an explicit `,0` means the hunk adds
+        # nothing to the new file at all. Those are different, and `max(length, 1)` read them
+        # the same way -- so a pure deletion, which git and difflib both emit as `+N,0` when a
+        # run empties a file, produced a one-line hunk at N and a finding pointing there passed
+        # the one check that exists to catch exactly that. A hunk showing no new lines can hold
+        # no line number, so it contributes none.
         length = int(match.group(2)) if match.group(2) is not None else 1
-        found.append(Hunk(start=start, end=start + max(length, 1) - 1))
+        if length == 0:
+            continue
+        found.append(Hunk(start=start, end=start + length - 1))
     return tuple(found)
 
 
