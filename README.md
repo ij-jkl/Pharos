@@ -120,6 +120,19 @@ turned down: the grouping it proposed spent more parts than it is allowed, so th
 to position packing and the line says which check failed. A plan that quietly used a model, or
 quietly did not, is the one outcome that feature is not allowed to have.
 
+| `pharos check` / `pharos split` | |
+|---|---|
+| `--file PATH` | read the prompt from a file rather than the argument |
+| `--target N` | judge against N tokens instead of the live budget — **this is what lets both commands work with no backend running at all** |
+| `--split` | on `check`: when the floor exceeds the budget, print a plan of parts that fit |
+| `--semantic` | group the files by meaning instead of by packing order |
+| `--exclude PATH` | keep a named file out of the count and out of every part's scope |
+| `--resolve REF=PATH` / `--pick` | answer an ambiguous reference, rather than have it guessed |
+| `--reserve-reads` | size against what agents have historically opened unprompted |
+| `--out DIR` | write each part to `DIR/part-01.txt`, ready to paste one at a time |
+| `--quiet` | print only the part bodies, for piping |
+| `--json` | the report on stdout, for CI |
+
 ### Then it iterates until the whole prompt is done
 
 Each part is its own conversation, seeded only with what crosses the gap: the previous part's
