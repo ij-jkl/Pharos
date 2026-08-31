@@ -133,7 +133,9 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
 
     # With --json, stdout belongs to the payload alone: prompts, warnings and the picker menu
     # go to stderr, or a caller piping into `jq` gets a parse error instead of a report.
-    console = Console(stderr=args.json)
+    # --quiet makes the same promise about part bodies and had not been given the same
+    # treatment: a refusal, a config error or a warning went to the pipe looking like a part.
+    console = Console(stderr=args.json or args.quiet)
     try:
         config = load_config()
     except ConfigError as exc:
@@ -215,8 +217,13 @@ def main(argv: list[str] | None = None, *, always_split: bool = False) -> int:
     if args.json:
         _emit_json({**report_to_dict(report), "plan": plan_to_dict(plan)})
     elif args.quiet:
+        # Straight to stdout, for the same reason `_emit_json` and `_write_parts` both bypass
+        # Rich: a Console wraps at its width, and a piped Console assumes 80 columns. So every
+        # long line of every part body came out of `--quiet` carrying newlines Pharos had put
+        # into a prompt somebody was about to paste — measured at a 78-column ceiling on text
+        # that had none. The flag's whole promise is that this output is pipe-friendly.
         for part in plan.parts:
-            console.print(part.body, markup=False, highlight=False)
+            sys.stdout.write(part.body + "\n")
         if not plan.parts:
             console.print(f"pharos: no plan — {plan.reason}", markup=False)
     else:

@@ -477,3 +477,49 @@ def test_pick_resolves_the_choice_it_is_given(
     payload = json.loads(capsys.readouterr().out)
     assert len(payload["files"]) == 1
     assert payload["uncounted"]["ambiguous"] == {}
+
+
+# --- --quiet promises the pipe carries part bodies and nothing else ------------------------------
+
+
+def test_quiet_does_not_wrap_the_part_bodies(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The bug: `--quiet` printed part bodies through Rich, which wraps at its width.
+
+    Piped, a Console assumes 80 columns, so every long line of every part came out carrying
+    newlines Pharos had inserted into a prompt somebody was about to paste. Measured on a real
+    split: longest line 79 characters against 239 in the body, the task sentence broken across
+    lines, and 50 bytes of newline that were never in the text. `_emit_json` and `_write_parts`
+    both bypass Rich for exactly this reason; this path had not been given the same treatment.
+    """
+    _cd(monkeypatch, project)
+    sentence = (
+        "Refactor everything in `src/` following the existing naming convention exactly and "
+        "without touching the tests or the configuration that is already there."
+    )
+
+    code = split_main([sentence, "--target", "3000", "--quiet"])
+    out = capsys.readouterr().out
+
+    assert code in {0, 1}
+    assert out.strip(), "there should be part bodies to check"
+    assert sentence in out, "the task sentence must survive on one line"
+    assert max(len(line) for line in out.splitlines()) > 80, "still wrapped at a console width"
+
+
+def test_quiet_keeps_a_refusal_out_of_the_pipe(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refusal on stdout arrives in the pipe looking like a part body.
+
+    Worse on the path where it exits 0: a consumer that checks the exit code still reads prose
+    and treats it as work to do.
+    """
+    _cd(monkeypatch, project)
+
+    split_main(["Rename a local variable.", "--target", "60000", "--quiet"])
+    captured = capsys.readouterr()
+
+    assert captured.out == "", "stdout belongs to the part bodies alone"
+    assert "no plan" in captured.err, "and the reason still has to be said somewhere"
