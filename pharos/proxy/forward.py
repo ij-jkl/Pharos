@@ -5,6 +5,15 @@ the request body for token estimates and forward the original bytes verbatim —
 re-serialize (hard rule). Counting must never delay or alter the stream: input counting runs
 as a background task, and response metrics are parsed from a bounded tail buffer only after
 the stream has closed.
+
+One header is written on the way out, and it is stated here rather than left to be found:
+when the client sends no ``Accept-Encoding`` at all, ``identity`` is set on the upstream hop.
+Doing nothing is not the neutral option — httpx would advertise gzip on its own, and the
+client would be handed encoded bytes it never asked to decode. RFC 9110 §12.5.3 says a server
+may assume identity when the header is absent, so this makes that default explicit against a
+library that would otherwise override it. It is the smallest write that keeps the guarantee
+where it is actually measured: what the client receives is what a direct connection would
+have given it. See ``_open_upstream``.
 """
 
 from __future__ import annotations

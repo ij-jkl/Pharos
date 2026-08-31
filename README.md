@@ -194,6 +194,12 @@ the measurement behind its default. The ones that matter:
 - **Mutate a request, ever.** No fields added or removed, no prompt rewriting, no
   `stream_options` injection. The guarantee is about what Pharos does to *other people's*
   traffic; `--compact` only ever touches a `pharos run` conversation, which is its own.
+
+  It has exactly one exception, and an unstated exception to a headline guarantee is worth
+  less than no guarantee: when a client sends **no** `Accept-Encoding`, Pharos sets `identity`
+  on the upstream hop. Doing nothing is not neutral — httpx would advertise gzip itself and the
+  client would receive encoded bytes it never asked to decode. It is the smallest write that
+  keeps the promise where it is measured, which is what the client actually receives.
 - **Claim the code is right.** It proves the work fit, ran, and still builds. That is a different
   question, with an exact answer, and it is the one Pharos answers.
 - **Guess.** An ambiguous file reference is reported, not resolved by coin-flip (`--resolve`,

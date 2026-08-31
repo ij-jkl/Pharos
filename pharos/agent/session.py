@@ -422,6 +422,13 @@ class AgentSession:
         self._room_refusals = 0
         self._native_calls = 0
         self._recovered_calls = 0
+        # Both of these are per-part measurements that PartResult reports, and both were
+        # missing from the reset above while every other counter beside them was in it. A
+        # session is built per part today, so nothing carried -- but the block exists because
+        # run() is meant to be re-entrant, and two figures that silently accumulate across
+        # calls are the shape of a number that reads plausibly and is the sum of a run.
+        self._exposed = 0
+        self.truncated_by_backend = False
         nudges = 0
         written_at_last_nudge = 0
         read_at_last_nudge = 0

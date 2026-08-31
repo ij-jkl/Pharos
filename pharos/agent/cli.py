@@ -1131,6 +1131,25 @@ def _render(
         console.print()
         console.print(f"  [bold red]Did not run[/]  {outcome.error}")
         console.print()
+        if as_json:
+            # The same hole `--dry-run --json` was fixed for, left open on the exit where it
+            # costs more. Under --json the human text goes to stderr, so a run that could not
+            # start wrote nothing at all to stdout and exited 2 -- and a CI step piping into
+            # `jq` got a parse error from the one path that was trying to explain itself.
+            # `complete` is false because the run did not complete, which is the answer a gate
+            # is asking for; `error` is why, in the same words the terminal just used.
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "complete": False,
+                        "error": outcome.error,
+                        "plan": _plan_summary(outcome),
+                        "planned_files": outcome.planned_files,
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
         return 2 if report is None or not outcome.parts else 1
 
     _render_plan(console, outcome)

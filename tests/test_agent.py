@@ -24,7 +24,7 @@ import pytest
 from rich.console import Console
 
 from pharos.agent.audit import own_paths
-from pharos.agent.cli import _render_footer, _render_way_back
+from pharos.agent.cli import _render, _render_footer, _render_way_back
 from pharos.agent.ledger import FileChange, names_its_work
 from pharos.agent.runner import (
     RunOutcome,
@@ -2498,3 +2498,76 @@ def test_repair_parts_are_still_labelled_repairs_after_a_short_run(tmp_path: Pat
     assert "part 3/5" in text
     assert "repair 1" in text
     assert "2 part(s) never ran" in text
+
+
+# --- --json means a payload on stdout, on every exit ---------------------------------------------
+
+
+def test_a_run_that_could_not_start_still_writes_json(capsys: Any) -> None:
+    """The bug: `--json` and a run that never began wrote nothing at all to stdout.
+
+    Under --json the human report goes to stderr, and the error exit printed there and
+    returned. So a CI step piping into `jq` got a parse error from the one exit that was
+    trying to explain itself -- and could not tell "the run failed" from "the tool crashed".
+    Exactly the hole v1.0.7 closed for --dry-run, left open on the path that matters more.
+    """
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+    outcome = RunOutcome(error="no verdict - backend unreachable")
+
+    code = _render(console, outcome, dry_run=False, as_json=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 2
+    assert payload["complete"] is False, "a gate asking .complete must get an answer"
+    assert payload["error"] == "no verdict - backend unreachable"
+
+
+def test_the_human_report_never_reaches_stdout_under_json(capsys: Any) -> None:
+    """stdout belongs to the payload alone, or `| jq` breaks on the prose beside it."""
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+
+    _render(console, RunOutcome(error="boom"), dry_run=False, as_json=True)
+
+    out = capsys.readouterr().out
+    assert "Did not run" not in out, "the prose belongs on stderr"
+    json.loads(out)  # and what is left is parseable on its own
+
+
+# --- run() resets what run() reports -------------------------------------------------------------
+
+
+async def test_a_second_part_reports_only_its_own_exposure(workspace: Workspace) -> None:
+    """Every other per-part counter is reset at the top of run(); these two were not.
+
+    A session is built per part today, so nothing carried in practice. But run() resets ten
+    attributes precisely because it is meant to be re-entrant, and a counter that quietly
+    accumulates across calls is the shape of a number that reads plausibly and is the sum of
+    a run rather than a part.
+    """
+    backend = FakeBackend([{"content": "done"}])
+    session = _session(backend, ToolBox(workspace=workspace), budget=4000)
+
+    first = await session.run("part one")
+    second = await session.run("part two")
+
+    # Both parts are the same scripted conversation, so whatever the first spent the second
+    # spends. Asserting equality rather than a literal keeps this about the reset and not
+    # about how many requests that conversation happens to take.
+    assert first.exposed_requests > 0, "the fixture must actually expose something to count"
+    assert second.exposed_requests == first.exposed_requests, (
+        "part two reported part one's requests as well as its own"
+    )
+
+
+async def test_a_second_part_does_not_inherit_a_truncation_verdict(
+    workspace: Workspace,
+) -> None:
+    """Truncation names the part whose context the backend dropped. Carried forward it would
+    name a part that was never truncated, which is worse than not detecting it at all."""
+    backend = FakeBackend([{"content": "done"}])
+    session = _session(backend, ToolBox(workspace=workspace), budget=4000)
+    session.truncated_by_backend = True  # as an earlier part would have left it
+
+    result = await session.run("part two")
+
+    assert result.truncated is False
