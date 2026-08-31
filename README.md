@@ -324,7 +324,7 @@ uv run mypy pharos
 uv run pytest
 ```
 
-**750 tests**, `ruff` and `mypy --strict` clean, on Python 3.12 and 3.13 across Linux and Windows.
+**840 tests**, `ruff` and `mypy --strict` clean, on Python 3.12 and 3.13 across Linux and Windows.
 `tests/test_end_to_end.py` runs the whole loop against a mocked backend and feeds each generated
 part back through the checker — the splitter's projection and the checker's floor come from
 different code, and a plan whose parts do not re-check as fitting is fiction. `CHANGELOG.md` is

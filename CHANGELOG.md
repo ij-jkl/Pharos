@@ -6,6 +6,66 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.7 — "Every exit answers in the format it was asked for"
+
+A pass over the whole package before the repository went public. Nothing here changes what a
+run does; it closes the places where Pharos was less exact about itself than about your
+project.
+
+- **`pharos run --json` wrote nothing at all when the run could not start.** Under `--json` the
+  human report goes to stderr, so the error branch printed there and exited 2 — and a CI step
+  piping into `jq` got a parse error from the one exit that was trying to explain itself,
+  unable to tell *"the run failed"* from *"the tool crashed"*. This is the hole v1.0.7 closed
+  for `--dry-run`, still open on the path that matters more. It now emits `complete: false` and
+  the reason, in the same words the terminal used.
+
+- **A review finding could point into a file the run had emptied.** `hunks_of` read `+N,0` and
+  `@@ -1 +1 @@` the same way: an absent count means one line, but an explicit zero means the
+  hunk adds nothing to the new file, which is what git and `difflib` both emit for a pure
+  deletion. `max(length, 1)` turned that into a one-line hunk at N, so a finding naming that
+  line passed the one check that exists to stop a model pointing at something it was never
+  shown. A hunk showing no new lines now holds no line number.
+
+- **A model name could walk out of the blob store.** `_find_manifest` puts the name straight
+  into a glob pattern, and `..` in a glob is resolved by the OS — measured with a positive
+  control, `../../elsewhere` returned a manifest two directories above the store being
+  searched. Nothing leaked, because the digest read out of such a file is still confined to
+  `blobs/` by the separator check beside it, and the name arrives from your own `pharos.toml`
+  or your own backend. But a lookup documented as *"in an Ollama blob store"* should be one.
+  Now resolved-path containment, the same rule `Workspace.resolve` already used.
+
+- **A part title could garble the report around it.** The title is the only field in a
+  `--semantic` proposal that is not checkable against anything — every other one is a filename
+  that must already be in the input set — and it is free text from a model prompted with the
+  first five lines of your files. `\s` does not match a right-to-left override, so one survived
+  whitespace collapsing and reversed the display of the rest of the line. Control and format
+  characters are dropped before collapsing now.
+
+- **`pharos --version` did not exist.** The number was already in `__init__.py` and CI already
+  asserts a built wheel prints it; no CLI surface could say it, and it is the first line of any
+  bug report.
+
+- **Two per-part counters accumulated across parts.** `AgentSession.run()` resets ten
+  attributes on entry and `_exposed` and `truncated_by_backend` were missing from the list.
+  A session is built per part today so nothing carried in practice, but the reset block exists
+  because `run()` is meant to be re-entrant.
+
+- **The documentation is checked against the code now.** `pharos check` and `pharos split` had
+  grown four flags the README never mentioned — `--target` among them, which is what makes the
+  README's own claim that Pharos runs with no GPU and no backend actually true. Every long
+  option argparse registers must now appear in the README and every documented flag must exist,
+  asserted in both directions, along with `pharos.toml.example` against `PharosConfig` and
+  `__version__` against `pyproject.toml`. Prose does not fail a build unless something makes it.
+
+- **The renderers are exercised over the states they can actually be in.** They were the
+  least-covered code in the project — the run report at 36%, the environment panel at 20% —
+  and both read dataclasses full of `int | None` fields, where a format spec raises and `mypy`
+  does not look. Driving them over 6,912 legal combinations of the run report and 48 of the
+  panel found no crash, which is the useful result and is now a test rather than an
+  afternoon's finding. `profiler/cli` 20% → 88%, `agent/cli` 36% → 62%, project 83% → 86%.
+
+750 tests to 840, `ruff` and `mypy --strict` clean throughout.
+
 ## v1.1.6 — "A fraction of a limit that cannot be exceeded"
 
 - **`headroom` reported 104% of a part's ceiling.** It is peak-over-ceiling, so above 100% it
