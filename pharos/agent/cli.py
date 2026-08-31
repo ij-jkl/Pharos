@@ -957,6 +957,17 @@ def _render_way_back(console: Console, outcome: RunOutcome) -> str | None:
         console.print(f"  [dim]review[/]  compare against {outcome.undo.directory}")
         console.print("  [dim]undo[/]    copy that folder back over the workspace")
         return str(outcome.undo.directory)
+    if outcome.no_way_back:
+        # --no-git declined both. Saying "nothing has been changed" here contradicted the line
+        # printed directly above it on an interrupt -- "anything already written is still on
+        # disk" -- and the wrong half was the reassuring one. A user who reads that concludes
+        # their tree is untouched at the exact moment it is not, and there is nothing to
+        # restore from.
+        console.print(
+            "  [yellow]no way back was made[/] [dim]— --no-git skips the run branch and the "
+            "snapshot both, so anything written is on disk as it stands[/]"
+        )
+        return None
     console.print("  [dim]no branch and no snapshot were made, so nothing has been changed[/]")
     return None
 

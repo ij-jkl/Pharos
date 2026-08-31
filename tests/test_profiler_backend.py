@@ -209,3 +209,44 @@ async def test_build_profile_composes_mismatch_and_budget(
     assert profile.ctx_mismatch_ratio == pytest.approx(32768 / 262144)
     assert profile.budget.usable_budget == 31744
     assert profile.gpu.available is False
+
+
+# --- something answered, and it was not Ollama ---------------------------------------------------
+
+
+async def test_a_non_json_reply_degrades_instead_of_raising() -> None:
+    """The likeliest first-run mistake there is: backend_url pointing at the wrong port.
+
+    `resp.json()` raises on a 200 carrying HTML, and only httpx.HTTPError was caught -- so a
+    function documented as never raising came out as a traceback, from `pharos check`, from
+    `pharos run` and from the dashboard's refresh alike, on a machine whose only fault was a
+    typo in a port number.
+    """
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b"<html><body>It works!</body></html>",
+            headers={"content-type": "text/html"},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    info = await probe_backend(PharosConfig(backend_url="http://localhost:11434"), client)
+    await client.aclose()
+
+    assert info.reachable is False
+    assert info.detail is not None
+    assert "not with JSON" in info.detail, "the reason has to point at the real cause"
+    assert info.loaded_ctx is None and info.model is None
+
+
+async def test_a_truncated_json_reply_degrades_too() -> None:
+    """Same path, a different way for a body to be unparseable."""
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b'{"models": [', headers={"content-type": "application/json"}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    info = await probe_backend(PharosConfig(backend_url="http://x"), client)
+    await client.aclose()
+
+    assert info.reachable is False and info.detail is not None

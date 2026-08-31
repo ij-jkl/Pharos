@@ -84,6 +84,22 @@ async def probe_backend(
                 base_url=base_url,
                 detail=f"backend unreachable at {base_url} ({type(exc).__name__})",
             )
+        except ValueError:
+            # Something answered, and it was not Ollama. `resp.json()` raises here, and only
+            # httpx.HTTPError was being caught -- so a 200 carrying HTML came out of a function
+            # documented as never raising, as a traceback, from `pharos check` and from the
+            # dashboard's refresh alike. The likely cause is the likeliest first-run mistake
+            # there is: backend_url pointing at the wrong port, where a web server answers
+            # cheerfully. Reported as its own state, because "unreachable" would send someone
+            # to look at whether Ollama is running when it is, on a different port.
+            return BackendInfo(
+                reachable=False,
+                base_url=base_url,
+                detail=(
+                    f"something answered at {base_url} but not with JSON — check that "
+                    f"backend_url points at Ollama and not at another service"
+                ),
+            )
         return await _build_info(backend, base_url, ps, config.model)
     finally:
         if own_client:

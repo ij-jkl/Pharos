@@ -294,7 +294,10 @@ def _pick_interactively(
             "Use --resolve REF=PATH instead."
         )
         return {}
-    if not sys.stdin.isatty():
+    # `sys.stdin is None` under a pythonw-style host, and asking a None whether it is a
+    # terminal raises rather than answering. `_read_stdin` above already guards it, so the
+    # state is one this file has decided is real; this is the same question one branch over.
+    if sys.stdin is None or not sys.stdin.isatty():
         console.print("[yellow]--pick needs an interactive terminal.[/] Use --resolve REF=PATH.")
         return {}
 

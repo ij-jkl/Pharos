@@ -107,6 +107,11 @@ class RunOutcome:
     branch: str | None = None
     base_branch: str | None = None  # what the run branched FROM, for the undo line
     undo: Undo | None = None  # set only when there was no git to fall back on
+    # --no-git declines both the run branch and the snapshot. Recorded because "no branch and
+    # no undo" otherwise reads identically to "the run stopped before either was made", and
+    # those want opposite things said: the first wrote files with no way back, the second
+    # changed nothing at all.
+    no_way_back: bool = False
     files_changed: list[str] = field(default_factory=list)
     counts_exact: bool = False
     divided: bool = True  # False when --no-split ran the whole task as one conversation
@@ -519,6 +524,7 @@ async def run_task(
     ours = own_paths(config, root)
 
     undo: Undo | None = None
+    outcome.no_way_back = not use_git
     if use_git:
         try:
             outcome.base_branch = current_branch(root)

@@ -2571,3 +2571,36 @@ async def test_a_second_part_does_not_inherit_a_truncation_verdict(
     result = await session.run("part two")
 
     assert result.truncated is False
+
+
+# --- an interrupted run must not claim more than it knows ----------------------------------------
+
+
+def test_no_git_says_there_is_no_way_back_rather_than_nothing_changed() -> None:
+    """The bug: the interrupt path printed two lines that contradicted each other.
+
+        Interrupted. Anything already written is still on disk.
+        no branch and no snapshot were made, so nothing has been changed
+
+    Both came out of a `--no-git` run, and the reassuring half was the false one: --no-git
+    declines the run branch AND the snapshot, so files had been written with nothing to
+    restore from. A user who reads the second line stops looking.
+    """
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+
+    assert _render_way_back(console, RunOutcome(no_way_back=True)) is None
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "nothing has been changed" not in text
+    assert "no way back" in text and "--no-git" in text
+
+
+def test_stopping_before_anything_was_made_still_says_nothing_changed() -> None:
+    """The other case, which the message was right about and must stay right about: the run
+    never got as far as making a branch, so the tree genuinely is untouched."""
+    console = Console(file=io.StringIO(), width=100, force_terminal=False)
+
+    assert _render_way_back(console, RunOutcome()) is None
+
+    text = console.file.getvalue()  # type: ignore[attr-defined]
+    assert "nothing has been changed" in text
