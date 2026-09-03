@@ -6,6 +6,56 @@ itself has not changed since v0.1 and is not going to: it observes, it never mut
 Numbers quoted here were measured on the machine described in `DESKTOP_VALIDATION.md` — an
 RTX 3060 12 GB running Ollama — and the record of how is in that file rather than this one.
 
+## v1.1.8 — "What the repository said about itself"
+
+Everything here was found while preparing the repository to be public, and none of it changes
+what a run does. Most of it is this project's own standard turned on its own files: a claim it
+made about itself that nothing was checking.
+
+- **The git guard refused to start over a file Pharos had just written.** `own_paths` lists the
+  stores Pharos writes so the audit and the git guard do not report them as your work, and it
+  named three of the four. `build_profile` writes `pharos_vram.json` on every check, every run
+  and every few seconds the dashboard is open, so on a workspace that is its own working
+  directory it appears at once. Measured on a fresh repository: *"the working tree has 1
+  uncommitted change(s)"*, and the change was the file the run had written seconds earlier. The
+  test covering that function pinned the set which omitted it, so it passed for exactly as long
+  as the bug existed; it asks the config which files Pharos writes now — every field ending in
+  `_file` — rather than being handed a list that can go stale.
+
+- **`pharos --help` answered as though it were an error.** The first thing anyone types after
+  installing. There is no top-level argparse parser to supply it — dispatch is by hand so that
+  `pharos check` never pays to import the TUI — so `--help` fell through to the unknown-argument
+  branch: it printed to stderr, called the argument unknown, and exited 1. It prints a usage
+  block to stdout and returns 0 now, beside `--version` and for the same reason. The block is
+  written out, so a test reads the dispatched subcommands out of `main()` with `ast` and asserts
+  each is named in it: a subcommand that works and is documented nowhere is found only by
+  reading the source.
+
+- **`.coverage` had been tracked since the day it was committed by accident.** 53 KB of SQLite,
+  rewritten by every test run, storing absolute paths from the machine that wrote it. Out of the
+  index and into `.gitignore` alongside `.coverage.*` and `htmlcov/`, which would have followed
+  it in. `DESKTOP_VALIDATION.md` quoted three absolute paths for the same reason and quotes none
+  now — the measurements are untouched and the blob digest stays, because it is what shows
+  autodetect resolved correctly.
+
+- **The README claimed 840 tests against a suite of 866.** Understating, but stale, and it sat
+  one paragraph from the flag tables this project already checks in both directions — the one
+  number on the page nobody can verify without cloning, and the only claim in it that nothing
+  was watching. A test reads the count out of the session now and asserts the README does not
+  overstate it, with 5% of room below so that adding a test does not demand a README edit. 840
+  against 866 does not fit in that room; that is the point.
+
+- **The video's end card said 750 tests, and the card GitHub serves did not exist.** A number
+  is a rendered pixel from the moment it is encoded, so nothing could notice that one drift; the
+  mp4 was re-rendered from the same committed `shot-*.txt` captures and differs by 269 bytes,
+  with the GIF and the cover frame coming out byte-for-byte identical. `docs/capture_social.py`
+  draws the 1280x640 Open Graph card that LinkedIn, Slack and X render when the repository link
+  is pasted — which the portrait cover frame cannot do, being a 102-column terminal that a feed
+  scales to nothing. It carries no test count and no version: a PNG is the one surface here with
+  nothing watching it.
+
+840 tests to 866, `ruff` and `mypy --strict` clean throughout.
+
 ## v1.1.7 — "Every exit answers in the format it was asked for"
 
 A pass over the whole package before the repository went public. Nothing here changes what a
