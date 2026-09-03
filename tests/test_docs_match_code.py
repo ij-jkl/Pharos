@@ -131,3 +131,57 @@ def test_the_cli_can_say_its_own_version(capsys: pytest.CaptureFixture[str]) -> 
         sys.argv = ["pharos", flag]
         main()  # must not raise SystemExit: asking the version is not an error
         assert capsys.readouterr().out.strip() == f"pharos {pharos.__version__}"
+
+
+def test_the_cli_can_explain_itself(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--help` is the first thing anyone types, and it was the one thing that answered wrong.
+
+    There is no top-level argparse parser to supply this -- dispatch is by hand so that
+    `pharos check` does not pay to import the TUI -- so `--help` fell through to the
+    unknown-argument branch: it printed to stderr, called the argument unknown, and exited 1.
+    Every one of those is wrong for a request the tool is happy to answer, and a nonzero exit
+    on `--help` is the kind of thing a packaging script notices before a person does.
+    """
+    from pharos.__main__ import main
+
+    for flag in ("--help", "-h", "help"):
+        sys.argv = ["pharos", flag]
+        main()  # must not raise SystemExit: asking what a tool does is not an error
+        printed = capsys.readouterr()
+        assert printed.err == "", f"`pharos {flag}` wrote to stderr"
+        assert printed.out.startswith("pharos —"), f"`pharos {flag}` printed no usage"
+
+
+def test_the_usage_block_names_every_subcommand_the_dispatcher_accepts() -> None:
+    """The usage text is hand-written, so it can drift from the dispatch it describes.
+
+    This is the same failure this module exists for, one level up: a subcommand that works and
+    is documented nowhere is found only by reading the source, and a usage block naming one
+    that no longer dispatches is a promise the tool breaks on the next line the user types.
+    Read out of `main()` with `ast` rather than by calling it, for the reason given at the top.
+    """
+    from pharos.__main__ import _USAGE
+
+    source = ast.parse((_ROOT / "pharos" / "__main__.py").read_text(encoding="utf-8"))
+    main_def = next(
+        node
+        for node in ast.walk(source)
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+
+    dispatched: set[str] = set()
+    for node in ast.walk(main_def):
+        # `argv[0] == "check"` and `argv[0] in ("--version", "-V")` alike.
+        if isinstance(node, ast.Compare) and isinstance(node.ops[0], ast.Eq | ast.In):
+            for operand in node.comparators:
+                for constant in ast.walk(operand):
+                    if isinstance(constant, ast.Constant) and isinstance(constant.value, str):
+                        dispatched.add(constant.value)
+
+    # The help aliases describe themselves; everything else has to be in the block.
+    for name in sorted(dispatched - {"--help", "-h", "help", "-V"}):
+        assert name in _USAGE, (
+            f"`pharos {name}` dispatches and the usage block does not mention it, so the only "
+            f"way to find it is to read __main__.py"
+        )
+

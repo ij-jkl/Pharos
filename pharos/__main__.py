@@ -26,6 +26,29 @@ _SERVER_START_TIMEOUT_S = 5.0
 
 _logger = logging.getLogger("pharos")
 
+# Written out rather than built from argparse, because there is no top-level parser to build it
+# from: dispatch happens by hand so that `pharos check` never pays for importing the TUI. The
+# cost of writing it out is that it can drift from the dispatcher, so a test asserts every
+# subcommand the dispatcher accepts is named here.
+_USAGE = """\
+pharos — measure what fits in a local model's window, and get the work done anyway.
+
+Usage:
+  pharos                  the proxy and the live dashboard
+  pharos check   <prompt> what will this cost, and does it fit?
+  pharos split   <prompt> cut a prompt that does not fit into parts that do
+  pharos run     <prompt> carry the parts out — this writes files
+  pharos --version
+
+Each subcommand has its own flags: `pharos check --help`, `pharos split --help`,
+`pharos run --help`.
+
+`check` and `split` work with no GPU and no backend running — pass `--target N` to
+judge against N tokens instead of a live window.
+
+Configuration is `pharos.toml` in the working directory; `pharos.toml.example` in the
+repository documents every key. Full documentation: https://github.com/ij-jkl/Pharos"""
+
 
 class _EmbeddedServer(uvicorn.Server):
     """Uvicorn embedded next to a Textual app: the TUI owns the terminal and the signals."""
@@ -104,6 +127,12 @@ def main() -> None:
     # existed and CI already asserts the wheel prints it; nothing but the CLI could say it.
     if argv and argv[0] in ("--version", "-V"):
         print(f"pharos {__version__}")
+        return
+    # Beside it, and for the same reason: asking a tool what it does is not an error. This fell
+    # through to the unknown-argument branch below, so the first thing a new user types printed
+    # to stderr, called their argument unknown, and exited 1.
+    if argv and argv[0] in ("--help", "-h", "help"):
+        print(_USAGE)
         return
     if argv and argv[0] == "check":
         from pharos.preflight.cli import main as check_main
