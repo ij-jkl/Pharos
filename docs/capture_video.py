@@ -459,7 +459,10 @@ def build(film: Film):
     film.card(
         ["Pharos", "", "Measure the window.", "Then fill it."],
         ["Isaac Jordan  ·  github.com/ij-jkl/Pharos",
-         "750 tests  ·  mypy --strict  ·  MIT"],
+         "866 tests  ·  mypy --strict  ·  MIT"],
+        # The count is baked into the rendered mp4, so it is stale from the moment a
+        # test is added until the video is re-rendered. Checked against the suite in
+        # tests/test_docs_match_code.py for the README, which is the copy people read.
         3.8,
     )
 

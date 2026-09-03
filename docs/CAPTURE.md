@@ -3,18 +3,40 @@
 The README describes a tool nobody reading it can see. Four images fix that, and every one of
 them has to be a real session — a staged screenshot of a measurement tool is a contradiction.
 
-Two scripts produce all of them, and both can be re-run whenever the output changes:
+Three scripts produce all of them, and a fourth draws the card GitHub serves outside the
+README entirely. Every one can be re-run whenever the output changes:
 
 ```bash
 uv run python docs/capture_dashboard.py             # docs/pharos-dashboard.svg
 uv run python docs/capture_cli.py                   # shot-check, shot-split, shot-run, shot-review
 uv run --with pillow python docs/capture_video.py   # pharos-video.mp4, pharos-check.gif, cover
+uv run --with pillow python docs/capture_social.py  # docs/pharos-social.png (GitHub OG card)
 ```
 
 Each capture is written twice: the SVG (or two, for a run) the README embeds, and
 `docs/shot-*.txt` beside it holding the **whole** capture — the report, then the live progress
 that was on stderr while it was produced. A screenshot that quietly drops the part where it went
 wrong is the one thing this must not be.
+
+## The social card — `capture_social.py`
+
+The only image here that is not a capture, and the only one GitHub serves rather than the
+README: it is the Open Graph card, which is what LinkedIn, Slack and X render when somebody
+pastes the repository link. `pharos-cover.png` cannot do that job — it is a frame lifted from
+the video at 1080x1350, and a 102-column terminal is unreadable once a feed has scaled it.
+
+So this draws one static 1280x640 card, importing the palette and typefaces from
+`capture_video.py` so it cannot drift away from the images beside it. Every type size in it was
+chosen by looking at the result at roughly 420px wide, which is what a feed actually shows.
+
+It carries no test count and no version number. A PNG is the one surface here with nothing
+watching it: the README's count is checked against the suite by
+`tests/test_docs_match_code.py`, and a number baked into an uploaded image is stale the moment
+it drifts with no test that can say so.
+
+**GitHub has no API for this.** Upload the result by hand at **Settings → General → Social
+preview**. Left unset, GitHub generates a card from the repository name, description and
+language stats — legible, and says nothing this one says.
 
 ## The dashboard — `capture_dashboard.py`
 
