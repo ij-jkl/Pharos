@@ -402,6 +402,7 @@ def _own_config(root: Path, **overrides: object) -> PharosConfig:
         "log_file": str(root / "pharos.log"),
         "observations_file": str(root / "pharos_observations.json"),
         "template_memory_file": str(root / "pharos_templates.json"),
+        "vram_memory_file": str(root / "pharos_vram.json"),
     }
     base.update(overrides)
     return PharosConfig(**base)  # type: ignore[arg-type]
@@ -409,7 +410,39 @@ def _own_config(root: Path, **overrides: object) -> PharosConfig:
 
 def test_pharos_own_files_are_named_from_the_config_not_guessed(tmp_path: Path) -> None:
     keys = own_paths(_own_config(tmp_path), tmp_path)
-    assert keys == {"pharos.log", "pharos_observations.json", "pharos_templates.json"}
+    assert keys == {
+        "pharos.log",
+        "pharos_observations.json",
+        "pharos_templates.json",
+        "pharos_vram.json",
+    }
+
+
+def test_every_store_the_config_names_is_owned(tmp_path: Path) -> None:
+    """Written as "all of them" rather than as a list, because the list went stale.
+
+    `vram_memory_file` was missing from own_paths while the other three were in it, and the
+    test above pinned the set that omitted it -- so it passed for as long as the bug existed.
+    The store is written by `build_profile`, which runs on every check, every run and every
+    few seconds of the dashboard, so on a workspace that is its own working directory it
+    appears at once: the git guard then counted it as the user's uncommitted work and refused
+    to start, naming a file Pharos had written seconds earlier.
+
+    A fifth store cannot repeat that. This asks the config which files Pharos writes instead
+    of being told.
+    """
+    stores = [name for name in PharosConfig.model_fields if name.endswith("_file")]
+    assert len(stores) >= 4, "the config stopped naming its stores with a _file suffix"
+
+    config = _own_config(tmp_path)
+    owned = own_paths(config, tmp_path)
+
+    for name in stores:
+        expected = Path(str(getattr(config, name))).name
+        assert expected in owned, (
+            f"{name} is written by Pharos and own_paths does not claim it, so the git guard "
+            f"will blame the user for it and the audit will report it three times over"
+        )
 
 
 def test_a_store_configured_outside_the_workspace_is_simply_absent(tmp_path: Path) -> None:

@@ -109,6 +109,13 @@ def own_paths(config: PharosConfig, root: Path, *extra: Path) -> frozenset[str]:
         Path(config.log_file),
         Path(config.observations_file),
         Path(config.template_memory_file),
+        # The fourth store, and it was missing here while the other three were listed.
+        # `build_profile` writes it on every check, every run and every few seconds of the
+        # dashboard, so on a workspace that is its own working directory it appears almost
+        # immediately -- and then the git guard counted it as the user's uncommitted work and
+        # refused to start, naming a file Pharos had just written. Measured on a fresh repo:
+        # "the working tree has 1 uncommitted change(s)", and the change was this.
+        Path(config.vram_memory_file),
         *extra,
     )
     found: set[str] = set()
