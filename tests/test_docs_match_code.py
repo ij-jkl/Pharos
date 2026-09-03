@@ -185,3 +185,35 @@ def test_the_usage_block_names_every_subcommand_the_dispatcher_accepts() -> None
             f"way to find it is to read __main__.py"
         )
 
+
+def test_the_readme_does_not_overstate_the_test_count(request: pytest.FixtureRequest) -> None:
+    """The README's headline count had gone stale by 25 while every flag beside it was checked.
+
+    Overstating is the half that matters: a README claiming more tests than the suite contains
+    is a false claim about the one thing a reader cannot verify without cloning. Understating
+    is merely stale, so it is allowed a little room rather than forcing a README edit with
+    every test added -- but not unbounded room, which is how 840 survived to 865.
+
+    Counted from the session rather than from `def test_`, because parametrisation is most of
+    the difference (736 functions, 865 cases), and skipped when the whole suite was not
+    collected so that running this file alone does not fail on a subset.
+    """
+    collected = request.session.items
+    files_run = {item.path for item in collected}
+    files_on_disk = set(Path(__file__).parent.glob("test_*.py"))
+    if files_run < files_on_disk:
+        pytest.skip("only part of the suite was collected; the total would be a subset")
+
+    readme = (_ROOT / "README.md").read_text(encoding="utf-8")
+    match = re.search(r"\*\*([\d,]+) tests\*\*", readme)
+    assert match, "the README no longer states a test count"
+    claimed = int(match.group(1).replace(",", ""))
+    actual = len(collected)
+
+    assert claimed <= actual, (
+        f"the README claims {claimed} tests and the suite collects {actual} -- it is not true"
+    )
+    assert claimed >= actual * 0.95, (
+        f"the README claims {claimed} tests and the suite collects {actual}; the number has "
+        f"drifted far enough to be worth updating"
+    )
