@@ -11,6 +11,11 @@ Legend: ☐ open · ☑ pass · ☒ fail (note what you saw)
 `qwen3.5-9b-heretic:latest` (arch qwen35, 9.0B, Q8_0). Confirmed values are recorded inline
 below. Two code fixes came out of it (items 1–2); one open finding remains (item 6).
 
+The resident model throughout is `qwen3.5-9b-heretic`, a community fine-tune of `qwen3.5:9b`
+that happened to be loaded on this card. It is named in full wherever a figure is specific to
+it, because these numbers are per-model and a renamed tag would not be reproducible. Where the
+stock model measures differently — the KV rate in §15 does — both are given rather than merged.
+
 ---
 
 ## ☑ 0. Fresh-machine setup
@@ -834,10 +839,14 @@ VRAM is linear in context, so the slope is the true bytes-per-token.
 |---|---|---|---|---|
 | qwen2.5-coder:7b | qwen2 | 26 | **56.64** | 54.69 (-3.4%) |
 | qwen3-4b | qwen3 | 26 | **142.58** | 140.63 (-1.4%) |
-| qwen3.5-9b | qwen35 | 26 | **32.23** | 31.25 (-3.0%) |
+| qwen3.5-9b-heretic | qwen35 | 26 | **32.23** | 31.25 (-3.0%) |
 
 A 4.4x spread across three models. With 4 GB free, the constant claimed 153,846 further
 context tokens where 28,050 was the truth.
+
+The rate is per-model, not per-architecture: the same three windows against stock `qwen3.5:9b`
+later fitted **33.20**, close to the fine-tune above but not identical, which is why it is
+measured on your machine rather than looked up by architecture.
 
 Every term needed is published by `/api/show` in the same `model_info` dict the advertised
 context is read from. So it is derived rather than configured, and the report says which.

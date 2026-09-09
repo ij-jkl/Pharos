@@ -22,7 +22,7 @@ htmlcov/
 # Environment / secrets
 .env
 
-# Local tool config - machine-specific, not part of the project
+# Local tool config — machine-specific, not part of the project
 .claude/
 CLAUDE.md
 CLAUDE.local.md

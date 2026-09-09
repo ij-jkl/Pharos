@@ -6,13 +6,16 @@
 
 **Paste a prompt far too big for your GPU, at your own project, and have the work done anyway.**
 
-A good coding model fills most of a 12 GB card. What is left will not hold a real prompt, so the
-usual choice is a smaller model or a smaller task. Pharos takes neither: it measures what
+A good local coding model fills most of a 12 GB card. What is left will not hold a real prompt,
+so the usual choice is a smaller model or a smaller task. Pharos takes neither: it measures what
 actually fits, cuts the work into ordered parts that do, runs them one at a time in fresh
 windows, carries the thread between them, and checks after every part that your project still
 builds — then names the part that broke it.
 
 The model stays big. The context stays small. The whole prompt still gets done.
+
+It works against a local [Ollama](https://ollama.com) instance: the prompt, your code and the
+work all stay on your machine.
 
 ![pharos check counting a 22-module refactor spec: every file measured with the model's own tokenizer and labelled exact, a floor of 7,677 tokens against a usable budget of 7,168, and a red EXCEEDS verdict reading "the floor alone is 509 over the usable budget"](docs/pharos-check.gif)
 
@@ -20,7 +23,7 @@ That is the first of four tools, and the whole run — check, split, thirteen pa
 and the review — is in [`docs/pharos-video.mp4`](docs/pharos-video.mp4), 49 seconds, rendered
 from the same captures the images below come from.
 
-## Do it
+## Quick start
 
 ```bash
 git clone https://github.com/ij-jkl/Pharos.git
@@ -307,6 +310,10 @@ believes itself finished, whatever it was given. Window pressure was never the c
 sat at 42–51% of the ceiling) and persuasion did not help — stating the target up front, naming
 the outstanding files and asking again all failed. At four files per part that task covered
 **46%, 62%, 46%**; at two, **92%**.
+
+That was measured at v0.4, before the coder models were found not to emit native tool calls and
+`pharos run` moved to the qwen3.5 family. The limit it found outlived the model that showed it:
+`max_files_per_part = 2` is the default every later run on this page was planned with.
 
 ### The chat template costs a fixed number of tokens, not a ratio
 
