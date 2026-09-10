@@ -6,7 +6,7 @@
 backend_url = "http://localhost:11434"
 
 # Active model. Optional: if omitted, Pharos auto-detects the loaded model from /api/ps.
-# model = "qwen3.5-9b-heretic"
+# model = "qwen3.5:9b"
 
 # Exact path to the model's GGUF, used for CPU-only (vocab_only) exact token counting.
 # Optional: if omitted, Pharos tries to auto-resolve it from Ollama's blob store. Setting it

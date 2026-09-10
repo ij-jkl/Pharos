@@ -33,6 +33,10 @@ cd Pharos
 .\start.ps1       # Windows
 ```
 
+Windows ships with script execution disabled, so if `.\start.ps1` is refused for that reason,
+run it as `powershell -ExecutionPolicy Bypass -File .\start.ps1` — the flag applies to that one
+process and changes nothing on your machine.
+
 The first run installs [uv](https://docs.astral.sh/uv/) if it is missing, fetches Python,
 installs dependencies, writes `pharos.toml` and looks for a backend. Every run after that
 notices all of it is there and opens the prompt.
@@ -208,12 +212,13 @@ the measurement behind its default. The ones that matter:
 ## What it will not do
 
 - **Mutate a request, ever.** No fields added or removed, no prompt rewriting, no
-  `stream_options` injection. The guarantee is about what Pharos does to *other people's*
+  `stream_options` injection. The body is forwarded as the bytes it arrived as; what counting
+  needs, it takes a copy of. The guarantee is about what Pharos does to *other people's*
   traffic; `--compact` only ever touches a `pharos run` conversation, which is its own.
 
-  It has exactly one exception, and an unstated exception to a headline guarantee is worth
-  less than no guarantee: when a client sends **no** `Accept-Encoding`, Pharos sets `identity`
-  on the upstream hop. Doing nothing is not neutral — httpx would advertise gzip itself and the
+  Beyond the hop-by-hop headers every proxy is obliged to strip, it has exactly one exception,
+  and an unstated exception to a headline guarantee is worth less than no guarantee: when a
+  client sends **no** `Accept-Encoding`, Pharos sets `identity` on the upstream hop. Doing nothing is not neutral — httpx would advertise gzip itself and the
   client would receive encoded bytes it never asked to decode. It is the smallest write that
   keeps the promise where it is measured, which is what the client actually receives.
 - **Claim the code is right.** It proves the work fit, ran, and still builds. That is a different

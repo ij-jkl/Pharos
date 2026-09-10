@@ -27,7 +27,7 @@ while [ $# -gt 0 ]; do
         --reinstall)  REINSTALL=1; shift ;;
         --setup-only) SETUP_ONLY=1; shift ;;
         --path)       INSTALL_PATH="$2"; shift 2 ;;
-        -h|--help)    sed -n '2,15p' "$0"; exit 0 ;;
+        -h|--help)    sed -n '2,13p' "$0"; exit 0 ;;
         *)            echo "unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -296,12 +296,16 @@ run_pharos() {
     local verb="$1" prompt="$2"
     shift 2
     printf '\n'
+    # `check` exits 1 for EXCEEDS, which is a verdict rather than a failure. The code was being
+    # swallowed by `|| true`, so the Unix side stayed silent exactly where start.ps1 tells you
+    # what to do next; keep it and let the caller act on it.
+    LAST_CODE=0
     if [ -z "$LOADED_MODEL" ]; then
-        uv run pharos "$verb" "$prompt" --target "$FALLBACK_TARGET" "$@" || true
+        uv run pharos "$verb" "$prompt" --target "$FALLBACK_TARGET" "$@" || LAST_CODE=$?
         printf '\n'
         info "(no model resident — planned against a stand-in $FALLBACK_TARGET-token window)"
     else
-        uv run pharos "$verb" "$prompt" "$@" || true
+        uv run pharos "$verb" "$prompt" "$@" || LAST_CODE=$?
         printf '\n'
     fi
 }
@@ -367,6 +371,9 @@ while true; do
     esac
 
     run_pharos check "$line"
+    if [ "$LAST_CODE" -eq 1 ]; then
+        note 'That does not fit. Prefix the same prompt with "s " to cut it into parts that do.'
+    fi
 done
 
 printf '\n  %sBye. Run ./start.sh any time — it will skip straight back to here.%s\n\n' "$C_GREEN" "$C_OFF"
